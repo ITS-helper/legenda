@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import './App.css'
 
@@ -30,22 +30,38 @@ type BrigadeRow = {
   sleepSec: number
   productivity: number
   idleRatio: number
+  sleepRatio: number
 }
+
+type CompareMetric = 'productivity' | 'work' | 'idle' | 'sleep'
+type SortDirection = 'asc' | 'desc'
+type SortKey =
+  | 'full_name'
+  | 'supervisor_name'
+  | 'work_sec_total'
+  | 'idle_sec_total'
+  | 'total_sec_total'
+  | 'sleep_sec_total'
+  | 'productivity'
 
 function formatSeconds(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
-  return `${hours}h ${String(minutes).padStart(2, '0')}m`
+  return `${hours}ч ${String(minutes).padStart(2, '0')}м`
 }
 
 function formatPercent(value: number) {
   return `${Math.round(value)}%`
 }
 
+function getRowProductivity(row: ShiftMetricRow) {
+  return row.total_sec_total ? (row.work_sec_total / row.total_sec_total) * 100 : 0
+}
+
 function buildBrigades(rows: ShiftMetricRow[]) {
   return Array.from(
     rows.reduce((map, row) => {
-      const key = row.supervisor_name ?? 'No supervisor'
+      const key = row.supervisor_name ?? 'Без начальника'
       const entry = map.get(key) ?? {
         supervisorName: key,
         workers: 0,
@@ -62,20 +78,24 @@ function buildBrigades(rows: ShiftMetricRow[]) {
       entry.sleepSec += row.sleep_sec_total
       map.set(key, entry)
       return map
-    }, new Map<string, Omit<BrigadeRow, 'productivity' | 'idleRatio'>>()),
+    }, new Map<string, Omit<BrigadeRow, 'productivity' | 'idleRatio' | 'sleepRatio'>>()),
   )
     .map(([, value]) => ({
       ...value,
       productivity: value.totalSec ? (value.workSec / value.totalSec) * 100 : 0,
       idleRatio: value.totalSec ? (value.idleSec / value.totalSec) * 100 : 0,
+      sleepRatio: value.totalSec ? (value.sleepSec / value.totalSec) * 100 : 0,
     }))
     .sort((left, right) => right.productivity - left.productivity)
 }
 
 function App() {
   const [availableDates, setAvailableDates] = useState<string[]>([])
-  const [selectedDate, setSelectedDate] = useState<string>('')
-  const [selectedSupervisor, setSelectedSupervisor] = useState<string>('all')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedSupervisor, setSelectedSupervisor] = useState('all')
+  const [compareMetric, setCompareMetric] = useState<CompareMetric>('productivity')
+  const [sortKey, setSortKey] = useState<SortKey>('work_sec_total')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [rows, setRows] = useState<ShiftMetricRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,16 +107,15 @@ function App() {
       setLoading(true)
       setError(null)
 
-      const { data, error: batchError } = await supabase
+      const { data, error: datesError } = await supabase
         .schema('analytics')
-        .from('import_batches')
+        .from('shift_daily_metrics')
         .select('report_date')
-        .eq('status', 'ready')
         .order('report_date', { ascending: false })
 
-      if (batchError) {
+      if (datesError) {
         if (!cancelled) {
-          setError(batchError.message)
+          setError(datesError.message)
           setLoading(false)
         }
         return
@@ -135,7 +154,6 @@ function App() {
         .from('shift_daily_metrics')
         .select('*')
         .eq('report_date', selectedDate)
-        .order('work_sec_total', { ascending: false })
 
       if (metricsError) {
         if (!cancelled) {
@@ -158,15 +176,31 @@ function App() {
     }
   }, [selectedDate])
 
-  const supervisorOptions = ['all', ...new Set(rows.map((row) => row.supervisor_name ?? 'No supervisor'))]
-  const filteredRows =
-    selectedSupervisor === 'all'
-      ? rows
-      : rows.filter((row) => (row.supervisor_name ?? 'No supervisor') === selectedSupervisor)
+  const supervisorOptions = useMemo(
+    () => ['all', ...new Set(rows.map((row) => row.supervisor_name ?? 'Без начальника'))],
+    [rows],
+  )
 
-  const brigadeRows = buildBrigades(rows)
+  const filteredRows = useMemo(
+    () =>
+      selectedSupervisor === 'all'
+        ? rows
+        : rows.filter((row) => (row.supervisor_name ?? 'Без начальника') === selectedSupervisor),
+    [rows, selectedSupervisor],
+  )
+
+  const brigadeRows = useMemo(() => buildBrigades(rows), [rows])
   const compareBrigades = brigadeRows.slice(0, 2)
-  const compareMaxSeconds = Math.max(...compareBrigades.map((brigade) => brigade.totalSec), 1)
+
+  const compareMetricMax = Math.max(
+    ...compareBrigades.map((brigade) => {
+      if (compareMetric === 'work') return brigade.workSec
+      if (compareMetric === 'idle') return brigade.idleSec
+      if (compareMetric === 'sleep') return brigade.sleepSec
+      return brigade.productivity
+    }),
+    1,
+  )
 
   const totalWorkers = filteredRows.length
   const totalWorkSeconds = filteredRows.reduce((sum, row) => sum + row.work_sec_total, 0)
@@ -178,25 +212,83 @@ function App() {
   const idleRatio = totalTrackedSeconds ? (totalIdleSeconds / totalTrackedSeconds) * 100 : 0
   const sleepRatio = totalTrackedSeconds ? (totalSleepSeconds / totalTrackedSeconds) * 100 : 0
 
-  const topWorkers = filteredRows.slice(0, 5).map((row) => ({
-    ...row,
-    productivity: row.total_sec_total ? (row.work_sec_total / row.total_sec_total) * 100 : 0,
-  }))
+  const topWorkers = filteredRows
+    .map((row) => ({ ...row, productivity: getRowProductivity(row) }))
+    .sort((left, right) => right.productivity - left.productivity)
+    .slice(0, 5)
+
+  const sortedRows = useMemo(() => {
+    return [...filteredRows].sort((left, right) => {
+      const leftValue =
+        sortKey === 'productivity'
+          ? getRowProductivity(left)
+          : sortKey === 'supervisor_name'
+            ? left.supervisor_name ?? 'Без начальника'
+            : left[sortKey]
+      const rightValue =
+        sortKey === 'productivity'
+          ? getRowProductivity(right)
+          : sortKey === 'supervisor_name'
+            ? right.supervisor_name ?? 'Без начальника'
+            : right[sortKey]
+
+      if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+        return sortDirection === 'asc'
+          ? leftValue.localeCompare(rightValue, 'ru')
+          : rightValue.localeCompare(leftValue, 'ru')
+      }
+
+      const leftNumeric = Number(leftValue ?? 0)
+      const rightNumeric = Number(rightValue ?? 0)
+      return sortDirection === 'asc' ? leftNumeric - rightNumeric : rightNumeric - leftNumeric
+    })
+  }, [filteredRows, sortDirection, sortKey])
+
+  function toggleSort(nextKey: SortKey) {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setSortKey(nextKey)
+    setSortDirection(nextKey === 'full_name' || nextKey === 'supervisor_name' ? 'asc' : 'desc')
+  }
+
+  function getCompareMetricLabel() {
+    if (compareMetric === 'work') return 'Рабочее время'
+    if (compareMetric === 'idle') return 'Idle'
+    if (compareMetric === 'sleep') return 'Сон'
+    return 'Продуктивность'
+  }
+
+  function getCompareMetricValue(brigade: BrigadeRow) {
+    if (compareMetric === 'work') return brigade.workSec
+    if (compareMetric === 'idle') return brigade.idleSec
+    if (compareMetric === 'sleep') return brigade.sleepSec
+    return brigade.productivity
+  }
+
+  function formatCompareMetric(brigade: BrigadeRow) {
+    if (compareMetric === 'productivity') return formatPercent(brigade.productivity)
+    if (compareMetric === 'work') return formatSeconds(brigade.workSec)
+    if (compareMetric === 'idle') return formatSeconds(brigade.idleSec)
+    return formatSeconds(brigade.sleepSec)
+  }
 
   return (
     <main className="app-shell">
       <section className="hero-block dashboard-hero">
         <div className="hero-main">
           <p className="eyebrow">Legenda Analytics</p>
-          <h1>Shift intelligence for comparing the two brigades.</h1>
+          <h1>Сравнение двух бригад по работе, idle, сну и продуктивности.</h1>
           <p className="hero-copy">
-            The dashboard now reads live Supabase data, switches by report date,
-            filters by supervisor, and keeps the top section focused on brigade-to-brigade comparison.
+            Верхний блок теперь ориентирован именно на сравнение бригад. Ниже можно
+            провалиться в людей и отсортировать смены под нужный разрез.
           </p>
 
           <div className="filter-row">
             <label className="filter-field">
-              <span>Date</span>
+              <span>Дата</span>
               <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
                 {availableDates.map((date) => (
                   <option key={date} value={date}>
@@ -207,16 +299,29 @@ function App() {
             </label>
 
             <label className="filter-field">
-              <span>Supervisor</span>
+              <span>Начальник</span>
               <select
                 value={selectedSupervisor}
                 onChange={(event) => setSelectedSupervisor(event.target.value)}
               >
                 {supervisorOptions.map((supervisor) => (
                   <option key={supervisor} value={supervisor}>
-                    {supervisor === 'all' ? 'All brigades' : supervisor}
+                    {supervisor === 'all' ? 'Все бригады' : supervisor}
                   </option>
                 ))}
+              </select>
+            </label>
+
+            <label className="filter-field">
+              <span>Метрика сравнения</span>
+              <select
+                value={compareMetric}
+                onChange={(event) => setCompareMetric(event.target.value as CompareMetric)}
+              >
+                <option value="productivity">Продуктивность</option>
+                <option value="work">Рабочее время</option>
+                <option value="idle">Idle</option>
+                <option value="sleep">Сон</option>
               </select>
             </label>
           </div>
@@ -224,70 +329,81 @@ function App() {
 
         <div className="hero-compare">
           <div className="compare-head">
-            <span>Brigade Compare</span>
-            <strong>{selectedDate || 'No date selected'}</strong>
+            <span>Сравнение бригад</span>
+            <strong>{selectedDate || 'Дата не выбрана'}</strong>
+            <p className="compare-subtitle">{getCompareMetricLabel()}</p>
           </div>
 
           {compareBrigades.length > 0 ? (
             <div className="compare-chart">
               {compareBrigades.map((brigade) => {
-                const height = `${Math.max((brigade.totalSec / compareMaxSeconds) * 100, 12)}%`
+                const metricValue = getCompareMetricValue(brigade)
+                const height = `${Math.max((metricValue / compareMetricMax) * 100, 12)}%`
                 const workHeight = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
                 const idleHeight = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
+                const sleepHeight = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
 
                 return (
                   <div className="compare-card" key={brigade.supervisorName}>
                     <div className="compare-bar-wrap">
                       <div className="compare-bar" style={{ height }}>
-                        <div className="compare-bar-work" style={{ height: workHeight }} />
-                        <div className="compare-bar-idle" style={{ height: idleHeight }} />
+                        {compareMetric === 'work' ? <div className="compare-bar-work compare-fill" /> : null}
+                        {compareMetric === 'idle' ? <div className="compare-bar-idle compare-fill" /> : null}
+                        {compareMetric === 'sleep' ? <div className="compare-bar-sleep compare-fill" /> : null}
+                        {compareMetric === 'productivity' ? (
+                          <>
+                            <div className="compare-bar-sleep" style={{ height: sleepHeight }} />
+                            <div className="compare-bar-idle" style={{ height: idleHeight }} />
+                            <div className="compare-bar-work" style={{ height: workHeight }} />
+                          </>
+                        ) : null}
                       </div>
                     </div>
                     <div className="compare-meta">
                       <strong>{brigade.supervisorName}</strong>
-                      <span>{brigade.workers} workers</span>
-                      <p>{formatPercent(brigade.productivity)} productivity</p>
+                      <span>{brigade.workers} сотрудников</span>
+                      <p>{formatCompareMetric(brigade)}</p>
                     </div>
                   </div>
                 )
               })}
             </div>
           ) : (
-            <div className="compare-empty">No brigade data yet.</div>
+            <div className="compare-empty">Пока нет данных по бригадам.</div>
           )}
         </div>
       </section>
 
-      {loading ? <section className="empty-state">Loading analytics from Supabase...</section> : null}
-      {error ? <section className="empty-state error-state">Load error: {error}</section> : null}
+      {loading ? <section className="empty-state">Загружаем аналитику из Supabase...</section> : null}
+      {error ? <section className="empty-state error-state">Ошибка загрузки: {error}</section> : null}
       {!loading && !error && rows.length === 0 ? (
-        <section className="empty-state">No imported report days yet.</section>
+        <section className="empty-state">Нет загруженных отчетных дней.</section>
       ) : null}
 
       {!loading && !error && rows.length > 0 ? (
         <>
           <section className="metrics-grid">
             <article className="metric-card">
-              <span className="metric-label">Visible workers</span>
+              <span className="metric-label">Сотрудники в выборке</span>
               <strong className="metric-value">{totalWorkers}</strong>
               <p className="metric-note">
-                {selectedSupervisor === 'all' ? 'All brigades in scope' : selectedSupervisor}
+                {selectedSupervisor === 'all' ? 'Все бригады в выборке' : selectedSupervisor}
               </p>
             </article>
             <article className="metric-card">
-              <span className="metric-label">Work time</span>
+              <span className="metric-label">Рабочее время</span>
               <strong className="metric-value">{formatSeconds(totalWorkSeconds)}</strong>
-              <p className="metric-note">{formatPercent(workRatio)} of tracked time</p>
+              <p className="metric-note">{formatPercent(workRatio)} от трекаемого времени</p>
             </article>
             <article className="metric-card">
-              <span className="metric-label">Idle time</span>
+              <span className="metric-label">Idle время</span>
               <strong className="metric-value">{formatSeconds(totalIdleSeconds)}</strong>
-              <p className="metric-note">{formatPercent(idleRatio)} of tracked time</p>
+              <p className="metric-note">{formatPercent(idleRatio)} от трекаемого времени</p>
             </article>
             <article className="metric-card">
-              <span className="metric-label">Sleep signal</span>
+              <span className="metric-label">Сон по устройствам</span>
               <strong className="metric-value">{formatSeconds(totalSleepSeconds)}</strong>
-              <p className="metric-note">{formatPercent(sleepRatio)} of tracked time</p>
+              <p className="metric-note">{formatPercent(sleepRatio)} от трекаемого времени</p>
             </article>
           </section>
 
@@ -295,8 +411,8 @@ function App() {
             <article className="panel panel-wide">
               <div className="panel-head">
                 <div>
-                  <p className="panel-kicker">Brigades</p>
-                  <h2>Supervisor leaderboard</h2>
+                  <p className="panel-kicker">Бригады</p>
+                  <h2>Сравнение по начальникам</h2>
                 </div>
               </div>
               <div className="brigade-list">
@@ -304,12 +420,13 @@ function App() {
                   <div className="brigade-row" key={brigade.supervisorName}>
                     <div>
                       <strong>{brigade.supervisorName}</strong>
-                      <p>{brigade.workers} workers in report</p>
+                      <p>{brigade.workers} сотрудников в отчете</p>
                     </div>
                     <div className="brigade-stats">
-                      <span>{formatSeconds(brigade.workSec)} work</span>
+                      <span>{formatSeconds(brigade.workSec)} работа</span>
                       <span>{formatSeconds(brigade.idleSec)} idle</span>
-                      <span>{formatPercent(brigade.productivity)} product</span>
+                      <span>{formatSeconds(brigade.sleepSec)} сон</span>
+                      <span>{formatPercent(brigade.productivity)} продуктивность</span>
                     </div>
                   </div>
                 ))}
@@ -319,8 +436,8 @@ function App() {
             <article className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="panel-kicker">Top 5</p>
-                  <h2>Strongest shifts</h2>
+                  <p className="panel-kicker">Топ 5</p>
+                  <h2>Самые продуктивные смены</h2>
                 </div>
               </div>
               <div className="leaderboard">
@@ -329,7 +446,7 @@ function App() {
                     <span className="leader-rank">{String(index + 1).padStart(2, '0')}</span>
                     <div className="leader-main">
                       <strong>{row.full_name}</strong>
-                      <p>{row.supervisor_name ?? 'No supervisor'}</p>
+                      <p>{row.supervisor_name ?? 'Без начальника'}</p>
                     </div>
                     <div className="leader-metric">
                       <strong>{formatPercent(row.productivity)}</strong>
@@ -344,8 +461,8 @@ function App() {
           <section className="panel">
             <div className="panel-head">
               <div>
-                <p className="panel-kicker">Shifts</p>
-                <h2>Daily shift table</h2>
+                <p className="panel-kicker">Смены</p>
+                <h2>Сортируемая таблица за день</h2>
               </div>
             </div>
 
@@ -353,38 +470,32 @@ function App() {
               <table className="analytics-table">
                 <thead>
                   <tr>
-                    <th>Worker</th>
-                    <th>Supervisor</th>
-                    <th>Work</th>
-                    <th>Idle</th>
-                    <th>Total</th>
-                    <th>Productivity</th>
-                    <th>Sleep</th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name')}>Сотрудник</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name')}>Начальник</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>Работа</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('idle_sec_total')}>Idle</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>Всего</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>Продуктивность</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('sleep_sec_total')}>Сон</button></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row) => {
-                    const productivity = row.total_sec_total
-                      ? (row.work_sec_total / row.total_sec_total) * 100
-                      : 0
-
-                    return (
-                      <tr key={row.ww_shift_id}>
-                        <td>
-                          <div className="employee-cell">
-                            <strong>{row.full_name}</strong>
-                            <span>#{row.employee_number}</span>
-                          </div>
-                        </td>
-                        <td>{row.supervisor_name ?? 'No supervisor'}</td>
-                        <td>{formatSeconds(row.work_sec_total)}</td>
-                        <td>{formatSeconds(row.idle_sec_total)}</td>
-                        <td>{formatSeconds(row.total_sec_total)}</td>
-                        <td>{formatPercent(productivity)}</td>
-                        <td>{formatSeconds(row.sleep_sec_total)}</td>
-                      </tr>
-                    )
-                  })}
+                  {sortedRows.map((row) => (
+                    <tr key={row.ww_shift_id}>
+                      <td>
+                        <div className="employee-cell">
+                          <strong>{row.full_name}</strong>
+                          <span>#{row.employee_number}</span>
+                        </div>
+                      </td>
+                      <td>{row.supervisor_name ?? 'Без начальника'}</td>
+                      <td>{formatSeconds(row.work_sec_total)}</td>
+                      <td>{formatSeconds(row.idle_sec_total)}</td>
+                      <td>{formatSeconds(row.total_sec_total)}</td>
+                      <td>{formatPercent(getRowProductivity(row))}</td>
+                      <td>{formatSeconds(row.sleep_sec_total)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

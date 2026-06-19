@@ -23,6 +23,10 @@ bd close <id>         # Complete work
 bd dolt push          # Push beads data to remote
 ```
 
+## Project Rule
+
+- Пользовательский интерфейс сайта, подписи, фильтры, названия метрик, пустые состояния и служебные тексты по умолчанию делать на русском языке, если пользователь явно не попросил другой язык.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
