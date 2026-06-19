@@ -4,6 +4,81 @@
   padding: 40px 0 64px;
 }
 
+.editor-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.editor-toggle,
+.editor-action {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editor-panel {
+  margin-bottom: 16px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 20, 19, 0.78);
+}
+
+.editor-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.editor-panel-head p {
+  color: #d7e3de;
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.editor-saved {
+  margin-top: 12px;
+  color: #9eb6ae;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.editor-field {
+  display: grid;
+  gap: 8px;
+}
+
+.editor-field span {
+  color: #9eb6ae;
+  font-size: 13px;
+}
+
+.editor-field textarea {
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+  resize: vertical;
+}
+
 .hero-block {
   padding: 40px;
   border: 1px solid rgba(255, 255, 255, 0.12);
