@@ -1,21 +1,24 @@
 .app-shell {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1160px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 48px 0 64px;
+  padding: 40px 0 64px;
 }
 
 .hero-block {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: end;
-  padding: 48px;
+  padding: 40px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 32px;
   background:
     radial-gradient(circle at top left, rgba(120, 186, 160, 0.22), transparent 32%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+}
+
+.dashboard-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 24px;
+  align-items: stretch;
 }
 
 .eyebrow {
@@ -27,10 +30,6 @@
   text-transform: uppercase;
 }
 
-.hero-copyblock {
-  max-width: 760px;
-}
-
 .hero-copy {
   max-width: 720px;
   margin-top: 20px;
@@ -38,32 +37,111 @@
   font-size: 18px;
 }
 
-.hero-badge {
-  min-width: 220px;
-  padding: 22px;
-  border-radius: 24px;
-  background: rgba(5, 14, 13, 0.66);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 28px;
 }
 
-.hero-badge span,
+.filter-field {
+  min-width: 190px;
+  display: grid;
+  gap: 8px;
+}
+
+.filter-field span,
+.compare-head span,
 .metric-label,
 .panel-kicker,
 .employee-cell span,
 .leader-metric span,
 .brigade-row p,
-.metric-note {
+.metric-note,
+.compare-meta span {
   color: #9eb6ae;
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.hero-badge strong {
-  display: block;
-  margin-top: 10px;
-  font-size: 28px;
+.filter-field select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(5, 14, 13, 0.7);
   color: #f4faf7;
+  font: inherit;
+}
+
+.hero-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  border-radius: 26px;
+  background: rgba(5, 14, 13, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.compare-head strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+  color: #f4faf7;
+}
+
+.compare-chart {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: end;
+  min-height: 280px;
+}
+
+.compare-card {
+  display: grid;
+  gap: 14px;
+}
+
+.compare-bar-wrap {
+  min-height: 220px;
+  display: flex;
+  align-items: end;
+}
+
+.compare-bar {
+  width: 100%;
+  min-height: 24px;
+  border-radius: 22px 22px 10px 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.compare-bar-work {
+  background: linear-gradient(180deg, #b7f0d0 0%, #4fb88b 100%);
+}
+
+.compare-bar-idle {
+  background: linear-gradient(180deg, #ffb766 0%, #ff7d4d 100%);
+}
+
+.compare-meta strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.compare-meta p {
+  margin-top: 6px;
+  color: #f2f8f5;
+}
+
+.compare-empty {
+  color: #d7e3de;
 }
 
 .metrics-grid {
@@ -213,6 +291,17 @@
   color: #ffd7d7;
 }
 
+@media (max-width: 900px) {
+  .dashboard-hero,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-chart {
+    min-height: 200px;
+  }
+}
+
 @media (max-width: 768px) {
   .app-shell {
     width: min(100%, calc(100% - 24px));
@@ -222,16 +311,15 @@
   .hero-block {
     padding: 28px 20px;
     border-radius: 24px;
-    flex-direction: column;
-    align-items: stretch;
   }
 
-  .content-grid {
-    grid-template-columns: 1fr;
+  .filter-row {
+    flex-direction: column;
   }
 
   .brigade-row,
-  .leader-row {
+  .leader-row,
+  .compare-chart {
     grid-template-columns: 1fr;
   }
 
