@@ -150,3 +150,31 @@ group by
   s.on_watch_duration_seconds,
   s.late_seconds,
   s.early_return_seconds;
+
+grant usage on schema analytics to anon, authenticated, service_role;
+
+grant select, insert, update, delete on all tables in schema analytics to service_role;
+grant select on all tables in schema analytics to authenticated;
+grant select on all tables in schema analytics to anon;
+
+grant usage, select on all sequences in schema analytics to service_role;
+grant usage, select on all sequences in schema analytics to authenticated;
+grant usage, select on all sequences in schema analytics to anon;
+
+alter default privileges in schema analytics
+grant select, insert, update, delete on tables to service_role;
+
+alter default privileges in schema analytics
+grant select on tables to authenticated;
+
+alter default privileges in schema analytics
+grant select on tables to anon;
+
+alter default privileges in schema analytics
+grant usage, select on sequences to service_role;
+
+alter default privileges in schema analytics
+grant usage, select on sequences to authenticated;
+
+alter default privileges in schema analytics
+grant usage, select on sequences to anon;
