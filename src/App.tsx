@@ -367,7 +367,7 @@ function App() {
                 {uiText.editor.reset}
               </button>
               <button type="button" className="editor-action" onClick={handleExportText}>
-                {uiText.editor.export}
+                {uiText.editor.saveJson}
               </button>
               <button
                 type="button"

@@ -57,7 +57,7 @@ export type UiText = {
     title: string
     description: string
     reset: string
-    export: string
+    saveJson: string
     import: string
     saved: string
   }
@@ -124,8 +124,8 @@ export const defaultUiText: UiText = {
     description:
       'Меняй тексты прямо на странице, сохраняй черновик локально и выгружай JSON для фиксации в репозиторий.',
     reset: 'Сбросить',
-    export: 'Скачать JSON',
-    import: 'Загрузить JSON',
+    saveJson: 'Сохранить JSON',
+    import: 'Загрузить и применить JSON',
     saved: 'Черновик сохранен локально',
   },
 }
