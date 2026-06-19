@@ -14,7 +14,7 @@ export const defaultUiText = {
     idleGap: 'Разница по простою',
     sleepGap: 'Разница по сну',
     workers: 'Состав',
-    tracked: 'Под наблюдением',
+    tracked: 'Время в часах',
     structure: 'Структура дня',
   },
   filters: {
@@ -36,11 +36,11 @@ export const defaultUiText = {
     workersTitle: 'Сотрудники в выборке',
     workersAllNote: 'Все бригады в выборке',
     workTitle: 'Рабочее время',
-    workNote: 'от трекаемого времени',
+    workNote: 'от общего времени',
     idleTitle: 'Время простоя',
-    idleNote: 'от трекаемого времени',
+    idleNote: 'от общего времени',
     sleepTitle: 'Сон по устройствам',
-    sleepNote: 'от трекаемого времени',
+    sleepNote: 'от общего времени',
   },
   sections: {
     brigadesKicker: 'Бригады',
@@ -70,7 +70,7 @@ export const defaultUiText = {
   compareMeta: {
     workersSuffix: 'сотрудников',
     inReportSuffix: 'в отчете',
-    trackedSuffix: 'трекалось',
+    trackedSuffix: 'время в часах',
   },
   editor: {
     open: 'Редактировать тексты',
