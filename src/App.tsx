@@ -63,6 +63,15 @@ function formatPercent(value: number) {
   return `${Math.round(value)}%`
 }
 
+function formatDelta(value: number, formatter: (input: number) => string) {
+  const rounded = Math.abs(value) < 0.5 ? 0 : value
+  if (rounded === 0) {
+    return `0`
+  }
+
+  return `${rounded > 0 ? '+' : '-'}${formatter(Math.abs(rounded))}`
+}
+
 function getRowProductivity(row: ShiftMetricRow) {
   return row.total_sec_total ? (row.work_sec_total / row.total_sec_total) * 100 : 0
 }
@@ -106,21 +115,17 @@ function App() {
   const [compareMetric, setCompareMetric] = useState<CompareMetric>('productivity')
   const [sortKey, setSortKey] = useState<SortKey>('work_sec_total')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [showShiftTable, setShowShiftTable] = useState(true)
   const [rows, setRows] = useState<ShiftMetricRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
-  const [editorDraft, setEditorDraft] = useState<UiText>(defaultUiText)
+  const [editorDraft, setEditorDraft] = useState<UiText>(() =>
+    deepMergeUiText(defaultUiText, loadUiTextOverrides() ?? undefined),
+  )
   const [editorStatus, setEditorStatus] = useState<string | null>(null)
 
-  const uiText = useMemo(() => {
-    const overrides = loadUiTextOverrides()
-    return deepMergeUiText(defaultUiText, overrides ?? undefined)
-  }, [editorDraft])
-
-  useEffect(() => {
-    setEditorDraft(uiText)
-  }, [uiText])
+  const uiText = editorDraft
 
   useEffect(() => {
     let cancelled = false
@@ -161,7 +166,6 @@ function App() {
 
   useEffect(() => {
     if (!selectedDate) {
-      setRows([])
       return
     }
 
@@ -218,16 +222,49 @@ function App() {
     [rows, uiText.table.noSupervisor],
   )
 
-  const compareBrigades = brigadeRows.slice(0, 2)
-  const compareMetricMax = Math.max(
-    ...compareBrigades.map((brigade) => {
-      if (compareMetric === 'work') return brigade.workSec
-      if (compareMetric === 'idle') return brigade.idleSec
-      if (compareMetric === 'sleep') return brigade.sleepSec
-      return brigade.productivity
-    }),
-    1,
+  const compareBrigades = useMemo(
+    () =>
+      [...brigadeRows]
+        .sort((left, right) => {
+          const leftValue =
+            compareMetric === 'work'
+              ? left.workSec
+              : compareMetric === 'idle'
+                ? left.idleSec
+                : compareMetric === 'sleep'
+                  ? left.sleepSec
+                  : left.productivity
+          const rightValue =
+            compareMetric === 'work'
+              ? right.workSec
+              : compareMetric === 'idle'
+                ? right.idleSec
+                : compareMetric === 'sleep'
+                  ? right.sleepSec
+                  : right.productivity
+
+          return rightValue - leftValue
+        })
+        .slice(0, 2),
+    [brigadeRows, compareMetric],
   )
+
+  function getCompareMetricValue(brigade: BrigadeRow) {
+    if (compareMetric === 'work') return brigade.workSec
+    if (compareMetric === 'idle') return brigade.idleSec
+    if (compareMetric === 'sleep') return brigade.sleepSec
+    return brigade.productivity
+  }
+
+  const compareMetricMax = Math.max(...compareBrigades.map((brigade) => getCompareMetricValue(brigade)), 1)
+  const leadingBrigade = compareBrigades[0] ?? null
+  const secondaryBrigade = compareBrigades[1] ?? null
+  const compareGap = leadingBrigade && secondaryBrigade
+    ? getCompareMetricValue(leadingBrigade) - getCompareMetricValue(secondaryBrigade)
+    : 0
+  const compareWorkGap = leadingBrigade && secondaryBrigade ? leadingBrigade.workSec - secondaryBrigade.workSec : 0
+  const compareIdleGap = leadingBrigade && secondaryBrigade ? leadingBrigade.idleSec - secondaryBrigade.idleSec : 0
+  const compareSleepGap = leadingBrigade && secondaryBrigade ? leadingBrigade.sleepSec - secondaryBrigade.sleepSec : 0
 
   const totalWorkers = filteredRows.length
   const totalWorkSeconds = filteredRows.reduce((sum, row) => sum + row.work_sec_total, 0)
@@ -314,9 +351,10 @@ function App() {
     }
 
     const raw = await file.text()
-    const parsed = JSON.parse(raw) as UiText
-    saveUiTextOverrides(parsed)
-    setEditorDraft(parsed)
+    const parsed = JSON.parse(raw) as Partial<UiText>
+    const merged = deepMergeUiText(defaultUiText, parsed)
+    saveUiTextOverrides(merged)
+    setEditorDraft(merged)
     setEditorStatus(null)
     event.target.value = ''
   }
@@ -347,18 +385,19 @@ function App() {
     return uiText.compareMetrics.productivity
   }
 
-  function getCompareMetricValue(brigade: BrigadeRow) {
-    if (compareMetric === 'work') return brigade.workSec
-    if (compareMetric === 'idle') return brigade.idleSec
-    if (compareMetric === 'sleep') return brigade.sleepSec
-    return brigade.productivity
-  }
-
   function formatCompareMetric(brigade: BrigadeRow) {
     if (compareMetric === 'productivity') return formatPercent(brigade.productivity)
     if (compareMetric === 'work') return formatSeconds(brigade.workSec)
     if (compareMetric === 'idle') return formatSeconds(brigade.idleSec)
     return formatSeconds(brigade.sleepSec)
+  }
+
+  function getSortLabel(label: string, key: SortKey) {
+    if (sortKey !== key) {
+      return label
+    }
+
+    return `${label} ${sortDirection === 'asc' ? '[+]' : '[-]'}`
   }
 
   return (
@@ -383,11 +422,7 @@ function App() {
               <button type="button" className="editor-action" onClick={handleExportText}>
                 {uiText.editor.saveJson}
               </button>
-              <button
-                type="button"
-                className="editor-action"
-                onClick={() => fileInputRef.current?.click()}
-              >
+              <button type="button" className="editor-action" onClick={() => fileInputRef.current?.click()}>
                 {uiText.editor.import}
               </button>
               <button type="button" className="editor-action" onClick={handleApplyToFile}>
@@ -404,19 +439,41 @@ function App() {
           </div>
           <p className="editor-saved">{editorStatus ?? uiText.editor.saved}</p>
           <div className="editor-grid">
-            {renderEditorField('Бренд', 'brand', editorDraft.brand)}
-            {renderEditorField('Главный заголовок', 'heroTitle', editorDraft.heroTitle)}
-            {renderEditorField('Описание', 'heroDescription', editorDraft.heroDescription)}
-            {renderEditorField('Заголовок сравнения', 'compareTitle', editorDraft.compareTitle)}
-            {renderEditorField('Пустое состояние сравнения', 'compareEmpty', editorDraft.compareEmpty)}
-            {renderEditorField('Текст кнопки открытия', 'editor.open', editorDraft.editor.open)}
-            {renderEditorField('Дата', 'filters.date', editorDraft.filters.date)}
-            {renderEditorField('Начальник', 'filters.supervisor', editorDraft.filters.supervisor)}
-            {renderEditorField('Метрика сравнения', 'filters.compareMetric', editorDraft.filters.compareMetric)}
-            {renderEditorField('Все бригады', 'filters.allBrigades', editorDraft.filters.allBrigades)}
-            {renderEditorField('Блок: бригады', 'sections.brigadesTitle', editorDraft.sections.brigadesTitle)}
-            {renderEditorField('Блок: топ', 'sections.topTitle', editorDraft.sections.topTitle)}
-            {renderEditorField('Блок: таблица', 'sections.shiftsTitle', editorDraft.sections.shiftsTitle)}
+            {renderEditorField(uiText.editorFields.brand, 'brand', editorDraft.brand)}
+            {renderEditorField(uiText.editorFields.heroTitle, 'heroTitle', editorDraft.heroTitle)}
+            {renderEditorField(
+              uiText.editorFields.heroDescription,
+              'heroDescription',
+              editorDraft.heroDescription,
+            )}
+            {renderEditorField(uiText.editorFields.compareTitle, 'compareTitle', editorDraft.compareTitle)}
+            {renderEditorField(uiText.editorFields.compareEmpty, 'compareEmpty', editorDraft.compareEmpty)}
+            {renderEditorField(uiText.editorFields.filtersDate, 'filters.date', editorDraft.filters.date)}
+            {renderEditorField(
+              uiText.editorFields.filtersSupervisor,
+              'filters.supervisor',
+              editorDraft.filters.supervisor,
+            )}
+            {renderEditorField(
+              uiText.editorFields.filtersCompareMetric,
+              'filters.compareMetric',
+              editorDraft.filters.compareMetric,
+            )}
+            {renderEditorField(
+              uiText.editorFields.filtersAllBrigades,
+              'filters.allBrigades',
+              editorDraft.filters.allBrigades,
+            )}
+            {renderEditorField(
+              uiText.editorFields.brigadesTitle,
+              'sections.brigadesTitle',
+              editorDraft.sections.brigadesTitle,
+            )}
+            {renderEditorField(
+              uiText.editorFields.shiftsTitle,
+              'sections.shiftsTitle',
+              editorDraft.sections.shiftsTitle,
+            )}
           </div>
         </section>
       ) : null}
@@ -476,38 +533,113 @@ function App() {
           </div>
 
           {compareBrigades.length > 0 ? (
-            <div className="compare-chart">
-              {compareBrigades.map((brigade) => {
-                const metricValue = getCompareMetricValue(brigade)
-                const height = `${Math.max((metricValue / compareMetricMax) * 100, 12)}%`
-                const workHeight = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
-                const idleHeight = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
-                const sleepHeight = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
+            <div className="compare-layout">
+              <div className="compare-chart">
+                {compareBrigades.map((brigade, index) => {
+                  const metricValue = getCompareMetricValue(brigade)
+                  const height = `${Math.max((metricValue / compareMetricMax) * 100, 12)}%`
+                  const workHeight = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
+                  const idleHeight = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
+                  const sleepHeight = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
 
-                return (
-                  <div className="compare-card" key={brigade.supervisorName}>
-                    <div className="compare-bar-wrap">
-                      <div className="compare-bar" style={{ height }}>
-                        {compareMetric === 'work' ? <div className="compare-bar-work compare-fill" /> : null}
-                        {compareMetric === 'idle' ? <div className="compare-bar-idle compare-fill" /> : null}
-                        {compareMetric === 'sleep' ? <div className="compare-bar-sleep compare-fill" /> : null}
-                        {compareMetric === 'productivity' ? (
-                          <>
-                            <div className="compare-bar-sleep" style={{ height: sleepHeight }} />
-                            <div className="compare-bar-idle" style={{ height: idleHeight }} />
-                            <div className="compare-bar-work" style={{ height: workHeight }} />
-                          </>
-                        ) : null}
+                  return (
+                    <div className={`compare-card ${index === 0 ? 'compare-card-leading' : ''}`} key={brigade.supervisorName}>
+                      <div className="compare-bar-wrap">
+                        <div className="compare-bar" style={{ height }}>
+                          {compareMetric === 'work' ? <div className="compare-bar-work compare-fill" /> : null}
+                          {compareMetric === 'idle' ? <div className="compare-bar-idle compare-fill" /> : null}
+                          {compareMetric === 'sleep' ? <div className="compare-bar-sleep compare-fill" /> : null}
+                          {compareMetric === 'productivity' ? (
+                            <>
+                              <div className="compare-bar-sleep" style={{ height: sleepHeight }} />
+                              <div className="compare-bar-idle" style={{ height: idleHeight }} />
+                              <div className="compare-bar-work" style={{ height: workHeight }} />
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="compare-meta">
+                        <strong>{brigade.supervisorName}</strong>
+                        <span>{brigade.workers} {uiText.compareMeta.workersSuffix}</span>
+                        <p>{formatCompareMetric(brigade)}</p>
                       </div>
                     </div>
-                    <div className="compare-meta">
-                      <strong>{brigade.supervisorName}</strong>
-                      <span>{brigade.workers} {uiText.compareMeta.workersSuffix}</span>
-                      <p>{formatCompareMetric(brigade)}</p>
-                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="compare-insights">
+                <div className="compare-insight-card compare-insight-primary">
+                  <span>{uiText.compareInsights.leader}</span>
+                  <strong>{leadingBrigade?.supervisorName ?? uiText.compareEmpty}</strong>
+                  <p>{leadingBrigade ? formatCompareMetric(leadingBrigade) : uiText.compareEmpty}</p>
+                </div>
+                <div className="compare-insight-card">
+                  <span>{uiText.compareInsights.runnerUp}</span>
+                  <strong>{secondaryBrigade?.supervisorName ?? '—'}</strong>
+                  <p>{secondaryBrigade ? formatCompareMetric(secondaryBrigade) : '—'}</p>
+                </div>
+                <div className="compare-insight-row">
+                  <div className="compare-insight-mini">
+                    <span>{uiText.compareInsights.gap}</span>
+                    <strong>
+                      {compareMetric === 'productivity'
+                        ? formatDelta(compareGap, (value) => formatPercent(value))
+                        : formatDelta(compareGap, formatSeconds)}
+                    </strong>
                   </div>
-                )
-              })}
+                  <div className="compare-insight-mini">
+                    <span>{uiText.compareInsights.workers}</span>
+                    <strong>
+                      {leadingBrigade?.workers ?? 0} / {secondaryBrigade?.workers ?? 0}
+                    </strong>
+                  </div>
+                </div>
+                <div className="compare-insight-grid">
+                  <div className="compare-insight-metric">
+                    <span>{uiText.compareInsights.workGap}</span>
+                    <strong>{formatDelta(compareWorkGap, formatSeconds)}</strong>
+                  </div>
+                  <div className="compare-insight-metric">
+                    <span>{uiText.compareInsights.idleGap}</span>
+                    <strong>{formatDelta(compareIdleGap, formatSeconds)}</strong>
+                  </div>
+                  <div className="compare-insight-metric">
+                    <span>{uiText.compareInsights.sleepGap}</span>
+                    <strong>{formatDelta(compareSleepGap, formatSeconds)}</strong>
+                  </div>
+                  <div className="compare-insight-metric">
+                    <span>{uiText.compareInsights.tracked}</span>
+                    <strong>
+                      {leadingBrigade ? formatSeconds(leadingBrigade.totalSec) : '—'}
+                    </strong>
+                  </div>
+                </div>
+                <div className="compare-structure-list">
+                  {compareBrigades.map((brigade) => (
+                    <div className="compare-structure-row" key={`${brigade.supervisorName}-structure`}>
+                      <div className="compare-structure-head">
+                        <strong>{brigade.supervisorName}</strong>
+                        <span>{uiText.compareInsights.structure}</span>
+                      </div>
+                      <div className="compare-structure-bar">
+                        <div
+                          className="compare-structure-segment compare-bar-work"
+                          style={{ width: `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%` }}
+                        />
+                        <div
+                          className="compare-structure-segment compare-bar-idle"
+                          style={{ width: `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%` }}
+                        />
+                        <div
+                          className="compare-structure-segment compare-bar-sleep"
+                          style={{ width: `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="compare-empty">{uiText.compareEmpty}</div>
@@ -554,22 +686,87 @@ function App() {
                 <div>
                   <p className="panel-kicker">{uiText.sections.brigadesKicker}</p>
                   <h2>{uiText.sections.brigadesTitle}</h2>
+                  <p className="panel-description">{uiText.sections.brigadesDescription}</p>
+                </div>
+                {leadingBrigade ? (
+                  <div className="panel-highlight">
+                    <span>{uiText.sections.brigadesBestLabel}</span>
+                    <strong>{leadingBrigade.supervisorName}</strong>
+                    <p>{formatCompareMetric(leadingBrigade)}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="brigade-legend">
+                <span>{uiText.sections.brigadesLegendTitle}</span>
+                <div className="brigade-legend-items">
+                  <div className="brigade-legend-item">
+                    <i className="legend-swatch brigade-visual-work" />
+                    <span>{uiText.table.work}</span>
+                  </div>
+                  <div className="brigade-legend-item">
+                    <i className="legend-swatch brigade-visual-idle" />
+                    <span>{uiText.table.idle}</span>
+                  </div>
+                  <div className="brigade-legend-item">
+                    <i className="legend-swatch brigade-visual-sleep" />
+                    <span>{uiText.table.sleep}</span>
+                  </div>
                 </div>
               </div>
-              <div className="brigade-list">
+
+              <div className="brigade-card-grid">
                 {brigadeRows.map((brigade) => (
-                  <div className="brigade-row" key={brigade.supervisorName}>
-                    <div>
-                      <strong>{brigade.supervisorName}</strong>
-                      <p>{brigade.workers} {uiText.compareMeta.workersSuffix} в отчете</p>
+                  <article className="brigade-card" key={brigade.supervisorName}>
+                    <div className="brigade-card-head">
+                      <div>
+                        <strong>{brigade.supervisorName}</strong>
+                        <p>
+                          {brigade.workers} {uiText.compareMeta.workersSuffix} {uiText.compareMeta.inReportSuffix}
+                        </p>
+                      </div>
+                      <div className="brigade-badge">{formatPercent(brigade.productivity)}</div>
                     </div>
-                    <div className="brigade-stats">
-                      <span>{formatSeconds(brigade.workSec)} {uiText.table.work.toLowerCase()}</span>
-                      <span>{formatSeconds(brigade.idleSec)} {uiText.table.idle}</span>
-                      <span>{formatSeconds(brigade.sleepSec)} {uiText.table.sleep.toLowerCase()}</span>
-                      <span>{formatPercent(brigade.productivity)} {uiText.table.productivity.toLowerCase()}</span>
+
+                    <div className="brigade-stack">
+                      <div
+                        className="brigade-stack-segment brigade-visual-work"
+                        style={{ width: `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%` }}
+                      />
+                      <div
+                        className="brigade-stack-segment brigade-visual-idle"
+                        style={{ width: `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%` }}
+                      />
+                      <div
+                        className="brigade-stack-segment brigade-visual-sleep"
+                        style={{ width: `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%` }}
+                      />
                     </div>
-                  </div>
+
+                    <div className="brigade-total-line">
+                      <span>{uiText.compareMeta.trackedSuffix}</span>
+                      <strong>{formatSeconds(brigade.totalSec)}</strong>
+                    </div>
+
+                    <div className="brigade-stats-grid">
+                      <div className="brigade-stat">
+                        <span>{uiText.table.work}</span>
+                        <strong>{formatSeconds(brigade.workSec)}</strong>
+                      </div>
+                      <div className="brigade-stat">
+                        <span>{uiText.table.idle}</span>
+                        <strong>{formatSeconds(brigade.idleSec)}</strong>
+                      </div>
+                      <div className="brigade-stat">
+                        <span>{uiText.table.sleep}</span>
+                        <strong>{formatSeconds(brigade.sleepSec)}</strong>
+                      </div>
+                      <div className="brigade-stat">
+                        <span>{uiText.table.total}</span>
+                        <strong>{formatSeconds(brigade.totalSec)}</strong>
+                      </div>
+                    </div>
+                  </article>
                 ))}
               </div>
             </article>
@@ -605,41 +802,80 @@ function App() {
                 <p className="panel-kicker">{uiText.sections.shiftsKicker}</p>
                 <h2>{uiText.sections.shiftsTitle}</h2>
               </div>
+              <button
+                type="button"
+                className="panel-toggle"
+                onClick={() => setShowShiftTable((current) => !current)}
+              >
+                {showShiftTable ? uiText.sections.shiftsHide : uiText.sections.shiftsShow}
+              </button>
             </div>
 
-            <div className="table-wrap">
-              <table className="analytics-table">
-                <thead>
-                  <tr>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name')}>{uiText.table.worker}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name')}>{uiText.table.supervisor}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{uiText.table.work}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('idle_sec_total')}>{uiText.table.idle}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{uiText.table.total}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{uiText.table.productivity}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('sleep_sec_total')}>{uiText.table.sleep}</button></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRows.map((row) => (
-                    <tr key={row.ww_shift_id}>
-                      <td>
-                        <div className="employee-cell">
-                          <strong>{row.full_name}</strong>
-                          <span>#{row.employee_number}</span>
-                        </div>
-                      </td>
-                      <td>{row.supervisor_name ?? uiText.table.noSupervisor}</td>
-                      <td>{formatSeconds(row.work_sec_total)}</td>
-                      <td>{formatSeconds(row.idle_sec_total)}</td>
-                      <td>{formatSeconds(row.total_sec_total)}</td>
-                      <td>{formatPercent(getRowProductivity(row))}</td>
-                      <td>{formatSeconds(row.sleep_sec_total)}</td>
+            {showShiftTable ? (
+              <div className="table-wrap">
+                <table className="analytics-table">
+                  <thead>
+                    <tr>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('full_name')}>
+                          {getSortLabel(uiText.table.worker, 'full_name')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name')}>
+                          {getSortLabel(uiText.table.supervisor, 'supervisor_name')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>
+                          {getSortLabel(uiText.table.work, 'work_sec_total')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('idle_sec_total')}>
+                          {getSortLabel(uiText.table.idle, 'idle_sec_total')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>
+                          {getSortLabel(uiText.table.total, 'total_sec_total')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>
+                          {getSortLabel(uiText.table.productivity, 'productivity')}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-button" onClick={() => toggleSort('sleep_sec_total')}>
+                          {getSortLabel(uiText.table.sleep, 'sleep_sec_total')}
+                        </button>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map((row) => (
+                      <tr key={row.ww_shift_id}>
+                        <td>
+                          <div className="employee-cell">
+                            <strong>{row.full_name}</strong>
+                            <span>#{row.employee_number}</span>
+                          </div>
+                        </td>
+                        <td>{row.supervisor_name ?? uiText.table.noSupervisor}</td>
+                        <td>{formatSeconds(row.work_sec_total)}</td>
+                        <td>{formatSeconds(row.idle_sec_total)}</td>
+                        <td>{formatSeconds(row.total_sec_total)}</td>
+                        <td>{formatPercent(getRowProductivity(row))}</td>
+                        <td>{formatSeconds(row.sleep_sec_total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="panel-collapsed-note">{uiText.sections.shiftsHiddenNote}</div>
+            )}
           </section>
         </>
       ) : null}

@@ -1,89 +1,32 @@
-export type UiText = {
-  brand: string
-  heroTitle: string
-  heroDescription: string
-  compareTitle: string
-  compareEmpty: string
-  compareDateFallback: string
-  filters: {
-    date: string
-    supervisor: string
-    compareMetric: string
-    allBrigades: string
-  }
-  compareMetrics: {
-    productivity: string
-    work: string
-    idle: string
-    sleep: string
-  }
-  loading: string
-  noData: string
-  loadErrorPrefix: string
-  metrics: {
-    workersTitle: string
-    workersAllNote: string
-    workTitle: string
-    workNote: string
-    idleTitle: string
-    idleNote: string
-    sleepTitle: string
-    sleepNote: string
-  }
-  sections: {
-    brigadesKicker: string
-    brigadesTitle: string
-    topKicker: string
-    topTitle: string
-    shiftsKicker: string
-    shiftsTitle: string
-  }
-  table: {
-    worker: string
-    supervisor: string
-    work: string
-    idle: string
-    total: string
-    productivity: string
-    sleep: string
-    noSupervisor: string
-  }
-  compareMeta: {
-    workersSuffix: string
-  }
-  editor: {
-    open: string
-    close: string
-    title: string
-    description: string
-    reset: string
-    saveJson: string
-    import: string
-    applyToFile: string
-    applySuccess: string
-    applyErrorPrefix: string
-    saved: string
-  }
-}
-
-export const defaultUiText: UiText = {
+export const defaultUiText = {
   brand: 'Legenda Analytics',
-  heroTitle: 'Сравнение двух бригад по работе, idle, сну и продуктивности.',
+  heroTitle: 'Здесь умный текст про сравнение',
   heroDescription:
-    'Верхний блок ориентирован на сравнение бригад. Ниже можно провалиться в людей и отсортировать смены под нужный разрез.',
+    'Верхний блок теперь ориентирован именно на сравнение бригад. Ниже можно провалиться в людей, отсортировать смены и быстро увидеть, где работа, простой и сон расходятся сильнее всего.',
   compareTitle: 'Сравнение бригад',
   compareEmpty: 'Пока нет данных по бригадам.',
   compareDateFallback: 'Дата не выбрана',
+  compareInsights: {
+    leader: 'Лидер',
+    runnerUp: 'Вторая бригада',
+    gap: 'Разница',
+    workGap: 'Разница по работе',
+    idleGap: 'Разница по простою',
+    sleepGap: 'Разница по сну',
+    workers: 'Состав',
+    tracked: 'Под наблюдением',
+    structure: 'Структура дня',
+  },
   filters: {
     date: 'Дата',
-    supervisor: 'Начальник',
+    supervisor: 'Руководитель',
     compareMetric: 'Метрика сравнения',
     allBrigades: 'Все бригады',
   },
   compareMetrics: {
     productivity: 'Продуктивность',
     work: 'Рабочее время',
-    idle: 'Idle',
+    idle: 'Простой',
     sleep: 'Сон',
   },
   loading: 'Загружаем аналитику из Supabase...',
@@ -94,7 +37,7 @@ export const defaultUiText: UiText = {
     workersAllNote: 'Все бригады в выборке',
     workTitle: 'Рабочее время',
     workNote: 'от трекаемого времени',
-    idleTitle: 'Idle время',
+    idleTitle: 'Время простоя',
     idleNote: 'от трекаемого времени',
     sleepTitle: 'Сон по устройствам',
     sleepNote: 'от трекаемого времени',
@@ -102,16 +45,23 @@ export const defaultUiText: UiText = {
   sections: {
     brigadesKicker: 'Бригады',
     brigadesTitle: 'Сравнение по начальникам',
+    brigadesDescription:
+      'Каждая карточка показывает состав бригады и структуру времени за выбранный день: работа, простой и сон.',
+    brigadesLegendTitle: 'Структура времени',
+    brigadesBestLabel: 'Лидер по выбранной метрике',
     topKicker: 'Топ 5',
     topTitle: 'Самые продуктивные смены',
     shiftsKicker: 'Смены',
     shiftsTitle: 'Сортируемая таблица за день',
+    shiftsHide: 'Скрыть блок',
+    shiftsShow: 'Показать блок',
+    shiftsHiddenNote: 'Таблица скрыта. Ее можно вернуть одной кнопкой.',
   },
   table: {
     worker: 'Сотрудник',
     supervisor: 'Начальник',
     work: 'Работа',
-    idle: 'Idle',
+    idle: 'Простой',
     total: 'Всего',
     productivity: 'Продуктивность',
     sleep: 'Сон',
@@ -119,19 +69,36 @@ export const defaultUiText: UiText = {
   },
   compareMeta: {
     workersSuffix: 'сотрудников',
+    inReportSuffix: 'в отчете',
+    trackedSuffix: 'трекалось',
   },
   editor: {
-    open: 'Редактировать текст',
+    open: 'Редактировать тексты',
     close: 'Закрыть редактор',
     title: 'Редактор текстов',
     description:
-      'Меняй тексты прямо на странице, сохраняй черновик локально, выгружай JSON и при необходимости записывай правки прямо в uiText.ts.',
+      'Меняй тексты прямо на странице, сохраняй черновик локально и применяй изменения обратно в uiText.ts.',
     reset: 'Сбросить',
     saveJson: 'Сохранить JSON',
-    import: 'Загрузить и применить JSON',
-    applyToFile: 'Применить в uiText.ts',
+    import: 'Загрузить JSON',
+    applyToFile: 'Применить текущие правки в uiText.ts',
     applySuccess: 'Правки записаны в uiText.ts',
     applyErrorPrefix: 'Не удалось записать в uiText.ts:',
     saved: 'Черновик сохранен локально',
   },
-}
+  editorFields: {
+    brand: 'Бренд',
+    heroTitle: 'Главный заголовок',
+    heroDescription: 'Описание',
+    compareTitle: 'Заголовок сравнения',
+    compareEmpty: 'Пустое состояние сравнения',
+    filtersDate: 'Дата',
+    filtersSupervisor: 'Руководитель',
+    filtersCompareMetric: 'Метрика сравнения',
+    filtersAllBrigades: 'Все бригады',
+    brigadesTitle: 'Заголовок блока бригад',
+    shiftsTitle: 'Заголовок блока таблицы',
+  },
+} as const
+
+export type UiText = typeof defaultUiText
