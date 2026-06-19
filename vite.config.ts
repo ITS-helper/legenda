@@ -13,7 +13,8 @@ export const defaultUiText = ${json} as const
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'serve' ? '/' : '/legenda/',
   plugins: [
     react(),
     {
@@ -52,4 +53,4 @@ export default defineConfig({
       },
     },
   ],
-})
+}))

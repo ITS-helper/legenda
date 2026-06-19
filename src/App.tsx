@@ -38,8 +38,6 @@ type BrigadeRow = {
   totalSec: number
   sleepSec: number
   productivity: number
-  idleRatio: number
-  sleepRatio: number
 }
 
 type CompareMetric = 'productivity' | 'work' | 'idle' | 'sleep'
@@ -61,15 +59,6 @@ function formatSeconds(totalSeconds: number) {
 
 function formatPercent(value: number) {
   return `${Math.round(value)}%`
-}
-
-function formatDelta(value: number, formatter: (input: number) => string) {
-  const rounded = Math.abs(value) < 0.5 ? 0 : value
-  if (rounded === 0) {
-    return `0`
-  }
-
-  return `${rounded > 0 ? '+' : '-'}${formatter(Math.abs(rounded))}`
 }
 
 function getRowProductivity(row: ShiftMetricRow) {
@@ -96,13 +85,11 @@ function buildBrigades(rows: ShiftMetricRow[], noSupervisorLabel: string) {
       entry.sleepSec += row.sleep_sec_total
       map.set(key, entry)
       return map
-    }, new Map<string, Omit<BrigadeRow, 'productivity' | 'idleRatio' | 'sleepRatio'>>()),
+    }, new Map<string, Omit<BrigadeRow, 'productivity'>>()),
   )
     .map(([, value]) => ({
       ...value,
       productivity: value.totalSec ? (value.workSec / value.totalSec) * 100 : 0,
-      idleRatio: value.totalSec ? (value.idleSec / value.totalSec) * 100 : 0,
-      sleepRatio: value.totalSec ? (value.sleepSec / value.totalSec) * 100 : 0,
     }))
     .sort((left, right) => right.productivity - left.productivity)
 }
@@ -222,6 +209,13 @@ function App() {
     [rows, uiText.table.noSupervisor],
   )
 
+  function getCompareMetricValue(brigade: BrigadeRow) {
+    if (compareMetric === 'work') return brigade.workSec
+    if (compareMetric === 'idle') return brigade.idleSec
+    if (compareMetric === 'sleep') return brigade.sleepSec
+    return brigade.productivity
+  }
+
   const compareBrigades = useMemo(
     () =>
       [...brigadeRows]
@@ -249,22 +243,7 @@ function App() {
     [brigadeRows, compareMetric],
   )
 
-  function getCompareMetricValue(brigade: BrigadeRow) {
-    if (compareMetric === 'work') return brigade.workSec
-    if (compareMetric === 'idle') return brigade.idleSec
-    if (compareMetric === 'sleep') return brigade.sleepSec
-    return brigade.productivity
-  }
-
   const compareMetricMax = Math.max(...compareBrigades.map((brigade) => getCompareMetricValue(brigade)), 1)
-  const leadingBrigade = compareBrigades[0] ?? null
-  const secondaryBrigade = compareBrigades[1] ?? null
-  const compareGap = leadingBrigade && secondaryBrigade
-    ? getCompareMetricValue(leadingBrigade) - getCompareMetricValue(secondaryBrigade)
-    : 0
-  const compareWorkGap = leadingBrigade && secondaryBrigade ? leadingBrigade.workSec - secondaryBrigade.workSec : 0
-  const compareIdleGap = leadingBrigade && secondaryBrigade ? leadingBrigade.idleSec - secondaryBrigade.idleSec : 0
-  const compareSleepGap = leadingBrigade && secondaryBrigade ? leadingBrigade.sleepSec - secondaryBrigade.sleepSec : 0
 
   const totalWorkers = filteredRows.length
   const totalWorkSeconds = filteredRows.reduce((sum, row) => sum + row.work_sec_total, 0)
@@ -397,7 +376,7 @@ function App() {
       return label
     }
 
-    return `${label} ${sortDirection === 'asc' ? '[+]' : '[-]'}`
+    return `${label} ${sortDirection === 'asc' ? '^' : 'v'}`
   }
 
   return (
@@ -528,117 +507,75 @@ function App() {
         <div className="hero-compare">
           <div className="compare-head">
             <span>{uiText.compareTitle}</span>
-            <strong>{selectedDate || uiText.compareDateFallback}</strong>
-            <p className="compare-subtitle">{getCompareMetricLabel()}</p>
+            <div className="compare-head-meta">
+              <strong>{selectedDate || uiText.compareDateFallback}</strong>
+              <p className="compare-subtitle">{getCompareMetricLabel()}</p>
+            </div>
           </div>
 
           {compareBrigades.length > 0 ? (
             <div className="compare-layout">
-              <div className="compare-chart">
+              <div className="compare-chart compare-chart-rows">
                 {compareBrigades.map((brigade, index) => {
-                  const metricValue = getCompareMetricValue(brigade)
-                  const height = `${Math.max((metricValue / compareMetricMax) * 100, 12)}%`
-                  const workHeight = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
-                  const idleHeight = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
-                  const sleepHeight = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
+                  const metricWidth = `${Math.max((getCompareMetricValue(brigade) / compareMetricMax) * 100, 10)}%`
+                  const workWidth = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
+                  const idleWidth = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
+                  const sleepWidth = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
 
                   return (
                     <div className={`compare-card ${index === 0 ? 'compare-card-leading' : ''}`} key={brigade.supervisorName}>
-                      <div className="compare-bar-wrap">
-                        <div className="compare-bar" style={{ height }}>
-                          {compareMetric === 'work' ? <div className="compare-bar-work compare-fill" /> : null}
-                          {compareMetric === 'idle' ? <div className="compare-bar-idle compare-fill" /> : null}
-                          {compareMetric === 'sleep' ? <div className="compare-bar-sleep compare-fill" /> : null}
-                          {compareMetric === 'productivity' ? (
-                            <>
-                              <div className="compare-bar-sleep" style={{ height: sleepHeight }} />
-                              <div className="compare-bar-idle" style={{ height: idleHeight }} />
-                              <div className="compare-bar-work" style={{ height: workHeight }} />
-                            </>
-                          ) : null}
+                      <div className="compare-card-head">
+                        <div className="compare-card-title">
+                          <strong>{brigade.supervisorName}</strong>
+                          <span>{brigade.workers} {uiText.compareMeta.workersSuffix}</span>
                         </div>
-                      </div>
-                      <div className="compare-meta">
-                        <strong>{brigade.supervisorName}</strong>
-                        <span>{brigade.workers} {uiText.compareMeta.workersSuffix}</span>
                         <p>{formatCompareMetric(brigade)}</p>
+                      </div>
+
+                      <div className="compare-bar-horizontal">
+                        <div
+                          className={
+                            compareMetric === 'idle'
+                              ? 'compare-bar-idle compare-fill compare-fill-with-tooltip'
+                              : compareMetric === 'sleep'
+                                ? 'compare-bar-sleep compare-fill compare-fill-with-tooltip'
+                                : 'compare-bar-work compare-fill compare-fill-with-tooltip'
+                          }
+                          style={{ width: metricWidth }}
+                          data-tooltip={getCompareMetricLabel()}
+                          title={`${getCompareMetricLabel()}: ${formatCompareMetric(brigade)}`}
+                        />
+                      </div>
+
+                      <div className="compare-structure-row compare-structure-row-compact">
+                        <div className="compare-structure-head">
+                          <strong>Структура дня</strong>
+                          <span>{formatSeconds(brigade.totalSec)}</span>
+                        </div>
+                        <div className="compare-structure-bar">
+                          <div
+                            className="compare-structure-segment compare-bar-work compare-segment-tooltip"
+                            style={{ width: workWidth }}
+                            data-tooltip={uiText.table.work}
+                            title={`${uiText.table.work}: ${formatSeconds(brigade.workSec)}`}
+                          />
+                          <div
+                            className="compare-structure-segment compare-bar-idle compare-segment-tooltip"
+                            style={{ width: idleWidth }}
+                            data-tooltip={uiText.table.idle}
+                            title={`${uiText.table.idle}: ${formatSeconds(brigade.idleSec)}`}
+                          />
+                          <div
+                            className="compare-structure-segment compare-bar-sleep compare-segment-tooltip"
+                            style={{ width: sleepWidth }}
+                            data-tooltip={uiText.table.sleep}
+                            title={`${uiText.table.sleep}: ${formatSeconds(brigade.sleepSec)}`}
+                          />
+                        </div>
                       </div>
                     </div>
                   )
                 })}
-              </div>
-
-              <div className="compare-insights">
-                <div className="compare-insight-card compare-insight-primary">
-                  <span>{uiText.compareInsights.leader}</span>
-                  <strong>{leadingBrigade?.supervisorName ?? uiText.compareEmpty}</strong>
-                  <p>{leadingBrigade ? formatCompareMetric(leadingBrigade) : uiText.compareEmpty}</p>
-                </div>
-                <div className="compare-insight-card">
-                  <span>{uiText.compareInsights.runnerUp}</span>
-                  <strong>{secondaryBrigade?.supervisorName ?? '—'}</strong>
-                  <p>{secondaryBrigade ? formatCompareMetric(secondaryBrigade) : '—'}</p>
-                </div>
-                <div className="compare-insight-row">
-                  <div className="compare-insight-mini">
-                    <span>{uiText.compareInsights.gap}</span>
-                    <strong>
-                      {compareMetric === 'productivity'
-                        ? formatDelta(compareGap, (value) => formatPercent(value))
-                        : formatDelta(compareGap, formatSeconds)}
-                    </strong>
-                  </div>
-                  <div className="compare-insight-mini">
-                    <span>{uiText.compareInsights.workers}</span>
-                    <strong>
-                      {leadingBrigade?.workers ?? 0} / {secondaryBrigade?.workers ?? 0}
-                    </strong>
-                  </div>
-                </div>
-                <div className="compare-insight-grid">
-                  <div className="compare-insight-metric">
-                    <span>{uiText.compareInsights.workGap}</span>
-                    <strong>{formatDelta(compareWorkGap, formatSeconds)}</strong>
-                  </div>
-                  <div className="compare-insight-metric">
-                    <span>{uiText.compareInsights.idleGap}</span>
-                    <strong>{formatDelta(compareIdleGap, formatSeconds)}</strong>
-                  </div>
-                  <div className="compare-insight-metric">
-                    <span>{uiText.compareInsights.sleepGap}</span>
-                    <strong>{formatDelta(compareSleepGap, formatSeconds)}</strong>
-                  </div>
-                  <div className="compare-insight-metric">
-                    <span>{uiText.compareInsights.tracked}</span>
-                    <strong>
-                      {leadingBrigade ? formatSeconds(leadingBrigade.totalSec) : '—'}
-                    </strong>
-                  </div>
-                </div>
-                <div className="compare-structure-list">
-                  {compareBrigades.map((brigade) => (
-                    <div className="compare-structure-row" key={`${brigade.supervisorName}-structure`}>
-                      <div className="compare-structure-head">
-                        <strong>{brigade.supervisorName}</strong>
-                        <span>{uiText.compareInsights.structure}</span>
-                      </div>
-                      <div className="compare-structure-bar">
-                        <div
-                          className="compare-structure-segment compare-bar-work"
-                          style={{ width: `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%` }}
-                        />
-                        <div
-                          className="compare-structure-segment compare-bar-idle"
-                          style={{ width: `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%` }}
-                        />
-                        <div
-                          className="compare-structure-segment compare-bar-sleep"
-                          style={{ width: `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           ) : (
@@ -649,9 +586,7 @@ function App() {
 
       {loading ? <section className="empty-state">{uiText.loading}</section> : null}
       {error ? <section className="empty-state error-state">{uiText.loadErrorPrefix} {error}</section> : null}
-      {!loading && !error && rows.length === 0 ? (
-        <section className="empty-state">{uiText.noData}</section>
-      ) : null}
+      {!loading && !error && rows.length === 0 ? <section className="empty-state">{uiText.noData}</section> : null}
 
       {!loading && !error && rows.length > 0 ? (
         <>
@@ -688,13 +623,6 @@ function App() {
                   <h2>{uiText.sections.brigadesTitle}</h2>
                   <p className="panel-description">{uiText.sections.brigadesDescription}</p>
                 </div>
-                {leadingBrigade ? (
-                  <div className="panel-highlight">
-                    <span>{uiText.sections.brigadesBestLabel}</span>
-                    <strong>{leadingBrigade.supervisorName}</strong>
-                    <p>{formatCompareMetric(leadingBrigade)}</p>
-                  </div>
-                ) : null}
               </div>
 
               <div className="brigade-legend">
