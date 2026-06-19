@@ -59,6 +59,9 @@ export type UiText = {
     reset: string
     saveJson: string
     import: string
+    applyToFile: string
+    applySuccess: string
+    applyErrorPrefix: string
     saved: string
   }
 }
@@ -67,7 +70,7 @@ export const defaultUiText: UiText = {
   brand: 'Legenda Analytics',
   heroTitle: 'Сравнение двух бригад по работе, idle, сну и продуктивности.',
   heroDescription:
-    'Верхний блок теперь ориентирован именно на сравнение бригад. Ниже можно провалиться в людей и отсортировать смены под нужный разрез.',
+    'Верхний блок ориентирован на сравнение бригад. Ниже можно провалиться в людей и отсортировать смены под нужный разрез.',
   compareTitle: 'Сравнение бригад',
   compareEmpty: 'Пока нет данных по бригадам.',
   compareDateFallback: 'Дата не выбрана',
@@ -122,10 +125,13 @@ export const defaultUiText: UiText = {
     close: 'Закрыть редактор',
     title: 'Редактор текстов',
     description:
-      'Меняй тексты прямо на странице, сохраняй черновик локально и выгружай JSON для фиксации в репозиторий.',
+      'Меняй тексты прямо на странице, сохраняй черновик локально, выгружай JSON и при необходимости записывай правки прямо в uiText.ts.',
     reset: 'Сбросить',
     saveJson: 'Сохранить JSON',
     import: 'Загрузить и применить JSON',
+    applyToFile: 'Применить в uiText.ts',
+    applySuccess: 'Правки записаны в uiText.ts',
+    applyErrorPrefix: 'Не удалось записать в uiText.ts:',
     saved: 'Черновик сохранен локально',
   },
 }

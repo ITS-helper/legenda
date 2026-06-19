@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { defaultUiText, type UiText } from './content/uiText'
 import { supabase } from './lib/supabase'
 import {
+  applyUiTextToSource,
   clearUiTextOverrides,
   deepMergeUiText,
   downloadUiTextJson,
@@ -110,6 +111,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorDraft, setEditorDraft] = useState<UiText>(defaultUiText)
+  const [editorStatus, setEditorStatus] = useState<string | null>(null)
 
   const uiText = useMemo(() => {
     const overrides = loadUiTextOverrides()
@@ -298,6 +300,7 @@ function App() {
   function handleResetText() {
     clearUiTextOverrides()
     setEditorDraft(defaultUiText)
+    setEditorStatus(null)
   }
 
   function handleExportText() {
@@ -314,7 +317,18 @@ function App() {
     const parsed = JSON.parse(raw) as UiText
     saveUiTextOverrides(parsed)
     setEditorDraft(parsed)
+    setEditorStatus(null)
     event.target.value = ''
+  }
+
+  async function handleApplyToFile() {
+    try {
+      await applyUiTextToSource(editorDraft)
+      setEditorStatus(uiText.editor.applySuccess)
+    } catch (applyError) {
+      const message = applyError instanceof Error ? applyError.message : String(applyError)
+      setEditorStatus(`${uiText.editor.applyErrorPrefix} ${message}`)
+    }
   }
 
   function renderEditorField(label: string, path: string, value: string) {
@@ -376,6 +390,9 @@ function App() {
               >
                 {uiText.editor.import}
               </button>
+              <button type="button" className="editor-action" onClick={handleApplyToFile}>
+                {uiText.editor.applyToFile}
+              </button>
               <input
                 ref={fileInputRef}
                 hidden
@@ -385,7 +402,7 @@ function App() {
               />
             </div>
           </div>
-          <p className="editor-saved">{uiText.editor.saved}</p>
+          <p className="editor-saved">{editorStatus ?? uiText.editor.saved}</p>
           <div className="editor-grid">
             {renderEditorField('Бренд', 'brand', editorDraft.brand)}
             {renderEditorField('Главный заголовок', 'heroTitle', editorDraft.heroTitle)}

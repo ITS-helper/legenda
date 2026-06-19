@@ -71,3 +71,20 @@ export function downloadUiTextJson(value: Partial<UiText>) {
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export async function applyUiTextToSource(value: UiText) {
+  const response = await fetch('/__ui-text/apply', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(value),
+  })
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(payload?.error ?? `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
