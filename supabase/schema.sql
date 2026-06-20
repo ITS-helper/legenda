@@ -134,7 +134,10 @@ select
   coalesce(sum(b.work_sec), 0) as work_sec_total,
   coalesce(sum(b.total_sec), 0) as total_sec_total,
   coalesce(sum(case when b.wear = 1 then b.total_sec else 0 end), 0) as wear_sec_total,
-  coalesce(sum(case when b.sleep = 1 then b.total_sec else 0 end), 0) as sleep_sec_total
+  coalesce(sum(case when b.sleep = 1 then b.total_sec else 0 end), 0) as sleep_sec_total,
+  -- ponytail: zona=1 is inferred as PV from current data; replace with a zone dictionary when available.
+  coalesce(sum(case when b.zona = '1' then b.total_sec else 0 end), 0) as pv_sec_total,
+  coalesce(sum(case when b.zona is not null and b.zona <> '1' then b.total_sec else 0 end), 0) as outside_pv_sec_total
 from analytics.shifts s
 join analytics.employees e on e.id = s.employee_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id

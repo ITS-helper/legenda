@@ -28,6 +28,14 @@ type ShiftMetricRow = {
   total_sec_total: number
   wear_sec_total: number
   sleep_sec_total: number
+  pv_sec_total?: number | null
+  outside_pv_sec_total?: number | null
+}
+
+type BleZoneRow = {
+  ww_shift_id: number
+  zona: string | null
+  total_sec: number
 }
 
 type BrigadeRow = {
@@ -37,10 +45,54 @@ type BrigadeRow = {
   idleSec: number
   totalSec: number
   sleepSec: number
+  pvSec: number
+  outsidePvSec: number
+  absenceSec: number
+  lateSec: number
+  earlyReturnSec: number
+  lateWorkers: number
+  earlyReturnWorkers: number
+  disciplineBadWorkers: number
+  lowActivityWorkers: number
+  lostActivitySec: number
   productivity: number
+  avgWorkSec: number
+  avgIdleSec: number
+  avgOutsidePvSec: number
+  avgAbsenceSec: number
+  avgLateSec: number
+  avgEarlyReturnSec: number
+  discipline: number
+  pvRatio: number
+  lowActivityShare: number
 }
 
-type CompareMetric = 'productivity' | 'work' | 'idle' | 'sleep'
+type BrigadeAccumulator = Omit<
+  BrigadeRow,
+  | 'productivity'
+  | 'avgWorkSec'
+  | 'avgIdleSec'
+  | 'avgOutsidePvSec'
+  | 'avgAbsenceSec'
+  | 'avgLateSec'
+  | 'avgEarlyReturnSec'
+  | 'discipline'
+  | 'pvRatio'
+  | 'lowActivityShare'
+>
+
+type CompareMetric =
+  | 'productivity'
+  | 'avgWork'
+  | 'avgIdle'
+  | 'pv'
+  | 'outsidePv'
+  | 'discipline'
+  | 'absence'
+  | 'lowActivityShare'
+  | 'lostActivity'
+  | 'avgLate'
+  | 'avgEarlyReturn'
 type SortDirection = 'asc' | 'desc'
 type SortKey =
   | 'full_name'
@@ -61,8 +113,74 @@ function formatPercent(value: number) {
   return `${Math.round(value)}%`
 }
 
+function getMetricWidth(value: number, max: number, higherIsBetter: boolean) {
+  if (max <= 0) {
+    return '10%'
+  }
+
+  const ratio = higherIsBetter ? value / max : 1 - value / max
+  return `${Math.max(ratio * 100, 10)}%`
+}
+
 function getRowProductivity(row: ShiftMetricRow) {
   return row.total_sec_total ? (row.work_sec_total / row.total_sec_total) * 100 : 0
+}
+
+function getRowAbsenceSec(row: ShiftMetricRow) {
+  return (row.late_seconds ?? 0) + (row.early_return_seconds ?? 0)
+}
+
+function getRowLostActivitySec(row: ShiftMetricRow) {
+  return Math.max(0, row.total_sec_total * 0.4 - row.work_sec_total)
+}
+
+async function loadBleZoneRows(reportDate: string) {
+  const allRows: BleZoneRow[] = []
+  const pageSize = 1000
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .schema('analytics')
+      .from('ble_minute_facts')
+      .select('ww_shift_id,zona,total_sec')
+      .eq('report_date', reportDate)
+      .range(from, from + pageSize - 1)
+
+    if (error) {
+      throw error
+    }
+
+    allRows.push(...((data ?? []) as BleZoneRow[]))
+
+    if (!data || data.length < pageSize) {
+      return allRows
+    }
+  }
+}
+
+function mergeZoneMetrics(rows: ShiftMetricRow[], zoneRows: BleZoneRow[]) {
+  const zoneMap = zoneRows.reduce((map, row) => {
+    const current = map.get(row.ww_shift_id) ?? { pvSec: 0, outsidePvSec: 0 }
+
+    // ponytail: zona=1 is inferred as PV from current data; replace with a zone dictionary when available.
+    if (row.zona === '1') {
+      current.pvSec += row.total_sec
+    } else if (row.zona !== null) {
+      current.outsidePvSec += row.total_sec
+    }
+
+    map.set(row.ww_shift_id, current)
+    return map
+  }, new Map<number, { pvSec: number; outsidePvSec: number }>())
+
+  return rows.map((row) => {
+    const zoneMetric = zoneMap.get(row.ww_shift_id)
+    return {
+      ...row,
+      pv_sec_total: row.pv_sec_total ?? zoneMetric?.pvSec ?? 0,
+      outside_pv_sec_total: row.outside_pv_sec_total ?? zoneMetric?.outsidePvSec ?? 0,
+    }
+  })
 }
 
 function buildBrigades(rows: ShiftMetricRow[], noSupervisorLabel: string) {
@@ -76,6 +194,16 @@ function buildBrigades(rows: ShiftMetricRow[], noSupervisorLabel: string) {
         idleSec: 0,
         totalSec: 0,
         sleepSec: 0,
+        pvSec: 0,
+        outsidePvSec: 0,
+        absenceSec: 0,
+        lateSec: 0,
+        earlyReturnSec: 0,
+        lateWorkers: 0,
+        earlyReturnWorkers: 0,
+        disciplineBadWorkers: 0,
+        lowActivityWorkers: 0,
+        lostActivitySec: 0,
       }
 
       entry.workers += 1
@@ -83,15 +211,39 @@ function buildBrigades(rows: ShiftMetricRow[], noSupervisorLabel: string) {
       entry.idleSec += row.idle_sec_total
       entry.totalSec += row.total_sec_total
       entry.sleepSec += row.sleep_sec_total
+      entry.pvSec += row.pv_sec_total ?? 0
+      entry.outsidePvSec += row.outside_pv_sec_total ?? 0
+      entry.absenceSec += getRowAbsenceSec(row)
+      entry.lateSec += row.late_seconds ?? 0
+      entry.earlyReturnSec += row.early_return_seconds ?? 0
+      entry.lateWorkers += row.late_seconds && row.late_seconds > 0 ? 1 : 0
+      entry.earlyReturnWorkers += row.early_return_seconds && row.early_return_seconds > 0 ? 1 : 0
+      entry.lowActivityWorkers += row.total_sec_total > 0 && getRowProductivity(row) < 40 ? 1 : 0
+      entry.lostActivitySec += getRowLostActivitySec(row)
+      entry.disciplineBadWorkers +=
+        (row.late_seconds && row.late_seconds > 0) || (row.early_return_seconds && row.early_return_seconds > 0)
+          ? 1
+          : 0
       map.set(key, entry)
       return map
-    }, new Map<string, Omit<BrigadeRow, 'productivity'>>()),
+    }, new Map<string, BrigadeAccumulator>()),
   )
     .map(([, value]) => ({
       ...value,
       productivity: value.totalSec ? (value.workSec / value.totalSec) * 100 : 0,
+      avgWorkSec: value.workers ? value.workSec / value.workers : 0,
+      avgIdleSec: value.workers ? value.idleSec / value.workers : 0,
+      avgOutsidePvSec: value.workers ? value.outsidePvSec / value.workers : 0,
+      avgAbsenceSec: value.workers ? value.absenceSec / value.workers : 0,
+      avgLateSec: value.workers ? value.lateSec / value.workers : 0,
+      avgEarlyReturnSec: value.workers ? value.earlyReturnSec / value.workers : 0,
+      discipline: value.workers
+        ? ((value.workers - value.disciplineBadWorkers) / value.workers) * 100
+        : 0,
+      pvRatio: value.totalSec ? (value.pvSec / value.totalSec) * 100 : 0,
+      lowActivityShare: value.workers ? (value.lowActivityWorkers / value.workers) * 100 : 0,
     }))
-    .sort((left, right) => right.productivity - left.productivity)
+    .sort((left, right) => right.discipline - left.discipline)
 }
 
 function App() {
@@ -99,7 +251,7 @@ function App() {
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedSupervisor, setSelectedSupervisor] = useState('all')
-  const [compareMetric, setCompareMetric] = useState<CompareMetric>('productivity')
+  const [compareMetric, setCompareMetric] = useState<CompareMetric>('discipline')
   const [sortKey, setSortKey] = useState<SortKey>('work_sec_total')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [showShiftTable, setShowShiftTable] = useState(true)
@@ -162,23 +314,30 @@ function App() {
       setLoading(true)
       setError(null)
 
-      const { data, error: metricsError } = await supabase
-        .schema('analytics')
-        .from('shift_daily_metrics')
-        .select('*')
-        .eq('report_date', selectedDate)
+      try {
+        const { data, error: metricsError } = await supabase
+          .schema('analytics')
+          .from('shift_daily_metrics')
+          .select('*')
+          .eq('report_date', selectedDate)
 
-      if (metricsError) {
+        if (metricsError) {
+          throw metricsError
+        }
+
         if (!cancelled) {
-          setError(metricsError.message)
+          const zoneRows = await loadBleZoneRows(selectedDate)
+          if (!cancelled) {
+            setRows(mergeZoneMetrics((data ?? []) as ShiftMetricRow[], zoneRows))
+            setLoading(false)
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          const message = loadError instanceof Error ? loadError.message : String(loadError)
+          setError(message)
           setLoading(false)
         }
-        return
-      }
-
-      if (!cancelled) {
-        setRows(data ?? [])
-        setLoading(false)
       }
     }
 
@@ -210,38 +369,32 @@ function App() {
   )
 
   function getCompareMetricValue(brigade: BrigadeRow) {
-    if (compareMetric === 'work') return brigade.workSec
-    if (compareMetric === 'idle') return brigade.idleSec
-    if (compareMetric === 'sleep') return brigade.sleepSec
+    if (compareMetric === 'avgWork') return brigade.avgWorkSec
+    if (compareMetric === 'avgIdle') return brigade.avgIdleSec
+    if (compareMetric === 'pv') return brigade.pvRatio
+    if (compareMetric === 'outsidePv') return brigade.avgOutsidePvSec
+    if (compareMetric === 'discipline') return brigade.discipline
+    if (compareMetric === 'absence') return brigade.avgAbsenceSec
+    if (compareMetric === 'lowActivityShare') return brigade.lowActivityShare
+    if (compareMetric === 'lostActivity') return brigade.lostActivitySec
+    if (compareMetric === 'avgLate') return brigade.avgLateSec
+    if (compareMetric === 'avgEarlyReturn') return brigade.avgEarlyReturnSec
     return brigade.productivity
   }
 
-  const compareBrigades = useMemo(
-    () =>
-      [...brigadeRows]
-        .sort((left, right) => {
-          const leftValue =
-            compareMetric === 'work'
-              ? left.workSec
-              : compareMetric === 'idle'
-                ? left.idleSec
-                : compareMetric === 'sleep'
-                  ? left.sleepSec
-                  : left.productivity
-          const rightValue =
-            compareMetric === 'work'
-              ? right.workSec
-              : compareMetric === 'idle'
-                ? right.idleSec
-                : compareMetric === 'sleep'
-                  ? right.sleepSec
-                  : right.productivity
+  const compareHigherIsBetter =
+    compareMetric === 'productivity' ||
+    compareMetric === 'avgWork' ||
+    compareMetric === 'pv' ||
+    compareMetric === 'discipline'
 
-          return rightValue - leftValue
-        })
-        .slice(0, 2),
-    [brigadeRows, compareMetric],
-  )
+  const compareBrigades = [...brigadeRows]
+    .sort((left, right) => {
+      const leftValue = getCompareMetricValue(left)
+      const rightValue = getCompareMetricValue(right)
+      return compareHigherIsBetter ? rightValue - leftValue : leftValue - rightValue
+    })
+    .slice(0, 2)
 
   const compareMetricMax = Math.max(...compareBrigades.map((brigade) => getCompareMetricValue(brigade)), 1)
 
@@ -358,17 +511,30 @@ function App() {
   }
 
   function getCompareMetricLabel() {
-    if (compareMetric === 'work') return uiText.compareMetrics.work
-    if (compareMetric === 'idle') return uiText.compareMetrics.idle
-    if (compareMetric === 'sleep') return uiText.compareMetrics.sleep
+    if (compareMetric === 'avgWork') return uiText.compareMetrics.avgWork
+    if (compareMetric === 'avgIdle') return uiText.compareMetrics.avgIdle
+    if (compareMetric === 'pv') return uiText.compareMetrics.pv
+    if (compareMetric === 'outsidePv') return uiText.compareMetrics.outsidePv
+    if (compareMetric === 'discipline') return uiText.compareMetrics.discipline
+    if (compareMetric === 'absence') return uiText.compareMetrics.absence
+    if (compareMetric === 'lowActivityShare') return uiText.compareMetrics.lowActivityShare
+    if (compareMetric === 'lostActivity') return uiText.compareMetrics.lostActivity
+    if (compareMetric === 'avgLate') return uiText.compareMetrics.avgLate
+    if (compareMetric === 'avgEarlyReturn') return uiText.compareMetrics.avgEarlyReturn
     return uiText.compareMetrics.productivity
   }
 
   function formatCompareMetric(brigade: BrigadeRow) {
-    if (compareMetric === 'productivity') return formatPercent(brigade.productivity)
-    if (compareMetric === 'work') return formatSeconds(brigade.workSec)
-    if (compareMetric === 'idle') return formatSeconds(brigade.idleSec)
-    return formatSeconds(brigade.sleepSec)
+    const value = getCompareMetricValue(brigade)
+    if (
+      compareMetric === 'productivity' ||
+      compareMetric === 'discipline' ||
+      compareMetric === 'pv' ||
+      compareMetric === 'lowActivityShare'
+    ) {
+      return formatPercent(value)
+    }
+    return formatSeconds(value)
   }
 
   function getSortLabel(label: string, key: SortKey) {
@@ -496,9 +662,16 @@ function App() {
                 onChange={(event) => setCompareMetric(event.target.value as CompareMetric)}
               >
                 <option value="productivity">{uiText.compareMetrics.productivity}</option>
-                <option value="work">{uiText.compareMetrics.work}</option>
-                <option value="idle">{uiText.compareMetrics.idle}</option>
-                <option value="sleep">{uiText.compareMetrics.sleep}</option>
+                <option value="avgWork">{uiText.compareMetrics.avgWork}</option>
+                <option value="avgIdle">{uiText.compareMetrics.avgIdle}</option>
+                <option value="pv">{uiText.compareMetrics.pv}</option>
+                <option value="outsidePv">{uiText.compareMetrics.outsidePv}</option>
+                <option value="discipline">{uiText.compareMetrics.discipline}</option>
+                <option value="absence">{uiText.compareMetrics.absence}</option>
+                <option value="lowActivityShare">{uiText.compareMetrics.lowActivityShare}</option>
+                <option value="lostActivity">{uiText.compareMetrics.lostActivity}</option>
+                <option value="avgLate">{uiText.compareMetrics.avgLate}</option>
+                <option value="avgEarlyReturn">{uiText.compareMetrics.avgEarlyReturn}</option>
               </select>
             </label>
           </div>
@@ -517,7 +690,11 @@ function App() {
             <div className="compare-layout">
               <div className="compare-chart compare-chart-rows">
                 {compareBrigades.map((brigade, index) => {
-                  const metricWidth = `${Math.max((getCompareMetricValue(brigade) / compareMetricMax) * 100, 10)}%`
+                  const metricWidth = getMetricWidth(
+                    getCompareMetricValue(brigade),
+                    compareMetricMax,
+                    compareHigherIsBetter,
+                  )
                   const workWidth = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
                   const idleWidth = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
                   const sleepWidth = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
@@ -535,11 +712,15 @@ function App() {
                       <div className="compare-bar-horizontal">
                         <div
                           className={
-                            compareMetric === 'idle'
+                            compareMetric === 'avgIdle' ||
+                            compareMetric === 'outsidePv' ||
+                            compareMetric === 'absence' ||
+                            compareMetric === 'lowActivityShare' ||
+                            compareMetric === 'lostActivity' ||
+                            compareMetric === 'avgLate' ||
+                            compareMetric === 'avgEarlyReturn'
                               ? 'compare-bar-idle compare-fill compare-fill-with-tooltip'
-                              : compareMetric === 'sleep'
-                                ? 'compare-bar-sleep compare-fill compare-fill-with-tooltip'
-                                : 'compare-bar-work compare-fill compare-fill-with-tooltip'
+                              : 'compare-bar-work compare-fill compare-fill-with-tooltip'
                           }
                           style={{ width: metricWidth }}
                           data-tooltip={getCompareMetricLabel()}
@@ -653,7 +834,7 @@ function App() {
                           {brigade.workers} {uiText.compareMeta.workersSuffix} {uiText.compareMeta.inReportSuffix}
                         </p>
                       </div>
-                      <div className="brigade-badge">{formatPercent(brigade.productivity)}</div>
+                      <div className="brigade-badge">{formatPercent(brigade.discipline)}</div>
                     </div>
 
                     <div className="brigade-stack">
@@ -678,20 +859,28 @@ function App() {
 
                     <div className="brigade-stats-grid">
                       <div className="brigade-stat">
-                        <span>{uiText.table.work}</span>
-                        <strong>{formatSeconds(brigade.workSec)}</strong>
+                        <span>{uiText.table.activity}</span>
+                        <strong>{formatPercent(brigade.productivity)}</strong>
                       </div>
                       <div className="brigade-stat">
-                        <span>{uiText.table.idle}</span>
-                        <strong>{formatSeconds(brigade.idleSec)}</strong>
+                        <span>{uiText.table.pv}</span>
+                        <strong>{formatPercent(brigade.pvRatio)}</strong>
                       </div>
                       <div className="brigade-stat">
-                        <span>{uiText.table.sleep}</span>
-                        <strong>{formatSeconds(brigade.sleepSec)}</strong>
+                        <span>{uiText.table.outsidePv}</span>
+                        <strong>{formatSeconds(brigade.avgOutsidePvSec)}</strong>
                       </div>
                       <div className="brigade-stat">
-                        <span>{uiText.table.total}</span>
-                        <strong>{formatSeconds(brigade.totalSec)}</strong>
+                        <span>{uiText.table.lowActivityShare}</span>
+                        <strong>{formatPercent(brigade.lowActivityShare)}</strong>
+                      </div>
+                      <div className="brigade-stat">
+                        <span>{uiText.table.lostActivity}</span>
+                        <strong>{formatSeconds(brigade.lostActivitySec)}</strong>
+                      </div>
+                      <div className="brigade-stat">
+                        <span>{uiText.table.absence}</span>
+                        <strong>{formatSeconds(brigade.avgAbsenceSec)}</strong>
                       </div>
                     </div>
                   </article>
