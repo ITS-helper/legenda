@@ -720,3 +720,67 @@
     flex-direction: column;
   }
 }
+.app-topbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.topbar-link {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(5, 14, 13, 0.45);
+  color: #d7e3de;
+  text-decoration: none;
+}
+
+.topbar-link-active {
+  color: #f4faf7;
+  background: rgba(183, 240, 208, 0.12);
+  border-color: rgba(183, 240, 208, 0.24);
+}
+
+.settings-page {
+  margin-top: 0;
+}
+
+.settings-head {
+  margin-bottom: 18px;
+}
+
+.settings-publish-row {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.settings-password-field {
+  min-width: 280px;
+  display: grid;
+  gap: 8px;
+  flex: 1 1 280px;
+}
+
+.settings-password-field span {
+  color: #9eb6ae;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-password-field input {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+}
+
+.settings-publish-button[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}

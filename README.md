@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# Legenda
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Фронтенд дашборда собирается Vite и публикуется на GitHub Pages. Данные аналитики и опубликованные настройки интерфейса хранятся в Supabase.
 
-Currently, two official plugins are available:
+## Что есть сейчас
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `#/` — основной дашборд
+- `#/settings` — отдельная страница настроек фронта
+- `supabase/site-settings.sql` — SQL для таблицы опубликованных настроек
+- `supabase/functions/site-settings/index.ts` — edge function для защищенной публикации настроек
 
-## React Compiler
+## Переменные окружения
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Пример лежит в `.env.example`.
 
-## Expanding the ESLint configuration
+Обязательные для фронта:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Обязательные для backend-части настроек:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SETTINGS_ADMIN_PASSWORD`
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Настройка Supabase для страницы настроек
+
+1. Применить схему аналитики, если она еще не применена:
+   - `supabase/schema.sql`
+2. Применить таблицу настроек:
+   - `supabase/site-settings.sql`
+3. Задеплоить edge function `site-settings`.
+4. Задать секрет edge function:
+   - `SETTINGS_ADMIN_PASSWORD`
+5. Убедиться, что фронтовой проект собран с `VITE_SUPABASE_URL` и `VITE_SUPABASE_PUBLISHABLE_KEY`.
+
+### Пример команд Supabase CLI
+
+```bash
+supabase login
+supabase link --project-ref <project-ref>
+supabase db push
+supabase db execute --file supabase/site-settings.sql
+supabase secrets set SETTINGS_ADMIN_PASSWORD=<strong-password>
+supabase functions deploy site-settings --no-verify-jwt
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Если `db push` уже применяет `schema.sql` через миграции в вашем процессе, достаточно отдельно выполнить только `site-settings.sql`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Как работает публикация настроек
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- Дашборд читает опубликованные тексты из `analytics.site_settings` по ключу `front_ui_text`.
+- Страница `#/settings` редактирует черновик в браузере.
+- Публикация идет через edge function с заголовком `x-settings-password`.
+- Пароль не хранится в собранном фронте, он проверяется на стороне Supabase function.
+
+## Деплой фронта
+
+GitHub Pages workflow уже использует:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+Для рабочего деплоя после добавления страницы настроек достаточно, чтобы эти secrets были заданы в GitHub Actions.
