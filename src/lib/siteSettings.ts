@@ -1,4 +1,5 @@
 ﻿import { defaultUiText, type UiText } from '../content/uiText'
+import { supabase } from './supabase'
 import { deepMergeUiText } from './uiTextEditor'
 
 export type SettingsScope = 'published' | 'draft'
@@ -29,6 +30,10 @@ type ReportUploadResponse = {
   reportDate?: string
   importedRows?: number
   error?: string
+  token?: string
+  signedUrl?: string
+  storageBucket?: string
+  storagePath?: string
 }
 
 type SettingsRequestOptions = {
@@ -36,6 +41,8 @@ type SettingsRequestOptions = {
   password?: string
   value?: UiText
 }
+
+const REPORT_UPLOAD_BUCKET = 'admin-imports'
 
 function normalizeUiText(value?: Partial<UiText> | null) {
   return deepMergeUiText(defaultUiText, value ?? undefined)
@@ -51,27 +58,9 @@ function getFunctionUrl(functionName: string) {
   return new URL(`/functions/v1/${functionName}`, import.meta.env.VITE_SUPABASE_URL).toString()
 }
 
-function readFileAsBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result !== 'string') {
-        reject(new Error('Не удалось прочитать файл'))
-        return
-      }
-
-      const commaIndex = result.indexOf(',')
-      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1))
-    }
-
-    reader.onerror = () => {
-      reject(reader.error ?? new Error('Не удалось прочитать файл'))
-    }
-
-    reader.readAsDataURL(file)
-  })
+function buildReportStoragePath(reportDate: string, fileName: string) {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-')
+  return `aa-ble/${reportDate}/${Date.now()}-${safeName}`
 }
 
 async function requestSiteSettings(scope: SettingsScope, options: SettingsRequestOptions = {}) {
@@ -104,6 +93,25 @@ async function requestSiteSettings(scope: SettingsScope, options: SettingsReques
   } satisfies SettingsSnapshot
 }
 
+async function requestReportUpload(payload: Record<string, unknown>, password: string) {
+  const response = await fetch(getFunctionUrl('admin-report-upload'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-settings-password': password.trim(),
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const body = (await response.json().catch(() => null)) as ReportUploadResponse | null
+
+  if (!response.ok) {
+    throw new Error(body?.error ?? `HTTP ${response.status}`)
+  }
+
+  return body
+}
+
 export async function loadPublishedUiText() {
   const snapshot = await requestSiteSettings('published')
   return snapshot.value
@@ -122,24 +130,48 @@ export function publishUiText(value: UiText, password: string) {
 }
 
 export async function uploadAaBleReport(reportDate: string, file: File, password: string) {
-  const response = await fetch(getFunctionUrl('admin-report-upload'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-settings-password': password.trim(),
-    },
-    body: JSON.stringify({
+  const storagePath = buildReportStoragePath(reportDate, file.name)
+  const signPayload = await requestReportUpload(
+    {
+      action: 'sign-upload',
       reportDate,
       fileName: file.name,
-      fileBase64: await readFileAsBase64(file),
-    }),
-  })
+      storageBucket: REPORT_UPLOAD_BUCKET,
+      storagePath,
+    },
+    password,
+  )
 
-  const payload = (await response.json().catch(() => null)) as ReportUploadResponse | null
-
-  if (!response.ok || !payload?.ok || !payload.batchId || !payload.reportDate || typeof payload.importedRows !== 'number') {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
+  if (!signPayload?.token || !signPayload.storageBucket || !signPayload.storagePath) {
+    throw new Error('Не удалось получить подписанную загрузку для файла')
   }
 
-  return payload as ReportUploadResult
+  const { error: uploadError } = await supabase.storage
+    .from(signPayload.storageBucket)
+    .uploadToSignedUrl(signPayload.storagePath, signPayload.token, file, {
+      cacheControl: '60',
+      contentType: file.type || 'application/octet-stream',
+      upsert: true,
+    })
+
+  if (uploadError) {
+    throw new Error(`Не удалось загрузить файл в Storage: ${uploadError.message}`)
+  }
+
+  const importPayload = await requestReportUpload(
+    {
+      action: 'import',
+      reportDate,
+      fileName: file.name,
+      storageBucket: signPayload.storageBucket,
+      storagePath: signPayload.storagePath,
+    },
+    password,
+  )
+
+  if (!importPayload?.ok || !importPayload.batchId || !importPayload.reportDate || typeof importPayload.importedRows !== 'number') {
+    throw new Error(importPayload?.error ?? 'Импорт не вернул ожидаемый результат')
+  }
+
+  return importPayload as ReportUploadResult
 }
