@@ -1,6 +1,11 @@
-import { useRef, useState } from 'react'
+﻿import { useRef, useState } from 'react'
 import { defaultUiText, type UiText } from '../content/uiText'
-import { loadUiTextSnapshot, saveDraftUiText, type SettingsSnapshot } from '../lib/siteSettings'
+import {
+  loadUiTextSnapshot,
+  saveDraftUiText,
+  type SettingsSnapshot,
+  uploadAaBleReport,
+} from '../lib/siteSettings'
 import { deepMergeUiText, downloadUiTextJson } from '../lib/uiTextEditor'
 
 type SettingsPageProps = {
@@ -35,13 +40,17 @@ function formatTimestamp(value: string | null) {
 
 export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const reportFileInputRef = useRef<HTMLInputElement | null>(null)
   const [draftText, setDraftText] = useState(() => formatUiText(initialUiText))
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
-  const [busyAction, setBusyAction] = useState<'load' | 'save' | 'publish' | null>(null)
+  const [busyAction, setBusyAction] = useState<'load' | 'save' | 'publish' | 'upload-report' | null>(null)
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
   const [publishedUpdatedAt, setPublishedUpdatedAt] = useState<string | null>(null)
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [reportFile, setReportFile] = useState<File | null>(null)
+  const [reportStatus, setReportStatus] = useState<string | null>(null)
 
   function setEditorText(nextText: string) {
     setDraftText(nextText)
@@ -157,6 +166,35 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
     }
   }
 
+  async function handleReportUploadClick() {
+    try {
+      const adminPassword = requirePassword()
+
+      if (!reportDate) {
+        throw new Error('Выберите дату отчета')
+      }
+
+      if (!reportFile) {
+        throw new Error('Выберите файл AA_BLE.xls или AA_BLE.xlsx')
+      }
+
+      setBusyAction('upload-report')
+      setReportStatus(null)
+      const result = await uploadAaBleReport(reportDate, reportFile, adminPassword)
+      setReportStatus(`Отчет загружен: ${result.importedRows} строк за ${result.reportDate}`)
+      setReportFile(null)
+
+      if (reportFileInputRef.current) {
+        reportFileInputRef.current.value = ''
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setReportStatus(`Не удалось загрузить отчет: ${message}`)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   return (
     <section className="editor-panel settings-page">
       <div className="editor-panel-head settings-head">
@@ -199,7 +237,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
           <article className="settings-card">
             <span>Опубликовано</span>
             <strong>{formatTimestamp(publishedUpdatedAt)}</strong>
-            <p>Эта версия читает дашборд.</p>
+            <p>Эта версия читается дашбордом.</p>
           </article>
           <article className="settings-card">
             <span>Черновик</span>
@@ -220,7 +258,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Нужен для загрузки черновика, сохранения и публикации"
+              placeholder="Нужен для загрузки черновика, сохранения, публикации и импорта отчетов"
             />
           </label>
           <div className="settings-inline-actions">
@@ -254,6 +292,47 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
         <p className={`editor-saved${validationError ? ' settings-status-error' : ''}`}>
           {validationError ?? status ?? 'Черновик пока не изменялся'}
         </p>
+
+        <section className="settings-upload-card">
+          <div className="settings-upload-head">
+            <div>
+              <p className="panel-kicker">Импорт отчетов</p>
+              <h3>AA_BLE за другой день</h3>
+              <p>
+                Загружает Sheet2 из файла <strong>AA_BLE.xls/.xlsx</strong> за выбранную дату и перезаписывает BLE-данные
+                этого дня.
+              </p>
+            </div>
+          </div>
+          <div className="settings-upload-grid">
+            <label className="settings-password-field">
+              <span>Дата отчета</span>
+              <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
+            </label>
+            <label className="settings-password-field">
+              <span>Файл отчета</span>
+              <input
+                ref={reportFileInputRef}
+                type="file"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) => setReportFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <div className="settings-upload-actions">
+              <button
+                type="button"
+                className="editor-action settings-publish-button"
+                onClick={handleReportUploadClick}
+                disabled={busyAction !== null}
+              >
+                {busyAction === 'upload-report' ? 'Загружаем отчет...' : 'Загрузить AA_BLE'}
+              </button>
+            </div>
+          </div>
+          <p className={`editor-saved${reportStatus?.startsWith('Не удалось') ? ' settings-status-error' : ''}`}>
+            {reportStatus ?? 'Подходит для ручной догрузки архивных BLE-отчетов по одной дате.'}
+          </p>
+        </section>
 
         <label className="settings-json-field">
           <span>JSON настроек интерфейса</span>
