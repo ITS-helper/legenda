@@ -1,44 +1,92 @@
 import { useRef, useState } from 'react'
 import { defaultUiText, type UiText } from '../content/uiText'
+import { loadUiTextSnapshot, saveDraftUiText, type SettingsSnapshot } from '../lib/siteSettings'
 import { deepMergeUiText, downloadUiTextJson } from '../lib/uiTextEditor'
 
 type SettingsPageProps = {
   initialUiText: UiText
-  onPublish: (value: UiText, password: string) => Promise<void>
+  onPublish: (value: UiText, password: string) => Promise<SettingsSnapshot>
 }
 
-function setValueAtPath(source: UiText, path: string, value: string) {
-  const next = structuredClone(source)
-  const keys = path.split('.')
-  let target: Record<string, unknown> = next as unknown as Record<string, unknown>
+function formatUiText(value: UiText) {
+  return JSON.stringify(value, null, 2)
+}
 
-  for (let index = 0; index < keys.length - 1; index += 1) {
-    target = target[keys[index]] as Record<string, unknown>
+function parseUiTextDraft(raw: string) {
+  const parsed = JSON.parse(raw) as Partial<UiText>
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('JSON должен быть объектом')
   }
 
-  target[keys[keys.length - 1]] = value
-  return next
+  return deepMergeUiText(defaultUiText, parsed)
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) {
+    return 'Еще не сохранено'
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [draft, setDraft] = useState<UiText>(initialUiText)
+  const [draftText, setDraftText] = useState(() => formatUiText(initialUiText))
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [busyAction, setBusyAction] = useState<'load' | 'save' | 'publish' | null>(null)
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
+  const [publishedUpdatedAt, setPublishedUpdatedAt] = useState<string | null>(null)
 
-  function handleUiTextChange(path: string, value: string) {
-    setDraft((current) => setValueAtPath(current, path, value))
+  function setEditorText(nextText: string) {
+    setDraftText(nextText)
+    setStatus(null)
+
+    try {
+      parseUiTextDraft(nextText)
+      setValidationError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setValidationError(message)
+    }
+  }
+
+  function requirePassword() {
+    if (password.trim()) {
+      return password.trim()
+    }
+
+    throw new Error('Нужен пароль админки')
+  }
+
+  function readDraftFromEditor() {
+    const parsed = parseUiTextDraft(draftText)
+    setValidationError(null)
+    return parsed
   }
 
   function handleReset() {
-    setDraft(defaultUiText)
-    setStatus(null)
+    setEditorText(formatUiText(defaultUiText))
   }
 
   function handleRestorePublished() {
-    setDraft(initialUiText)
-    setStatus(null)
+    setEditorText(formatUiText(initialUiText))
+  }
+
+  function handleFormatJson() {
+    try {
+      setEditorText(formatUiText(readDraftFromEditor()))
+      setStatus('JSON отформатирован')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setValidationError(message)
+      setStatus(null)
+    }
   }
 
   async function handleImportText(event: React.ChangeEvent<HTMLInputElement>) {
@@ -47,40 +95,66 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       return
     }
 
-    const raw = await file.text()
-    const parsed = JSON.parse(raw) as Partial<UiText>
-    setDraft(deepMergeUiText(defaultUiText, parsed))
-    setStatus('JSON загружен в черновик')
-    event.target.value = ''
+    try {
+      const raw = await file.text()
+      const parsed = parseUiTextDraft(raw)
+      setEditorText(formatUiText(parsed))
+      setStatus('JSON загружен в черновик')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setValidationError(message)
+      setStatus(null)
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  async function handleLoadDraftClick() {
+    try {
+      setBusyAction('load')
+      setStatus(null)
+      const snapshot = await loadUiTextSnapshot('draft', requirePassword())
+      setEditorText(formatUiText(snapshot.value))
+      setDraftUpdatedAt(snapshot.updatedAt)
+      setStatus('Черновик загружен с сервера')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setStatus(`Не удалось загрузить черновик: ${message}`)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSaveDraftClick() {
+    try {
+      setBusyAction('save')
+      setStatus(null)
+      const snapshot = await saveDraftUiText(readDraftFromEditor(), requirePassword())
+      setDraftUpdatedAt(snapshot.updatedAt)
+      setStatus('Черновик сохранен в Supabase')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setStatus(`Не удалось сохранить черновик: ${message}`)
+    } finally {
+      setBusyAction(null)
+    }
   }
 
   async function handlePublishClick() {
-    if (!password.trim()) {
-      setStatus('Нужен пароль публикации')
-      return
-    }
-
-    setSaving(true)
-    setStatus(null)
-
     try {
-      await onPublish(draft, password)
+      setBusyAction('publish')
+      setStatus(null)
+      const snapshot = await onPublish(readDraftFromEditor(), requirePassword())
+      setPublishedUpdatedAt(snapshot.updatedAt)
+      setDraftUpdatedAt(snapshot.updatedAt)
+      setEditorText(formatUiText(snapshot.value))
       setStatus('Настройки опубликованы')
-    } catch (publishError) {
-      const message = publishError instanceof Error ? publishError.message : String(publishError)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
       setStatus(`Не удалось опубликовать настройки: ${message}`)
     } finally {
-      setSaving(false)
+      setBusyAction(null)
     }
-  }
-
-  function renderEditorField(label: string, path: string, value: string) {
-    return (
-      <label className="editor-field" key={path}>
-        <span>{label}</span>
-        <textarea value={value} onChange={(event) => handleUiTextChange(path, event.target.value)} />
-      </label>
-    )
   }
 
   return (
@@ -90,7 +164,8 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
           <p className="panel-kicker">Админка фронта</p>
           <h2>Настройки сайта</h2>
           <p>
-            Здесь редактируются опубликованные тексты интерфейса. Изменения сохраняются в Supabase и потом читаются основным дашбордом.
+            Здесь редактируется весь JSON интерфейса. Можно держать черновик в Supabase, возвращаться к
+            опубликованной версии и выпускать изменения отдельно.
           </p>
         </div>
         <div className="editor-actions">
@@ -100,7 +175,10 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
           <button type="button" className="editor-action" onClick={handleReset}>
             Сбросить к дефолту
           </button>
-          <button type="button" className="editor-action" onClick={() => downloadUiTextJson(draft)}>
+          <button type="button" className="editor-action" onClick={handleFormatJson}>
+            Форматировать JSON
+          </button>
+          <button type="button" className="editor-action" onClick={() => downloadUiTextJson(readDraftFromEditor())}>
             Скачать JSON
           </button>
           <button type="button" className="editor-action" onClick={() => fileInputRef.current?.click()}>
@@ -116,40 +194,75 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
         </div>
       </div>
 
-      <div className="settings-publish-row">
-        <label className="settings-password-field">
-          <span>Пароль публикации</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Вводится только для публикации"
+      <div className="settings-layout">
+        <div className="settings-summary-grid">
+          <article className="settings-card">
+            <span>Опубликовано</span>
+            <strong>{formatTimestamp(publishedUpdatedAt)}</strong>
+            <p>Эта версия читает дашборд.</p>
+          </article>
+          <article className="settings-card">
+            <span>Черновик</span>
+            <strong>{formatTimestamp(draftUpdatedAt)}</strong>
+            <p>Загружается и сохраняется по паролю админки.</p>
+          </article>
+          <article className="settings-card">
+            <span>Гибкость</span>
+            <strong>{Object.keys(defaultUiText).length} верхних секций</strong>
+            <p>Редактируется весь JSON, а не только заранее прошитые поля.</p>
+          </article>
+        </div>
+
+        <div className="settings-publish-row">
+          <label className="settings-password-field">
+            <span>Пароль админки</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Нужен для загрузки черновика, сохранения и публикации"
+            />
+          </label>
+          <div className="settings-inline-actions">
+            <button
+              type="button"
+              className="editor-action"
+              onClick={handleLoadDraftClick}
+              disabled={busyAction !== null}
+            >
+              {busyAction === 'load' ? 'Загружаем...' : 'Загрузить черновик'}
+            </button>
+            <button
+              type="button"
+              className="editor-action"
+              onClick={handleSaveDraftClick}
+              disabled={busyAction !== null}
+            >
+              {busyAction === 'save' ? 'Сохраняем...' : 'Сохранить черновик'}
+            </button>
+            <button
+              type="button"
+              className="editor-action settings-publish-button"
+              onClick={handlePublishClick}
+              disabled={busyAction !== null}
+            >
+              {busyAction === 'publish' ? 'Публикуем...' : 'Опубликовать'}
+            </button>
+          </div>
+        </div>
+
+        <p className={`editor-saved${validationError ? ' settings-status-error' : ''}`}>
+          {validationError ?? status ?? 'Черновик пока не изменялся'}
+        </p>
+
+        <label className="settings-json-field">
+          <span>JSON настроек интерфейса</span>
+          <textarea
+            value={draftText}
+            onChange={(event) => setEditorText(event.target.value)}
+            spellCheck={false}
           />
         </label>
-        <button
-          type="button"
-          className="editor-action settings-publish-button"
-          onClick={handlePublishClick}
-          disabled={saving}
-        >
-          {saving ? 'Публикуем...' : 'Опубликовать'}
-        </button>
-      </div>
-
-      <p className="editor-saved">{status ?? 'Черновик еще не опубликован'}</p>
-
-      <div className="editor-grid">
-        {renderEditorField('Бренд', 'brand', draft.brand)}
-        {renderEditorField('Главный заголовок', 'heroTitle', draft.heroTitle)}
-        {renderEditorField('Описание', 'heroDescription', draft.heroDescription)}
-        {renderEditorField('Заголовок сравнения', 'compareTitle', draft.compareTitle)}
-        {renderEditorField('Пустое состояние сравнения', 'compareEmpty', draft.compareEmpty)}
-        {renderEditorField('Фильтр: дата', 'filters.date', draft.filters.date)}
-        {renderEditorField('Фильтр: руководитель', 'filters.supervisor', draft.filters.supervisor)}
-        {renderEditorField('Фильтр: метрика', 'filters.compareMetric', draft.filters.compareMetric)}
-        {renderEditorField('Фильтр: все бригады', 'filters.allBrigades', draft.filters.allBrigades)}
-        {renderEditorField('Секция: бригады', 'sections.brigadesTitle', draft.sections.brigadesTitle)}
-        {renderEditorField('Секция: смены', 'sections.shiftsTitle', draft.sections.shiftsTitle)}
       </div>
     </section>
   )

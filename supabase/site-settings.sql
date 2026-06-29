@@ -24,6 +24,10 @@ insert into analytics.site_settings (key, value)
 values ('front_ui_text', '{}'::jsonb)
 on conflict (key) do nothing;
 
+insert into analytics.site_settings (key, value)
+values ('front_ui_text_draft', '{}'::jsonb)
+on conflict (key) do nothing;
+
 revoke all on analytics.site_settings from anon, authenticated;
 grant select on analytics.site_settings to anon, authenticated;
 grant select, insert, update, delete on analytics.site_settings to service_role;

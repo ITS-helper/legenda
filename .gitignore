@@ -31,3 +31,4 @@ dist-ssr
 *.db
 .beads-credential-key
 .beads/proxieddb/
+supabase/.temp/

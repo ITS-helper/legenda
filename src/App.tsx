@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { defaultUiText, type UiText } from './content/uiText'
-import { loadPublishedUiText, publishUiText } from './lib/siteSettings'
+import { loadPublishedUiText, publishUiText, type SettingsSnapshot } from './lib/siteSettings'
 import { DashboardPage } from './pages/DashboardPage'
 import { SettingsPage } from './pages/SettingsPage'
 import './App.css'
@@ -58,9 +58,10 @@ function App() {
     }
   }, [])
 
-  async function handlePublish(next: UiText, password: string) {
+  async function handlePublish(next: UiText, password: string): Promise<SettingsSnapshot> {
     const saved = await publishUiText(next, password)
-    setUiText(saved)
+    setUiText(saved.value)
+    return saved
   }
 
   return (
@@ -70,7 +71,7 @@ function App() {
           Дашборд
         </a>
         <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
-          Настройки фронта
+          Админка фронта
         </a>
       </header>
 

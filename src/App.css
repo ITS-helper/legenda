@@ -784,3 +784,83 @@
   opacity: 0.6;
   cursor: wait;
 }
+
+.settings-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.settings-card {
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-card span,
+.settings-json-field span {
+  color: #9eb6ae;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #f4faf7;
+}
+
+.settings-card p {
+  margin-top: 8px;
+  color: #d7e3de;
+}
+
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-json-field {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-json-field textarea {
+  min-height: 460px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(5, 14, 13, 0.82);
+  color: #f4faf7;
+  font: 14px/1.55 Consolas, 'Courier New', monospace;
+  resize: vertical;
+}
+
+.settings-status-error {
+  color: #ffd7d7;
+}
+
+.editor-action[disabled],
+.panel-toggle[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+@media (max-width: 768px) {
+  .settings-inline-actions {
+    width: 100%;
+  }
+
+  .settings-inline-actions .editor-action {
+    flex: 1 1 100%;
+  }
+}
