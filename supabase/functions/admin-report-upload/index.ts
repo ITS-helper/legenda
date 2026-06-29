@@ -65,6 +65,25 @@ function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, { status, headers: corsHeaders })
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object') {
+    const message = Reflect.get(error, 'message')
+    const details = Reflect.get(error, 'details')
+    const hint = Reflect.get(error, 'hint')
+    const code = Reflect.get(error, 'code')
+    const parts = [code, message, details, hint].filter((part) => typeof part === 'string' && part)
+    if (parts.length > 0) return parts.join(' | ')
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return String(error)
+    }
+  }
+  return String(error)
+}
+
 function isAuthorized(request: Request) {
   const expectedPassword = Deno.env.get('SETTINGS_ADMIN_PASSWORD')
   const requestPassword = request.headers.get('x-settings-password')
@@ -437,7 +456,8 @@ Deno.serve(async (request) => {
       importedFaceRows: Array.isArray(faceRows) ? faceRows.length : 0,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = getErrorMessage(error)
     return jsonResponse({ error: message }, 500)
   }
 })
+

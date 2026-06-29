@@ -38,6 +38,20 @@ function formatTimestamp(value: string | null) {
   }).format(new Date(value))
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object') {
+    const message = Reflect.get(error, 'message')
+    if (typeof message === 'string') return message
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return String(error)
+    }
+  }
+  return String(error)
+}
 export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reportFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -62,7 +76,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       parseUiTextDraft(nextText)
       setValidationError(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setValidationError(message)
     }
   }
@@ -94,7 +108,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       setEditorText(formatUiText(readDraftFromEditor()))
       setStatus('JSON отформатирован')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setValidationError(message)
       setStatus(null)
     }
@@ -112,7 +126,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       setEditorText(formatUiText(parsed))
       setStatus('JSON загружен в черновик')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setValidationError(message)
       setStatus(null)
     } finally {
@@ -129,7 +143,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       setDraftUpdatedAt(snapshot.updatedAt)
       setStatus('Черновик загружен с сервера')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setStatus(`Не удалось загрузить черновик: ${message}`)
     } finally {
       setBusyAction(null)
@@ -144,7 +158,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       setDraftUpdatedAt(snapshot.updatedAt)
       setStatus('Черновик сохранен в Supabase')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setStatus(`Не удалось сохранить черновик: ${message}`)
     } finally {
       setBusyAction(null)
@@ -161,7 +175,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
       setEditorText(formatUiText(snapshot.value))
       setStatus('Настройки опубликованы')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setStatus(`Не удалось опубликовать настройки: ${message}`)
     } finally {
       setBusyAction(null)
@@ -198,7 +212,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
         faceFileInputRef.current.value = ''
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = getErrorMessage(error)
       setReportStatus(`Не удалось загрузить отчет: ${message}`)
     } finally {
       setBusyAction(null)
@@ -365,3 +379,6 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
     </section>
   )
 }
+
+
+
