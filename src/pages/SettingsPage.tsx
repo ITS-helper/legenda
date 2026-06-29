@@ -41,6 +41,7 @@ function formatTimestamp(value: string | null) {
 export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reportFileInputRef = useRef<HTMLInputElement | null>(null)
+  const faceFileInputRef = useRef<HTMLInputElement | null>(null)
   const [draftText, setDraftText] = useState(() => formatUiText(initialUiText))
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -50,6 +51,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const [publishedUpdatedAt, setPublishedUpdatedAt] = useState<string | null>(null)
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reportFile, setReportFile] = useState<File | null>(null)
+  const [faceFile, setFaceFile] = useState<File | null>(null)
   const [reportStatus, setReportStatus] = useState<string | null>(null)
 
   function setEditorText(nextText: string) {
@@ -180,12 +182,20 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
 
       setBusyAction('upload-report')
       setReportStatus(null)
-      const result = await uploadAaBleReport(reportDate, reportFile, adminPassword)
-      setReportStatus(`Отчет загружен: ${result.importedRows} строк за ${result.reportDate}`)
+      const result = await uploadAaBleReport(reportDate, reportFile, adminPassword, faceFile)
+      if (result.importedFaceRows && result.importedFaceRows > 0) {
+        setReportStatus(`Загружены faceID + AA_BLE: ${result.importedFaceRows} смен и ${result.importedBleRows ?? result.importedRows} BLE-строк за ${result.reportDate}`)
+      } else {
+        setReportStatus(`Загружен только AA_BLE: ${result.importedRows} строк за ${result.reportDate}`)
+      }
       setReportFile(null)
+      setFaceFile(null)
 
       if (reportFileInputRef.current) {
         reportFileInputRef.current.value = ''
+      }
+      if (faceFileInputRef.current) {
+        faceFileInputRef.current.value = ''
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -297,10 +307,10 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
           <div className="settings-upload-head">
             <div>
               <p className="panel-kicker">Импорт отчетов</p>
-              <h3>AA_BLE за другой день</h3>
+              <h3>Архивная загрузка за день</h3>
               <p>
-                Загружает Sheet2 из файла <strong>AA_BLE.xls/.xlsx</strong> за выбранную дату и перезаписывает BLE-данные
-                этого дня.
+                Загрузи <strong>AA_BLE</strong> обязательно. Для имен, бригадиров и нормальных смен на дашборде добавь
+                еще и <strong>faceID</strong> за ту же дату.
               </p>
             </div>
           </div>
@@ -310,12 +320,21 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
               <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
             </label>
             <label className="settings-password-field">
-              <span>Файл отчета</span>
+              <span>AA_BLE</span>
               <input
                 ref={reportFileInputRef}
                 type="file"
                 accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(event) => setReportFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label className="settings-password-field">
+              <span>faceID (необязательно)</span>
+              <input
+                ref={faceFileInputRef}
+                type="file"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) => setFaceFile(event.target.files?.[0] ?? null)}
               />
             </label>
             <div className="settings-upload-actions">
@@ -325,12 +344,12 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
                 onClick={handleReportUploadClick}
                 disabled={busyAction !== null}
               >
-                {busyAction === 'upload-report' ? 'Загружаем отчет...' : 'Загрузить AA_BLE'}
+                {busyAction === 'upload-report' ? 'Загружаем отчет...' : 'Загрузить отчеты'}
               </button>
             </div>
           </div>
           <p className={`editor-saved${reportStatus?.startsWith('Не удалось') ? ' settings-status-error' : ''}`}>
-            {reportStatus ?? 'Подходит для ручной догрузки архивных BLE-отчетов по одной дате.'}
+            {reportStatus ?? 'Если загрузить только AA_BLE, дата появится, но без полноценных имен и бригадиров.'}
           </p>
         </section>
 

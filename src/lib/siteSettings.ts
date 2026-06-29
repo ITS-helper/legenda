@@ -15,6 +15,8 @@ export type ReportUploadResult = {
   batchId: string
   reportDate: string
   importedRows: number
+  importedFaceRows?: number
+  importedBleRows?: number
 }
 
 type SiteSettingsResponse = {
@@ -29,6 +31,8 @@ type ReportUploadResponse = {
   batchId?: string
   reportDate?: string
   importedRows?: number
+  importedFaceRows?: number
+  importedBleRows?: number
   error?: string
 }
 
@@ -36,6 +40,30 @@ type SettingsRequestOptions = {
   method?: 'GET' | 'PUT' | 'POST'
   password?: string
   value?: UiText
+}
+
+type FaceRow = {
+  report_date: string | null
+  ww_shift_id: number
+  employee_number: string | null
+  full_name: string | null
+  object_name: string | null
+  customer_tab_number: string | null
+  area_name: string | null
+  supervisor_name: string | null
+  profession: string | null
+  schedule_name: string | null
+  planned_start_at: string | null
+  planned_end_at: string | null
+  watch_received_at: string | null
+  watch_returned_at: string | null
+  on_watch_duration_text: string | null
+  on_watch_duration_seconds: number
+  shift_over_18_hours: boolean | null
+  late_seconds: number
+  early_return_seconds: number
+  tech_session_ids: number[]
+  calc_hash: string | null
 }
 
 type BleRow = {
@@ -103,6 +131,13 @@ function normalizeNumeric(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
+function normalizeBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (value === 'True' || value === 'true' || value === 1) return true
+  if (value === 'False' || value === 'false' || value === 0) return false
+  return null
+}
+
 function parseDateValue(value: unknown) {
   if (!value) {
     return null
@@ -129,6 +164,17 @@ function parseReportDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
 }
 
+function parseSessionIds(value: unknown) {
+  const text = normalizeText(value)
+  if (!text) return []
+
+  return text
+    .replace(/[{}]/g, '')
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((part) => Number.isFinite(part))
+}
+
 function parseBleTags(value: unknown) {
   const text = normalizeText(value)
   if (!text || text === 'None') {
@@ -151,20 +197,57 @@ function pickSheet(workbook: XLSX.WorkBook) {
   return firstSheetName ? workbook.Sheets[firstSheetName] : null
 }
 
-async function parseAaBleFile(file: File) {
+async function readSheetRows(file: File) {
   const bytes = await file.arrayBuffer()
   const workbook = XLSX.read(bytes, { type: 'array', cellDates: true })
   const sheet = pickSheet(workbook)
 
   if (!sheet) {
-    throw new Error('В файле не найден ни один лист')
+    throw new Error(`В файле ${file.name} не найден ни один лист`)
   }
 
-  const rows = XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(sheet, {
+  return XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(sheet, {
     header: 1,
     defval: null,
     raw: true,
   })
+}
+
+async function parseFaceIdFile(file: File) {
+  const rows = await readSheetRows(file)
+
+  return rows
+    .slice(1)
+    .filter((row) => row.some((value) => value !== null && value !== ''))
+    .map(
+      (row): FaceRow => ({
+        report_date: parseReportDate(row[0]),
+        ww_shift_id: Number(row[1]),
+        employee_number: normalizeText(row[2]),
+        full_name: normalizeText(row[3]),
+        object_name: normalizeText(row[4]),
+        customer_tab_number: normalizeText(row[5]),
+        area_name: normalizeText(row[6]),
+        supervisor_name: normalizeText(row[7]),
+        profession: normalizeText(row[8]),
+        schedule_name: normalizeText(row[9]),
+        planned_start_at: parseDateValue(row[10]),
+        planned_end_at: parseDateValue(row[11]),
+        watch_received_at: parseDateValue(row[12]),
+        watch_returned_at: parseDateValue(row[13]),
+        on_watch_duration_text: normalizeText(row[14]),
+        on_watch_duration_seconds: normalizeInteger(row[15]),
+        shift_over_18_hours: normalizeBoolean(row[16]),
+        late_seconds: normalizeInteger(row[17]),
+        early_return_seconds: normalizeInteger(row[18]),
+        tech_session_ids: parseSessionIds(row[19]),
+        calc_hash: normalizeText(row[20]),
+      }),
+    )
+}
+
+async function parseAaBleFile(file: File) {
+  const rows = await readSheetRows(file)
 
   return rows
     .slice(1)
@@ -194,6 +277,13 @@ async function parseAaBleFile(file: File) {
         event_at: parseDateValue(row[20]),
       }),
     )
+}
+
+function assertSingleReportDate(rows: { report_date: string | null }[], reportDate: string, label: string) {
+  const fileDates = [...new Set(rows.map((row) => row.report_date).filter(Boolean))]
+  if (fileDates.length !== 1 || fileDates[0] !== reportDate) {
+    throw new Error(`Дата в ${label} не совпадает с выбранной. В файле: ${fileDates[0] ?? 'не определена'}, выбрано: ${reportDate}`)
+  }
 }
 
 async function requestSiteSettings(scope: SettingsScope, options: SettingsRequestOptions = {}) {
@@ -243,16 +333,24 @@ export function publishUiText(value: UiText, password: string) {
   return requestSiteSettings('published', { method: 'POST', password, value })
 }
 
-export async function uploadAaBleReport(reportDate: string, file: File, password: string) {
-  const rows = await parseAaBleFile(file)
+export async function uploadAaBleReport(reportDate: string, bleFile: File, password: string, faceFile?: File | null) {
+  const [rows, faceRows] = await Promise.all([
+    parseAaBleFile(bleFile),
+    faceFile ? parseFaceIdFile(faceFile) : Promise.resolve(null),
+  ])
 
   if (rows.length === 0) {
-    throw new Error('Файл не содержит строк для импорта')
+    throw new Error('AA_BLE не содержит строк для импорта')
   }
 
-  const fileDates = [...new Set(rows.map((row) => row.report_date).filter(Boolean))]
-  if (fileDates.length !== 1 || fileDates[0] !== reportDate) {
-    throw new Error(`Дата в файле не совпадает с выбранной. В файле: ${fileDates[0] ?? 'не определена'}, выбрано: ${reportDate}`)
+  assertSingleReportDate(rows, reportDate, 'AA_BLE')
+
+  if (faceRows) {
+    if (faceRows.length === 0) {
+      throw new Error('faceID не содержит строк для импорта')
+    }
+
+    assertSingleReportDate(faceRows, reportDate, 'faceID')
   }
 
   const response = await fetch(getFunctionUrl('admin-report-upload'), {
@@ -263,8 +361,10 @@ export async function uploadAaBleReport(reportDate: string, file: File, password
     },
     body: JSON.stringify({
       reportDate,
-      fileName: file.name,
+      fileName: bleFile.name,
+      faceFileName: faceFile?.name,
       rows,
+      faceRows,
     }),
   })
 
