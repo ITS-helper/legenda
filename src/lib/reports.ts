@@ -262,7 +262,7 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
 export async function loadIdleEpisodes(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
-    .from('idle_episodes')
+    .from('idle_episodes_daily')
     .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
     .eq('report_date', reportDate)
     .order('duration_min', { ascending: false })
