@@ -4,7 +4,7 @@ import {
   loadUiTextSnapshot,
   saveDraftUiText,
   type SettingsSnapshot,
-  uploadAaBleReport,
+  uploadDailyReports,
 } from '../lib/siteSettings'
 import { deepMergeUiText, downloadUiTextJson } from '../lib/uiTextEditor'
 
@@ -56,6 +56,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reportFileInputRef = useRef<HTMLInputElement | null>(null)
   const faceFileInputRef = useRef<HTMLInputElement | null>(null)
+  const longIdleFileInputRef = useRef<HTMLInputElement | null>(null)
   const [draftText, setDraftText] = useState(() => formatUiText(initialUiText))
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -66,6 +67,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [reportFile, setReportFile] = useState<File | null>(null)
   const [faceFile, setFaceFile] = useState<File | null>(null)
+  const [longIdleFile, setLongIdleFile] = useState<File | null>(null)
   const [reportStatus, setReportStatus] = useState<string | null>(null)
 
   function setEditorText(nextText: string) {
@@ -194,22 +196,32 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
         throw new Error('Выберите файл AA_BLE.xls или AA_BLE.xlsx')
       }
 
+      if (!faceFile) {
+        throw new Error('Выберите файл faceID за ту же дату')
+      }
+
+      if (!longIdleFile) {
+        throw new Error('Выберите файл LongIDLE за ту же дату')
+      }
+
       setBusyAction('upload-report')
       setReportStatus(null)
-      const result = await uploadAaBleReport(reportDate, reportFile, adminPassword, faceFile)
-      if (result.importedFaceRows && result.importedFaceRows > 0) {
-        setReportStatus(`Загружены faceID + AA_BLE: ${result.importedFaceRows} смен и ${result.importedBleRows ?? result.importedRows} BLE-строк за ${result.reportDate}`)
-      } else {
-        setReportStatus(`Загружен только AA_BLE: ${result.importedRows} строк за ${result.reportDate}`)
-      }
+      const result = await uploadDailyReports(reportDate, reportFile, faceFile, longIdleFile, adminPassword)
+      setReportStatus(
+        `Загружены faceID + AA_BLE + LongIDLE: ${result.importedFaceRows ?? 0} смен, ${result.importedBleRows ?? result.importedRows} BLE-строк и ${result.importedLongIdleRows ?? 0} LongIDLE-строк за ${result.reportDate}`,
+      )
       setReportFile(null)
       setFaceFile(null)
+      setLongIdleFile(null)
 
       if (reportFileInputRef.current) {
         reportFileInputRef.current.value = ''
       }
       if (faceFileInputRef.current) {
         faceFileInputRef.current.value = ''
+      }
+      if (longIdleFileInputRef.current) {
+        longIdleFileInputRef.current.value = ''
       }
     } catch (error) {
       const message = getErrorMessage(error)
@@ -323,8 +335,8 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
               <p className="panel-kicker">Импорт отчетов</p>
               <h3>Архивная загрузка за день</h3>
               <p>
-                Загрузи <strong>AA_BLE</strong> обязательно. Для имен, бригадиров и нормальных смен на дашборде добавь
-                еще и <strong>faceID</strong> за ту же дату.
+                Загрузите все три файла за один день: <strong>faceID</strong>, <strong>AA_BLE</strong> и{' '}
+                <strong>LongIDLE</strong>.
               </p>
             </div>
           </div>
@@ -343,12 +355,21 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
               />
             </label>
             <label className="settings-password-field">
-              <span>faceID (необязательно)</span>
+              <span>faceID</span>
               <input
                 ref={faceFileInputRef}
                 type="file"
                 accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(event) => setFaceFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label className="settings-password-field">
+              <span>LongIDLE</span>
+              <input
+                ref={longIdleFileInputRef}
+                type="file"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) => setLongIdleFile(event.target.files?.[0] ?? null)}
               />
             </label>
             <div className="settings-upload-actions">
@@ -363,7 +384,7 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
             </div>
           </div>
           <p className={`editor-saved${reportStatus?.startsWith('Не удалось') ? ' settings-status-error' : ''}`}>
-            {reportStatus ?? 'Если загрузить только AA_BLE, дата появится, но без полноценных имен и бригадиров.'}
+            {reportStatus ?? 'Нужны все три файла за одну дату: faceID, AA_BLE и LongIDLE.'}
           </p>
         </section>
 

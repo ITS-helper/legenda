@@ -8,11 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "import:reports": "node scripts/import-reports.mjs"
+    "import:reports": "node scripts/import-reports.mjs",
+    "sync:drive": "node scripts/sync-drive-reports.mjs",
+    "inspect:report": "node scripts/inspect-report-headers.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "dotenv": "^17.4.2",
+    "googleapis": "^173.0.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "xlsx": "^0.18.5"

@@ -47,9 +47,6 @@ That means:
 
 ## Next Step After Schema
 
-Build the first importer that:
-
-1. reads local XLS files
-2. parses `faceID` and `AA_BLE`
-3. upserts rows into Supabase
-4. computes day-level aggregates
+1. Apply `supabase/migrations/20260702_long_idle_and_drive.sql` if the database was created before LongIDLE support.
+2. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
+3. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.

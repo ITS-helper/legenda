@@ -5,8 +5,11 @@
 ## Что есть сейчас
 
 - `#/` — основной дашборд
-- `#/settings` — отдельная страница настроек фронта
+- `#/settings` — отдельная страница настроек фронта и ручной импорт отчётов
+- `npm run import:reports` — локальный импорт faceID + AA_BLE + LongIDLE
+- `npm run sync:drive` — автоимпорт трёх файлов из Google Drive
 - `supabase/site-settings.sql` — SQL для таблицы опубликованных настроек
+- `supabase/migrations/20260702_long_idle_and_drive.sql` — LongIDLE и расширение `import_files`
 - `supabase/functions/site-settings/index.ts` — edge function для защищенной публикации настроек
 
 ## Переменные окружения

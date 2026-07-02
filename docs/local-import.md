@@ -2,24 +2,30 @@
 
 ## Purpose
 
-This is the first importer for real daily reports:
+Импорт трёх ежедневных отчётов в Supabase:
 
 - `faceID`
 - `AA_BLE`
-
-It loads one day of XLSX data into `Supabase` tables inside the `analytics` schema.
+- `LongIDLE`
 
 ## Command
 
 ```bash
-npm run import:reports -- --face "C:\path\to\faceID.xlsx" --ble "C:\path\to\AA_BLE.xlsx"
+npm run import:reports -- --face "C:\path\to\faceID.xlsx" --ble "C:\path\to\AA_BLE.xlsx" --long-idle "C:\path\to\LongIDLE.xlsx"
 ```
 
 If file paths are omitted, the script will try:
 
 - `LOCAL_FACEID_REPORT_PATH`
 - `LOCAL_AA_BLE_REPORT_PATH`
+- `LOCAL_LONG_IDLE_REPORT_PATH`
 - matching files in the user's `Downloads` folder
+
+Optional:
+
+```bash
+npm run import:reports -- --date 2026-07-01
+```
 
 ## Required Env
 
@@ -30,30 +36,25 @@ Optional:
 
 - `LOCAL_FACEID_REPORT_PATH`
 - `LOCAL_AA_BLE_REPORT_PATH`
+- `LOCAL_LONG_IDLE_REPORT_PATH`
 
 ## What It Does
 
-1. Reads `Sheet2` from both XLSX files
-2. Validates that both files belong to the same report date
-3. Creates or reuses one daily `import_batches` record
+1. Reads `Sheet2` from all three XLSX files
+2. Validates that all files belong to the same report date
+3. Creates or reuses one daily `import_batches` record (`manual:YYYY-MM-DD`)
 4. Replaces imported rows for that batch
-5. Upserts lookup data:
-   - employees
-   - supervisors
-   - schedules
-6. Upserts:
-   - shifts
-   - sessions
-   - ble minute facts
-7. Marks the batch as `ready`
+5. Upserts lookup data: employees, supervisors, schedules
+6. Upserts shifts and sessions from faceID
+7. Inserts BLE minute facts and long idle facts
+8. Marks the batch as `ready`
 
-## Current Scope
+## Automatic Drive Import
 
-This importer is local-first and intended for the validated sample files.
+For scheduled import from Google Drive see [drive-sync.md](./drive-sync.md).
 
-Next iteration:
+## Inspect Headers
 
-- Drive folder polling
-- automatic file download
-- better parser versioning
-- stronger validation and import logs
+```bash
+npm run inspect:report -- --file "C:\path\to\report.xlsx"
+```

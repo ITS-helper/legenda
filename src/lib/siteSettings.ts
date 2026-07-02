@@ -17,6 +17,7 @@ export type ReportUploadResult = {
   importedRows: number
   importedFaceRows?: number
   importedBleRows?: number
+  importedLongIdleRows?: number
 }
 
 type SiteSettingsResponse = {
@@ -33,6 +34,7 @@ type ReportUploadResponse = {
   importedRows?: number
   importedFaceRows?: number
   importedBleRows?: number
+  importedLongIdleRows?: number
   error?: string
 }
 
@@ -88,6 +90,44 @@ type BleRow = {
   sleep: number
   wear: number
   event_at: string | null
+}
+
+type LongIdleRow = {
+  employee_number: string | null
+  customer_tab_number: string | null
+  full_name: string | null
+  area_name: string | null
+  supervisor_name: string | null
+  profession: string | null
+  object_name: string | null
+  report_date: string | null
+  shift_begin_at: string | null
+  shift_end_at: string | null
+  on_watch_duration_text: string | null
+  schedule_name: string | null
+  ww_shift_id: number
+  eui_device_id: string | null
+  tech_session_id: number
+  full_go: number | null
+  real_go: number | null
+  full_work: number | null
+  real_work: number | null
+  full_idle: number | null
+  real_idle: number | null
+  full_idle_seconds: number
+  real_idle_seconds: number
+  full_go_seconds: number
+  real_go_seconds: number
+  full_work_seconds: number
+  real_work_seconds: number
+  full_total_seconds: number
+  real_total_seconds: number
+  full_long_idle_seconds: number
+  full_common_idle_seconds: number
+  long_data_idle_seconds: number
+  long_data_total_seconds: number
+  real_common_idle: number | null
+  real_long_idle: number | null
 }
 
 function normalizeUiText(value?: Partial<UiText> | null) {
@@ -213,6 +253,53 @@ async function readSheetRows(file: File) {
   })
 }
 
+async function parseLongIdleFile(file: File) {
+  const rows = await readSheetRows(file)
+
+  return rows
+    .slice(1)
+    .filter((row) => row.some((value) => value !== null && value !== ''))
+    .map(
+      (row): LongIdleRow => ({
+        employee_number: normalizeText(row[0]),
+        customer_tab_number: normalizeText(row[1]),
+        full_name: normalizeText(row[2]),
+        area_name: normalizeText(row[3]),
+        supervisor_name: normalizeText(row[4]),
+        profession: normalizeText(row[5]),
+        object_name: normalizeText(row[6]),
+        report_date: parseReportDate(row[7]),
+        shift_begin_at: parseDateValue(row[8]),
+        shift_end_at: parseDateValue(row[9]),
+        on_watch_duration_text: normalizeText(row[10]),
+        schedule_name: normalizeText(row[11]),
+        ww_shift_id: Number(row[12]),
+        eui_device_id: normalizeText(row[13]),
+        tech_session_id: Number(row[14]),
+        full_go: normalizeNumeric(row[15]),
+        real_go: normalizeNumeric(row[16]),
+        full_work: normalizeNumeric(row[17]),
+        real_work: normalizeNumeric(row[18]),
+        full_idle: normalizeNumeric(row[19]),
+        real_idle: normalizeNumeric(row[20]),
+        full_idle_seconds: normalizeInteger(row[21]),
+        real_idle_seconds: normalizeInteger(row[22]),
+        full_go_seconds: normalizeInteger(row[23]),
+        real_go_seconds: normalizeInteger(row[24]),
+        full_work_seconds: normalizeInteger(row[25]),
+        real_work_seconds: normalizeInteger(row[26]),
+        full_total_seconds: normalizeInteger(row[27]),
+        real_total_seconds: normalizeInteger(row[28]),
+        full_long_idle_seconds: normalizeInteger(row[29]),
+        full_common_idle_seconds: normalizeInteger(row[30]),
+        long_data_idle_seconds: normalizeInteger(row[31]),
+        long_data_total_seconds: normalizeInteger(row[32]),
+        real_common_idle: normalizeNumeric(row[33]),
+        real_long_idle: normalizeNumeric(row[34]),
+      }),
+    )
+}
+
 async function parseFaceIdFile(file: File) {
   const rows = await readSheetRows(file)
 
@@ -333,25 +420,34 @@ export function publishUiText(value: UiText, password: string) {
   return requestSiteSettings('published', { method: 'POST', password, value })
 }
 
-export async function uploadAaBleReport(reportDate: string, bleFile: File, password: string, faceFile?: File | null) {
-  const [rows, faceRows] = await Promise.all([
+export async function uploadDailyReports(
+  reportDate: string,
+  bleFile: File,
+  faceFile: File,
+  longIdleFile: File,
+  password: string,
+) {
+  const [rows, faceRows, longIdleRows] = await Promise.all([
     parseAaBleFile(bleFile),
-    faceFile ? parseFaceIdFile(faceFile) : Promise.resolve(null),
+    parseFaceIdFile(faceFile),
+    parseLongIdleFile(longIdleFile),
   ])
 
   if (rows.length === 0) {
     throw new Error('AA_BLE не содержит строк для импорта')
   }
 
-  assertSingleReportDate(rows, reportDate, 'AA_BLE')
-
-  if (faceRows) {
-    if (faceRows.length === 0) {
-      throw new Error('faceID не содержит строк для импорта')
-    }
-
-    assertSingleReportDate(faceRows, reportDate, 'faceID')
+  if (faceRows.length === 0) {
+    throw new Error('faceID не содержит строк для импорта')
   }
+
+  if (longIdleRows.length === 0) {
+    throw new Error('LongIDLE не содержит строк для импорта')
+  }
+
+  assertSingleReportDate(rows, reportDate, 'AA_BLE')
+  assertSingleReportDate(faceRows, reportDate, 'faceID')
+  assertSingleReportDate(longIdleRows, reportDate, 'LongIDLE')
 
   const response = await fetch(getFunctionUrl('admin-report-upload'), {
     method: 'POST',
@@ -362,9 +458,11 @@ export async function uploadAaBleReport(reportDate: string, bleFile: File, passw
     body: JSON.stringify({
       reportDate,
       fileName: bleFile.name,
-      faceFileName: faceFile?.name,
+      faceFileName: faceFile.name,
+      longIdleFileName: longIdleFile.name,
       rows,
       faceRows,
+      longIdleRows,
     }),
   })
 

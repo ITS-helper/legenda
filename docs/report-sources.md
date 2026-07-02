@@ -2,16 +2,32 @@
 
 ## Current Source Files
 
-Validated against real files dated `2026-06-17`:
+Validated against real files dated `2026-06-17` and `2026-07-01`:
 
 - `11_отчет по АА_BLE со склейкой_LEGENDA_!NEW!_2026-06-17.xlsx`
 - `6_report_6_faceID - по сменам_LEGENDA_!NEW!_2026-06-17.xlsx`
+- `8_report_8_LongIDLE_LEGENDA_!NEW!_2026-07-01.xlsx`
 
 ## Business Context
 
 - Two brigades wear smart watches during the work shift.
 - `AA_BLE` is the main telemetry source from the watches.
 - `faceID` is the people and attendance source.
+
+## Google Drive Archive Layout
+
+Root folder `LEGENDA` contains archive subfolders:
+
+| Source | Archive folder |
+|--------|----------------|
+| faceID | `6_report_6_faceID_arh` |
+| AA_BLE | `aa_ble_arh` |
+| LongIDLE | `8_report_8_LongIDLE_arh` |
+
+Not used by importer:
+
+- `100_report_alerts_arh`
+- `10_report_10_long_idle_arh`
 
 ## Shared Summary Sheet
 
@@ -223,12 +239,72 @@ Combined:
 
 ## Importer Rules We Should Implement
 
-- import both files as one daily batch
+- import all three files as one daily batch
 - require matching report date across files
 - create one `shift` record from `faceID`
 - attach one or more `session` records to the shift
 - store raw BLE rows before aggregation
+- store LongIDLE session aggregates in `long_idle_facts`
 - calculate daily and shift aggregates after raw import succeeds
+
+## Source 3: LongIDLE
+
+Validated against real file dated `2026-07-01`:
+
+- `8_report_8_LongIDLE_LEGENDA_!NEW!_2026-07-01.xlsx`
+
+### Grain
+
+One row per technical session with aggregated idle / long-idle metrics for the shift day.
+
+### Observed Columns (`Sheet2`)
+
+1. `ТН`
+2. `ТН Заказчика`
+3. `ФИО`
+4. `Участок`
+5. `Начальник`
+6. `Профессия`
+7. `Объект смены`
+8. `date` (report day)
+9. `date_begin`
+10. `date_end`
+11. `Итого находился в часах`
+12. `График работы`
+13. `ID смены WW`
+14. `EUI часов`
+15. `session_id`
+16. `full_go`
+17. `real_go`
+18. `full_work`
+19. `real_work`
+20. `full_idle`
+21. `real_idle`
+22. `full_idle_seconds`
+23. `real_idle_seconds`
+24. `full_go_seconds`
+25. `real_go_seconds`
+26. `full_work_seconds`
+27. `real_work_seconds`
+28. `full_total_seconds`
+29. `real_total_seconds`
+30. `full_long_idle_seconds`
+31. `full_common_idle_seconds`
+32. `long_data__idle_seconds`
+33. `long_data__total_seconds`
+34. `real_comon_idle`
+35. `real_long_idle`
+
+### Meaning
+
+LongIDLE supplements AA_BLE with session-level idle analytics, including long idle duration and common idle share.
+
+### Key Fields For Modeling
+
+- employee key: `ТН`
+- shift key: `ID смены WW`
+- session key: `session_id`
+- reporting day: `date`
 
 ## Important Product Decision
 
