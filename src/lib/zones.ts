@@ -2,6 +2,7 @@
 // Значение zona (отчёт 11) и chosen_ble_tag_zone (отчёт 10).
 
 export const ZONE_NAMES: Record<number, string> = {
+  0: 'Вне зоны / без привязки',
   1: 'Зоны проведения работ',
   2: 'Столовые',
   3: 'Опасные зоны',
@@ -30,6 +31,7 @@ export const ZONE_GROUP_LABELS: Record<ZoneGroup, string> = {
 }
 
 const ZONE_GROUP_MAP: Record<number, ZoneGroup> = {
+  0: 'unknown',
   1: 'work',
   2: 'rest',
   4: 'rest',
