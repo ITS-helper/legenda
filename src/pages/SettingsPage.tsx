@@ -6,6 +6,7 @@ import {
   type SettingsSnapshot,
   uploadDailyReports,
 } from '../lib/siteSettings'
+import { loadRecipients, saveRecipients, type EmailRecipient } from '../lib/emailReports'
 import { deepMergeUiText, downloadUiTextJson } from '../lib/uiTextEditor'
 
 type SettingsPageProps = {
@@ -61,7 +62,10 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
-  const [busyAction, setBusyAction] = useState<'load' | 'save' | 'publish' | 'upload-report' | null>(null)
+  const [busyAction, setBusyAction] = useState<'load' | 'save' | 'publish' | 'upload-report' | 'load-recipients' | 'save-recipients' | null>(null)
+  const [recipients, setRecipients] = useState<EmailRecipient[]>([])
+  const [recipientsStatus, setRecipientsStatus] = useState<string | null>(null)
+  const [recipientsError, setRecipientsError] = useState(false)
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
   const [publishedUpdatedAt, setPublishedUpdatedAt] = useState<string | null>(null)
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -95,6 +99,50 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
     const parsed = parseUiTextDraft(draftText)
     setValidationError(null)
     return parsed
+  }
+
+  async function handleLoadRecipients() {
+    try {
+      setBusyAction('load-recipients')
+      setRecipientsError(false)
+      setRecipientsStatus(null)
+      const loaded = await loadRecipients(requirePassword())
+      setRecipients(loaded)
+      setRecipientsStatus(loaded.length > 0 ? `Загружено получателей: ${loaded.length}` : 'Список получателей пуст')
+    } catch (error) {
+      setRecipientsError(true)
+      setRecipientsStatus(getErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSaveRecipients() {
+    try {
+      setBusyAction('save-recipients')
+      setRecipientsError(false)
+      setRecipientsStatus(null)
+      const saved = await saveRecipients(requirePassword(), recipients)
+      setRecipients(saved)
+      setRecipientsStatus(`Сохранено получателей: ${saved.length}`)
+    } catch (error) {
+      setRecipientsError(true)
+      setRecipientsStatus(getErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function updateRecipient(index: number, patch: Partial<EmailRecipient>) {
+    setRecipients((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
+  }
+
+  function addRecipient() {
+    setRecipients((current) => [...current, { email: '', label: '', daily: true, weekly: true, active: true }])
+  }
+
+  function removeRecipient(index: number) {
+    setRecipients((current) => current.filter((_, rowIndex) => rowIndex !== index))
   }
 
   function handleReset() {
@@ -385,6 +433,90 @@ export function SettingsPage({ initialUiText, onPublish }: SettingsPageProps) {
           </div>
           <p className={`editor-saved${reportStatus?.startsWith('Не удалось') ? ' settings-status-error' : ''}`}>
             {reportStatus ?? 'Нужны все три файла за одну дату: faceID, AA_BLE и LongIDLE.'}
+          </p>
+        </section>
+
+        <section className="settings-upload-card">
+          <div className="settings-upload-head">
+            <div>
+              <p className="panel-kicker">Рассылка</p>
+              <h3>Получатели отчётов</h3>
+              <p>
+                Кому отправлять ежедневный и еженедельный отчёты. Управление требует пароль админки. Отправка идёт с дашборда
+                или автоматически по расписанию.
+              </p>
+            </div>
+            <div className="editor-actions">
+              <button type="button" className="editor-action" onClick={handleLoadRecipients} disabled={busyAction !== null}>
+                {busyAction === 'load-recipients' ? 'Загружаем...' : 'Загрузить список'}
+              </button>
+              <button
+                type="button"
+                className="editor-action settings-publish-button"
+                onClick={handleSaveRecipients}
+                disabled={busyAction !== null}
+              >
+                {busyAction === 'save-recipients' ? 'Сохраняем...' : 'Сохранить список'}
+              </button>
+            </div>
+          </div>
+
+          <div className="recipients-table">
+            <div className="recipients-row recipients-head">
+              <span>Email</span>
+              <span>Имя / метка</span>
+              <span>Ежедневно</span>
+              <span>Еженедельно</span>
+              <span>Активен</span>
+              <span></span>
+            </div>
+            {recipients.map((recipient, index) => (
+              <div className="recipients-row" key={index}>
+                <input
+                  type="email"
+                  value={recipient.email}
+                  placeholder="mail@company.ru"
+                  onChange={(event) => updateRecipient(index, { email: event.target.value })}
+                />
+                <input
+                  type="text"
+                  value={recipient.label ?? ''}
+                  placeholder="Заказчик"
+                  onChange={(event) => updateRecipient(index, { label: event.target.value })}
+                />
+                <input
+                  type="checkbox"
+                  checked={recipient.daily}
+                  onChange={(event) => updateRecipient(index, { daily: event.target.checked })}
+                />
+                <input
+                  type="checkbox"
+                  checked={recipient.weekly}
+                  onChange={(event) => updateRecipient(index, { weekly: event.target.checked })}
+                />
+                <input
+                  type="checkbox"
+                  checked={recipient.active}
+                  onChange={(event) => updateRecipient(index, { active: event.target.checked })}
+                />
+                <button type="button" className="recipients-remove" onClick={() => removeRecipient(index)}>
+                  Удалить
+                </button>
+              </div>
+            ))}
+            {recipients.length === 0 ? (
+              <p className="panel-collapsed-note">Список пуст. Загрузите существующий или добавьте получателя.</p>
+            ) : null}
+          </div>
+
+          <div className="settings-upload-actions">
+            <button type="button" className="editor-action" onClick={addRecipient} disabled={busyAction !== null}>
+              + Добавить получателя
+            </button>
+          </div>
+
+          <p className={`editor-saved${recipientsError ? ' settings-status-error' : ''}`}>
+            {recipientsStatus ?? 'Сначала загрузите список, затем редактируйте и сохраните.'}
           </p>
         </section>
 

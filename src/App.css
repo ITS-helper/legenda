@@ -1088,3 +1088,360 @@
   color: #f4faf7;
   font: inherit;
 }
+
+/* ===== Collapsible dashboard blocks ===== */
+.dash-block {
+  margin-bottom: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 20, 19, 0.72);
+  overflow: hidden;
+}
+
+.dash-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.dash-block-toggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  flex: 1;
+}
+
+.dash-block-chevron {
+  font-size: 18px;
+  color: #b7f0d0;
+  transition: transform 0.2s ease;
+}
+
+.dash-block-chevron-open {
+  transform: rotate(90deg);
+}
+
+.dash-block-titles {
+  display: grid;
+  gap: 4px;
+}
+
+.dash-block-kicker {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7fbca0;
+}
+
+.dash-block-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f4faf7;
+}
+
+.dash-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dash-block-body {
+  padding: 0 24px 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.dash-block-description {
+  color: #9eb6ae;
+  margin: 0;
+  max-width: 70ch;
+}
+
+.filter-caption {
+  display: grid;
+  gap: 4px;
+  align-self: end;
+}
+
+.filter-caption span {
+  color: #9eb6ae;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filter-caption strong {
+  color: #f4faf7;
+}
+
+/* ===== Brigade grid + structure bar ===== */
+.brigade-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.structure-bar {
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.structure-segment {
+  height: 100%;
+}
+
+.structure-work {
+  background: #6ce0a4;
+}
+
+.structure-idle {
+  background: #f0c66c;
+}
+
+.structure-sleep {
+  background: #7b8cf0;
+}
+
+.brigade-badge-warn {
+  background: rgba(240, 120, 120, 0.16);
+  color: #ffbcbc;
+}
+
+.brigade-stat-alert {
+  background: rgba(240, 120, 120, 0.1);
+}
+
+.brigade-stat-alert strong {
+  color: #ffbcbc;
+}
+
+.metric-card-alert {
+  border: 1px solid rgba(240, 120, 120, 0.4);
+}
+
+.metric-card-alert .metric-value {
+  color: #ffbcbc;
+}
+
+/* ===== КПП panel ===== */
+.kpp-panel {
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 14px;
+}
+
+.kpp-panel-alert {
+  border-color: rgba(240, 120, 120, 0.5);
+  background: rgba(240, 120, 120, 0.08);
+}
+
+.kpp-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kpp-panel-head h3 {
+  margin: 4px 0 0;
+  color: #f4faf7;
+}
+
+.kpp-count {
+  min-width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(240, 120, 120, 0.2);
+  color: #ffbcbc;
+  font-weight: 700;
+}
+
+.kpp-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kpp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(5, 14, 13, 0.5);
+}
+
+.kpp-main {
+  display: grid;
+  gap: 4px;
+}
+
+.kpp-main strong {
+  color: #f4faf7;
+}
+
+.kpp-main span {
+  color: #9eb6ae;
+  font-size: 13px;
+}
+
+.kpp-time {
+  font-weight: 700;
+  color: #ffbcbc;
+}
+
+.kpp-empty {
+  margin: 0;
+  color: #9eb6ae;
+}
+
+/* ===== Detail grid ===== */
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.analytics-table tr.row-alert td {
+  background: rgba(240, 120, 120, 0.08);
+}
+
+@media (max-width: 900px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Send report control ===== */
+.send-report-open,
+.send-report-send,
+.send-report-preview,
+.send-report-close {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+  cursor: pointer;
+}
+
+.send-report-open,
+.send-report-send {
+  background: #b7f0d0;
+  color: #062018;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.send-report-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.send-report-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.send-report-input {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+  min-width: 180px;
+}
+
+.send-report-status {
+  margin: 0;
+  color: #9eb6ae;
+  font-size: 13px;
+  max-width: 60ch;
+}
+
+.send-report-status-error {
+  color: #ffbcbc;
+}
+
+/* ===== Recipients table ===== */
+.recipients-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.recipients-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) 90px 100px 80px 90px;
+  gap: 10px;
+  align-items: center;
+}
+
+.recipients-head span {
+  color: #9eb6ae;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.recipients-head span:first-child,
+.recipients-head span:nth-child(2) {
+  text-align: left;
+}
+
+.recipients-row input[type='email'],
+.recipients-row input[type='text'] {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(5, 14, 13, 0.7);
+  color: #f4faf7;
+  font: inherit;
+}
+
+.recipients-row input[type='checkbox'] {
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+}
+
+.recipients-remove {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 120, 120, 0.4);
+  background: rgba(240, 120, 120, 0.1);
+  color: #ffbcbc;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .recipients-row {
+    grid-template-columns: 1fr;
+  }
+  .recipients-head {
+    display: none;
+  }
+}

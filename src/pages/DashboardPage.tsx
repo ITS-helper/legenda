@@ -1,294 +1,82 @@
-﻿
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import type { UiText } from '../content/uiText'
-import { supabase } from '../lib/supabase'
+import { CollapsibleBlock } from '../components/CollapsibleBlock'
+import { SendReportControl } from '../components/SendReportControl'
+import {
+  formatFullDate,
+  formatMinutes,
+  formatPercent,
+  formatSeconds,
+  formatWeekRange,
+  loadAvailableDates,
+  loadAvailableWeeks,
+  loadBrigadeDaily,
+  loadBrigadeWeekly,
+  loadKppEmployees,
+  loadShiftRows,
+  ratio,
+  sumDaily,
+  type BrigadeDailyRow,
+  type BrigadeWeeklyRow,
+  type KppEmployee,
+  type ShiftMetricRow,
+} from '../lib/reports'
 
-type ShiftMetricRow = {
-  report_date: string
-  ww_shift_id: number
-  employee_number: string
-  full_name: string
-  supervisor_name: string | null
-  late_seconds: number | null
-  early_return_seconds: number | null
-  work_sec_total: number
-  idle_sec_total: number
-  total_sec_total: number
-  sleep_sec_total: number
-  pv_sec_total?: number | null
-  outside_pv_sec_total?: number | null
-}
-
-type BleZoneRow = {
-  ww_shift_id: number
-  zona: string | null
-  total_sec: number
-}
-
-type TimelineRow = {
-  report_date: string
-  workers: number
-  workSec: number
-  idleSec: number
-  sleepSec: number
-  totalSec: number
-  productivity: number
-  discipline: number
-}
-
-type BrigadeRow = {
-  supervisorName: string
-  workers: number
-  workSec: number
-  idleSec: number
-  totalSec: number
-  sleepSec: number
-  pvSec: number
-  outsidePvSec: number
-  absenceSec: number
-  lowActivityWorkers: number
-  lostActivitySec: number
-  productivity: number
-  avgIdleSec: number
-  avgOutsidePvSec: number
-  avgAbsenceSec: number
-  discipline: number
-  pvRatio: number
-  lowActivityShare: number
-}
-
-type ProblemShiftRow = ShiftMetricRow & {
-  productivity: number
-  absenceSec: number
-  lostActivitySec: number
-  riskScore: number
-}
-
-type WarningCard = {
-  title: string
-  value: string
-  note: string
-}
-
-type CompareMetric = 'productivity' | 'avgIdle' | 'pv' | 'outsidePv' | 'discipline' | 'absence' | 'lowActivityShare' | 'lostActivity'
-type TimelineMetric = 'productivity' | 'discipline' | 'workers'
+type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
-type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'idle_sec_total' | 'total_sec_total' | 'sleep_sec_total' | 'productivity'
 
-function formatSeconds(totalSeconds: number) {
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  return `${hours}ч ${String(minutes).padStart(2, '0')}м`
-}
-
-function formatPercent(value: number) {
-  return `${Math.round(value)}%`
-}
-
-function formatSignedPercent(value: number) {
-  const rounded = Math.round(value)
-  return rounded === 0 ? '0%' : `${rounded > 0 ? '+' : ''}${rounded}%`
-}
-
-function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(new Date(value))
-}
+const NO_SUPERVISOR = 'Без начальника'
 
 function getRowProductivity(row: ShiftMetricRow) {
-  return row.total_sec_total ? (row.work_sec_total / row.total_sec_total) * 100 : 0
+  return ratio(row.work_sec_total, row.total_sec_total)
 }
 
-function getRowAbsenceSec(row: ShiftMetricRow) {
-  return (row.late_seconds ?? 0) + (row.early_return_seconds ?? 0)
+function StructureBar({ workSec, idleSec, sleepSec, totalSec }: { workSec: number; idleSec: number; sleepSec: number; totalSec: number }) {
+  const workWidth = `${ratio(workSec, totalSec)}%`
+  const idleWidth = `${ratio(idleSec, totalSec)}%`
+  const sleepWidth = `${ratio(sleepSec, totalSec)}%`
+  return (
+    <div className="structure-bar">
+      <div className="structure-segment structure-work" style={{ width: workWidth }} />
+      <div className="structure-segment structure-idle" style={{ width: idleWidth }} />
+      <div className="structure-segment structure-sleep" style={{ width: sleepWidth }} />
+    </div>
+  )
 }
 
-function getRowLostActivitySec(row: ShiftMetricRow) {
-  return Math.max(0, row.total_sec_total * 0.4 - row.work_sec_total)
-}
-
-function getMetricWidth(value: number, max: number, higherIsBetter: boolean) {
-  if (max <= 0) return '10%'
-  const ratio = higherIsBetter ? value / max : 1 - value / max
-  return `${Math.max(ratio * 100, 10)}%`
-}
-
-function buildAreaPath(values: number[], width: number, height: number) {
-  if (values.length === 0) return ''
-  const max = Math.max(...values, 1)
-  const stepX = values.length > 1 ? width / (values.length - 1) : width
-  const line = values.map((value, index) => {
-    const x = index * stepX
-    const y = height - (value / max) * height
-    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
-  }).join(' ')
-  return `${line} L ${width} ${height} L 0 ${height} Z`
-}
-async function loadBleZoneRows(reportDate: string) {
-  const allRows: BleZoneRow[] = []
-  const pageSize = 1000
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .schema('analytics')
-      .from('ble_minute_facts')
-      .select('ww_shift_id,zona,total_sec')
-      .eq('report_date', reportDate)
-      .range(from, from + pageSize - 1)
-
-    if (error) throw error
-    allRows.push(...((data ?? []) as BleZoneRow[]))
-    if (!data || data.length < pageSize) return allRows
-  }
-}
-
-function mergeZoneMetrics(rows: ShiftMetricRow[], zoneRows: BleZoneRow[]) {
-  const zoneMap = zoneRows.reduce((map, row) => {
-    const current = map.get(row.ww_shift_id) ?? { pvSec: 0, outsidePvSec: 0 }
-    // ponytail: zona=1 is inferred as PV from current data; replace with a zone dictionary when available.
-    if (row.zona === '1') current.pvSec += row.total_sec
-    else if (row.zona !== null) current.outsidePvSec += row.total_sec
-    map.set(row.ww_shift_id, current)
-    return map
-  }, new Map<number, { pvSec: number; outsidePvSec: number }>())
-
-  return rows.map((row) => ({
-    ...row,
-    pv_sec_total: row.pv_sec_total ?? zoneMap.get(row.ww_shift_id)?.pvSec ?? 0,
-    outside_pv_sec_total: row.outside_pv_sec_total ?? zoneMap.get(row.ww_shift_id)?.outsidePvSec ?? 0,
-  }))
-}
-
-function buildTimeline(rows: ShiftMetricRow[]) {
-  const grouped = rows.reduce((map, row) => {
-    const current = map.get(row.report_date) ?? {
-      report_date: row.report_date,
-      workers: 0,
-      workSec: 0,
-      idleSec: 0,
-      sleepSec: 0,
-      totalSec: 0,
-      badWorkers: 0,
-    }
-    current.workers += 1
-    current.workSec += row.work_sec_total
-    current.idleSec += row.idle_sec_total
-    current.sleepSec += row.sleep_sec_total
-    current.totalSec += row.total_sec_total
-    current.badWorkers += getRowAbsenceSec(row) > 0 ? 1 : 0
-    map.set(row.report_date, current)
-    return map
-  }, new Map<string, { report_date: string; workers: number; workSec: number; idleSec: number; sleepSec: number; totalSec: number; badWorkers: number }>())
-
-  return Array.from(grouped.values())
-    .sort((left, right) => left.report_date.localeCompare(right.report_date))
-    .map((row) => ({
-      report_date: row.report_date,
-      workers: row.workers,
-      workSec: row.workSec,
-      idleSec: row.idleSec,
-      sleepSec: row.sleepSec,
-      totalSec: row.totalSec,
-      productivity: row.totalSec ? (row.workSec / row.totalSec) * 100 : 0,
-      discipline: row.workers ? ((row.workers - row.badWorkers) / row.workers) * 100 : 0,
-    }))
-}
-
-function buildBrigades(rows: ShiftMetricRow[], noSupervisorLabel: string) {
-  const grouped = rows.reduce((map, row) => {
-    const key = row.supervisor_name ?? noSupervisorLabel
-    const entry = map.get(key) ?? {
-      supervisorName: key,
-      workers: 0,
-      workSec: 0,
-      idleSec: 0,
-      totalSec: 0,
-      sleepSec: 0,
-      pvSec: 0,
-      outsidePvSec: 0,
-      absenceSec: 0,
-      lowActivityWorkers: 0,
-      lostActivitySec: 0,
-      badWorkers: 0,
-    }
-    entry.workers += 1
-    entry.workSec += row.work_sec_total
-    entry.idleSec += row.idle_sec_total
-    entry.totalSec += row.total_sec_total
-    entry.sleepSec += row.sleep_sec_total
-    entry.pvSec += row.pv_sec_total ?? 0
-    entry.outsidePvSec += row.outside_pv_sec_total ?? 0
-    entry.absenceSec += getRowAbsenceSec(row)
-    entry.lowActivityWorkers += getRowProductivity(row) < 40 ? 1 : 0
-    entry.lostActivitySec += getRowLostActivitySec(row)
-    entry.badWorkers += getRowAbsenceSec(row) > 0 ? 1 : 0
-    map.set(key, entry)
-    return map
-  }, new Map<string, { supervisorName: string; workers: number; workSec: number; idleSec: number; totalSec: number; sleepSec: number; pvSec: number; outsidePvSec: number; absenceSec: number; lowActivityWorkers: number; lostActivitySec: number; badWorkers: number }>())
-
-  return Array.from(grouped.values())
-    .map((value) => ({
-      supervisorName: value.supervisorName,
-      workers: value.workers,
-      workSec: value.workSec,
-      idleSec: value.idleSec,
-      totalSec: value.totalSec,
-      sleepSec: value.sleepSec,
-      pvSec: value.pvSec,
-      outsidePvSec: value.outsidePvSec,
-      absenceSec: value.absenceSec,
-      lowActivityWorkers: value.lowActivityWorkers,
-      lostActivitySec: value.lostActivitySec,
-      productivity: value.totalSec ? (value.workSec / value.totalSec) * 100 : 0,
-      avgIdleSec: value.workers ? value.idleSec / value.workers : 0,
-      avgOutsidePvSec: value.workers ? value.outsidePvSec / value.workers : 0,
-      avgAbsenceSec: value.workers ? value.absenceSec / value.workers : 0,
-      discipline: value.workers ? ((value.workers - value.badWorkers) / value.workers) * 100 : 0,
-      pvRatio: value.totalSec ? (value.pvSec / value.totalSec) * 100 : 0,
-      lowActivityShare: value.workers ? (value.lowActivityWorkers / value.workers) * 100 : 0,
-    }))
-    .sort((left, right) => right.discipline - left.discipline)
-}
 export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [availableDates, setAvailableDates] = useState<string[]>([])
+  const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
   const [selectedDate, setSelectedDate] = useState('')
-  const [selectedSupervisor, setSelectedSupervisor] = useState('all')
-  const [compareMetric, setCompareMetric] = useState<CompareMetric>('discipline')
-  const [timelineMetric, setTimelineMetric] = useState<TimelineMetric>('productivity')
-  const [sortKey, setSortKey] = useState<SortKey>('work_sec_total')
+  const [selectedWeek, setSelectedWeek] = useState('')
+
+  const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
+  const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
+  const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
+  const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
+
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
+  const [dailyLoading, setDailyLoading] = useState(true)
+  const [dailyError, setDailyError] = useState<string | null>(null)
+  const [weeklyLoading, setWeeklyLoading] = useState(true)
+  const [weeklyError, setWeeklyError] = useState<string | null>(null)
+
+  const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [showShiftTable, setShowShiftTable] = useState(true)
-  const [rows, setRows] = useState<ShiftMetricRow[]>([])
-  const [timelineRows, setTimelineRows] = useState<TimelineRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
     async function bootstrap() {
-      setLoading(true)
-      setError(null)
       try {
-        const { data, error: historyError } = await supabase
-          .schema('analytics')
-          .from('shift_daily_metrics')
-          .select('*')
-          .order('report_date', { ascending: false })
-
-        if (historyError) throw historyError
-        const allRows = (data ?? []) as ShiftMetricRow[]
-        const dates = [...new Set(allRows.map((row) => row.report_date))]
-
-        if (!cancelled) {
-          setAvailableDates(dates)
-          setTimelineRows(buildTimeline(allRows))
-          setSelectedDate((current) => current || dates[0] || '')
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : String(loadError))
-          setLoading(false)
-        }
+        const [dates, weeks] = await Promise.all([loadAvailableDates(), loadAvailableWeeks()])
+        if (cancelled) return
+        setAvailableDates(dates)
+        setAvailableWeeks(weeks)
+        setSelectedDate((current) => current || dates[0] || '')
+        setSelectedWeek((current) => current || weeks[0]?.week_start || '')
+      } catch (error) {
+        if (!cancelled) setBootstrapError(error instanceof Error ? error.message : String(error))
       }
     }
 
@@ -302,481 +90,335 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     if (!selectedDate) return
     let cancelled = false
 
-    async function loadRows() {
-      setLoading(true)
-      setError(null)
+    async function loadDay() {
+      setDailyLoading(true)
+      setDailyError(null)
       try {
-        const { data, error: metricsError } = await supabase
-          .schema('analytics')
-          .from('shift_daily_metrics')
-          .select('*')
-          .eq('report_date', selectedDate)
-
-        if (metricsError) throw metricsError
-        const zoneRows = await loadBleZoneRows(selectedDate)
-
-        if (!cancelled) {
-          setRows(mergeZoneMetrics((data ?? []) as ShiftMetricRow[], zoneRows))
-          setLoading(false)
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : String(loadError))
-          setLoading(false)
-        }
+        const [brigades, kpp, shifts] = await Promise.all([
+          loadBrigadeDaily(selectedDate),
+          loadKppEmployees(selectedDate),
+          loadShiftRows(selectedDate),
+        ])
+        if (cancelled) return
+        setDailyRows(brigades)
+        setKppEmployees(kpp)
+        setShiftRows(shifts)
+      } catch (error) {
+        if (!cancelled) setDailyError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setDailyLoading(false)
       }
     }
 
-    void loadRows()
+    void loadDay()
     return () => {
       cancelled = true
     }
   }, [selectedDate])
 
-  const supervisorOptions = useMemo(
-    () => ['all', ...new Set(rows.map((row) => row.supervisor_name ?? uiText.table.noSupervisor))],
-    [rows, uiText.table.noSupervisor],
-  )
+  useEffect(() => {
+    if (!selectedWeek) return
+    let cancelled = false
 
-  const filteredRows = useMemo(
-    () => selectedSupervisor === 'all'
-      ? rows
-      : rows.filter((row) => (row.supervisor_name ?? uiText.table.noSupervisor) === selectedSupervisor),
-    [rows, selectedSupervisor, uiText.table.noSupervisor],
-  )
-
-  const brigadeRows = useMemo(
-    () => buildBrigades(rows, uiText.table.noSupervisor),
-    [rows, uiText.table.noSupervisor],
-  )
-
-  function getCompareMetricValue(brigade: BrigadeRow) {
-    if (compareMetric === 'avgIdle') return brigade.avgIdleSec
-    if (compareMetric === 'pv') return brigade.pvRatio
-    if (compareMetric === 'outsidePv') return brigade.avgOutsidePvSec
-    if (compareMetric === 'discipline') return brigade.discipline
-    if (compareMetric === 'absence') return brigade.avgAbsenceSec
-    if (compareMetric === 'lowActivityShare') return brigade.lowActivityShare
-    if (compareMetric === 'lostActivity') return brigade.lostActivitySec
-    return brigade.productivity
-  }
-
-  const compareHigherIsBetter = ['productivity', 'pv', 'discipline'].includes(compareMetric)
-  const compareBrigades = [...brigadeRows]
-    .sort((left, right) => compareHigherIsBetter ? getCompareMetricValue(right) - getCompareMetricValue(left) : getCompareMetricValue(left) - getCompareMetricValue(right))
-    .slice(0, 2)
-  const compareMetricMax = Math.max(...compareBrigades.map(getCompareMetricValue), 1)
-
-  const totalWorkers = filteredRows.length
-  const totalWorkSeconds = filteredRows.reduce((sum, row) => sum + row.work_sec_total, 0)
-  const totalIdleSeconds = filteredRows.reduce((sum, row) => sum + row.idle_sec_total, 0)
-  const totalTrackedSeconds = filteredRows.reduce((sum, row) => sum + row.total_sec_total, 0)
-  const totalSleepSeconds = filteredRows.reduce((sum, row) => sum + row.sleep_sec_total, 0)
-  const workRatio = totalTrackedSeconds ? (totalWorkSeconds / totalTrackedSeconds) * 100 : 0
-  const idleRatio = totalTrackedSeconds ? (totalIdleSeconds / totalTrackedSeconds) * 100 : 0
-  const sleepRatio = totalTrackedSeconds ? (totalSleepSeconds / totalTrackedSeconds) * 100 : 0
-
-  const topWorkers = filteredRows
-    .map((row) => ({ ...row, productivity: getRowProductivity(row) }))
-    .sort((left, right) => right.productivity - left.productivity)
-    .slice(0, 5)
-
-  const selectedTimelineEntry = timelineRows.find((row) => row.report_date === selectedDate) ?? null
-  const selectedTimelineIndex = selectedTimelineEntry
-    ? timelineRows.findIndex((row) => row.report_date === selectedDate)
-    : -1
-  const previousTimelineEntry = selectedTimelineIndex > 0 ? timelineRows[selectedTimelineIndex - 1] : null
-  const bestDay = [...timelineRows].sort((left, right) => right.productivity - left.productivity)[0] ?? null
-
-  const timelineMetricLabel = timelineMetric === 'discipline' ? 'Дисциплина' : timelineMetric === 'workers' ? 'Сотрудники' : 'Продуктивность'
-  const timelineValues = timelineRows.map((row) => timelineMetric === 'discipline' ? row.discipline : timelineMetric === 'workers' ? row.workers : row.productivity)
-  const timelinePath = buildAreaPath(timelineValues, 560, 160)
-  const maxWorkers = Math.max(...timelineRows.map((row) => row.workers), 1)
-
-  const problematicRows: ProblemShiftRow[] = [...filteredRows]
-    .map((row) => {
-      const absenceSec = getRowAbsenceSec(row)
-      const lostActivitySec = getRowLostActivitySec(row)
-      const productivity = getRowProductivity(row)
-      return {
-        ...row,
-        productivity,
-        absenceSec,
-        lostActivitySec,
-        riskScore: absenceSec + lostActivitySec + row.idle_sec_total,
+    async function loadWeek() {
+      setWeeklyLoading(true)
+      setWeeklyError(null)
+      try {
+        const brigades = await loadBrigadeWeekly(selectedWeek)
+        if (cancelled) return
+        setWeeklyRows(brigades)
+      } catch (error) {
+        if (!cancelled) setWeeklyError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setWeeklyLoading(false)
       }
-    })
-    .sort((left, right) => right.riskScore - left.riskScore)
-    .slice(0, 5)
+    }
 
-  const worstBrigades = [...brigadeRows]
-    .sort((left, right) => right.lowActivityShare - left.lowActivityShare)
-    .slice(0, 3)
+    void loadWeek()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedWeek])
 
-  const todayWarnings: WarningCard[] = [
-    selectedTimelineEntry && previousTimelineEntry && selectedTimelineEntry.productivity < previousTimelineEntry.productivity
-      ? {
-          title: 'Продуктивность просела',
-          value: formatSignedPercent(selectedTimelineEntry.productivity - previousTimelineEntry.productivity),
-          note: `${formatPercent(selectedTimelineEntry.productivity)} против ${formatPercent(previousTimelineEntry.productivity)}`,
-        }
-      : null,
-    selectedTimelineEntry && previousTimelineEntry && selectedTimelineEntry.discipline < previousTimelineEntry.discipline
-      ? {
-          title: 'Дисциплина хуже',
-          value: formatSignedPercent(selectedTimelineEntry.discipline - previousTimelineEntry.discipline),
-          note: `${formatPercent(selectedTimelineEntry.discipline)} против ${formatPercent(previousTimelineEntry.discipline)}`,
-        }
-      : null,
-    worstBrigades[0]
-      ? {
-          title: 'Риск по бригаде',
-          value: worstBrigades[0].supervisorName,
-          note: `${formatPercent(worstBrigades[0].lowActivityShare)} смен ниже 40%`,
-        }
-      : null,
-  ].filter(Boolean) as WarningCard[]
+  const dailyTotals = useMemo(() => sumDaily(dailyRows), [dailyRows])
+  const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
+  const dailyIdle = ratio(dailyTotals.idle_sec, dailyTotals.total_sec)
 
-  const sortedRows = useMemo(() => {
-    return [...filteredRows].sort((left, right) => {
-      const leftValue = sortKey === 'productivity'
-        ? getRowProductivity(left)
-        : sortKey === 'supervisor_name'
-          ? left.supervisor_name ?? uiText.table.noSupervisor
-          : left[sortKey]
-      const rightValue = sortKey === 'productivity'
-        ? getRowProductivity(right)
-        : sortKey === 'supervisor_name'
-          ? right.supervisor_name ?? uiText.table.noSupervisor
-          : right[sortKey]
+  const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
+
+  const sortedShiftRows = useMemo(() => {
+    return [...shiftRows].sort((left, right) => {
+      const leftValue =
+        sortKey === 'productivity'
+          ? getRowProductivity(left)
+          : sortKey === 'supervisor_name'
+            ? left.supervisor_name ?? NO_SUPERVISOR
+            : sortKey === 'full_name'
+              ? left.full_name
+              : left[sortKey]
+      const rightValue =
+        sortKey === 'productivity'
+          ? getRowProductivity(right)
+          : sortKey === 'supervisor_name'
+            ? right.supervisor_name ?? NO_SUPERVISOR
+            : sortKey === 'full_name'
+              ? right.full_name
+              : right[sortKey]
 
       if (typeof leftValue === 'string' && typeof rightValue === 'string') {
-        return sortDirection === 'asc'
-          ? leftValue.localeCompare(rightValue, 'ru')
-          : rightValue.localeCompare(leftValue, 'ru')
+        return sortDirection === 'asc' ? leftValue.localeCompare(rightValue, 'ru') : rightValue.localeCompare(leftValue, 'ru')
       }
 
       return sortDirection === 'asc'
         ? Number(leftValue ?? 0) - Number(rightValue ?? 0)
         : Number(rightValue ?? 0) - Number(leftValue ?? 0)
     })
-  }, [filteredRows, sortDirection, sortKey, uiText.table.noSupervisor])
+  }, [shiftRows, sortKey, sortDirection])
 
-  function getSortLabel(label: string, key: SortKey) {
-    if (sortKey !== key) return label
-    return `${label} ${sortDirection === 'asc' ? '^' : 'v'}`
+  const topWorkers = useMemo(
+    () =>
+      [...shiftRows]
+        .map((row) => ({ ...row, productivity: getRowProductivity(row) }))
+        .sort((left, right) => right.productivity - left.productivity)
+        .slice(0, 5),
+    [shiftRows],
+  )
+
+  function toggleSort(key: SortKey, defaultDirection: SortDirection = 'desc') {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDirection(defaultDirection)
+    }
   }
 
-  const compareMetricLabel =
-    compareMetric === 'avgIdle' ? uiText.compareMetrics.avgIdle :
-    compareMetric === 'pv' ? uiText.compareMetrics.pv :
-    compareMetric === 'outsidePv' ? uiText.compareMetrics.outsidePv :
-    compareMetric === 'discipline' ? uiText.compareMetrics.discipline :
-    compareMetric === 'absence' ? uiText.compareMetrics.absence :
-    compareMetric === 'lowActivityShare' ? uiText.compareMetrics.lowActivityShare :
-    compareMetric === 'lostActivity' ? uiText.compareMetrics.lostActivity :
-    uiText.compareMetrics.productivity
+  function sortLabel(label: string, key: SortKey) {
+    if (sortKey !== key) return label
+    return `${label} ${sortDirection === 'asc' ? '↑' : '↓'}`
+  }
+
   return (
     <>
       <section className="hero-block dashboard-hero reveal-block">
-        <div className="hero-main">
-          <p className="eyebrow">{uiText.brand}</p>
-          <h1>{uiText.heroTitle}</h1>
-          <p className="hero-copy">{uiText.heroDescription}</p>
-          <div className="filter-row">
-            <label className="filter-field">
-              <span>{uiText.filters.date}</span>
-              <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
-                {availableDates.map((date) => <option key={date} value={date}>{date}</option>)}
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>{uiText.filters.supervisor}</span>
-              <select value={selectedSupervisor} onChange={(event) => setSelectedSupervisor(event.target.value)}>
-                {supervisorOptions.map((supervisor) => <option key={supervisor} value={supervisor}>{supervisor === 'all' ? uiText.filters.allBrigades : supervisor}</option>)}
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>{uiText.filters.compareMetric}</span>
-              <select value={compareMetric} onChange={(event) => setCompareMetric(event.target.value as CompareMetric)}>
-                <option value="productivity">{uiText.compareMetrics.productivity}</option>
-                <option value="avgIdle">{uiText.compareMetrics.avgIdle}</option>
-                <option value="pv">{uiText.compareMetrics.pv}</option>
-                <option value="outsidePv">{uiText.compareMetrics.outsidePv}</option>
-                <option value="discipline">{uiText.compareMetrics.discipline}</option>
-                <option value="absence">{uiText.compareMetrics.absence}</option>
-                <option value="lowActivityShare">{uiText.compareMetrics.lowActivityShare}</option>
-                <option value="lostActivity">{uiText.compareMetrics.lostActivity}</option>
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>График</span>
-              <select value={timelineMetric} onChange={(event) => setTimelineMetric(event.target.value as TimelineMetric)}>
-                <option value="productivity">Продуктивность</option>
-                <option value="discipline">Дисциплина</option>
-                <option value="workers">Сотрудники</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div className="hero-compare">
-          <div className="compare-head">
-            <span>{uiText.compareTitle}</span>
-            <div className="compare-head-meta">
-              <strong>{selectedDate || uiText.compareDateFallback}</strong>
-              <p className="compare-subtitle">{compareMetricLabel}</p>
-            </div>
-          </div>
-          {compareBrigades.length > 0 ? (
-            <div className="compare-chart compare-chart-rows">
-              {compareBrigades.map((brigade, index) => {
-                const metricWidth = getMetricWidth(getCompareMetricValue(brigade), compareMetricMax, compareHigherIsBetter)
-                const workWidth = `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%`
-                const idleWidth = `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%`
-                const sleepWidth = `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%`
-                const metricValue = ['productivity', 'discipline', 'pv', 'lowActivityShare'].includes(compareMetric)
-                  ? formatPercent(getCompareMetricValue(brigade))
-                  : formatSeconds(getCompareMetricValue(brigade))
-
-                return (
-                  <div className={`compare-card ${index === 0 ? 'compare-card-leading' : ''}`} key={brigade.supervisorName}>
-                    <div className="compare-card-head">
-                      <div className="compare-card-title">
-                        <strong>{brigade.supervisorName}</strong>
-                        <span>{brigade.workers} {uiText.compareMeta.workersSuffix}</span>
-                      </div>
-                      <p>{metricValue}</p>
-                    </div>
-                    <div className="compare-bar-horizontal">
-                      <div
-                        className={`${['avgIdle', 'outsidePv', 'absence', 'lowActivityShare', 'lostActivity'].includes(compareMetric) ? 'compare-bar-idle' : 'compare-bar-work'} compare-fill`}
-                        style={{ width: metricWidth }}
-                      />
-                    </div>
-                    <div className="compare-structure-row compare-structure-row-compact">
-                      <div className="compare-structure-head">
-                        <strong>Структура дня</strong>
-                        <span>{formatSeconds(brigade.totalSec)}</span>
-                      </div>
-                      <div className="compare-structure-bar">
-                        <div className="compare-structure-segment compare-bar-work" style={{ width: workWidth }} />
-                        <div className="compare-structure-segment compare-bar-idle" style={{ width: idleWidth }} />
-                        <div className="compare-structure-segment compare-bar-sleep" style={{ width: sleepWidth }} />
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : <div className="compare-empty">{uiText.compareEmpty}</div>}
-        </div>
+        <p className="eyebrow">{uiText.brand}</p>
+        <h1>Аналитика смен и рассылки</h1>
+        <p className="hero-copy">
+          Дашборд разбит на три блока: ежедневная сводка для рассылки, еженедельная аналитика и детализация по сотрудникам.
+          Дневной и недельный блоки можно отправить заказчику на почту прямо отсюда.
+        </p>
       </section>
 
-      {loading ? <section className="empty-state">{uiText.loading}</section> : null}
-      {error ? <section className="empty-state error-state">{uiText.loadErrorPrefix} {error}</section> : null}
-      {!loading && !error && rows.length === 0 ? <section className="empty-state">{uiText.noData}</section> : null}
+      {bootstrapError ? (
+        <section className="empty-state error-state">Ошибка загрузки: {bootstrapError}</section>
+      ) : null}
 
-      {!loading && !error && rows.length > 0 ? (
-        <>
-          <section className="metrics-grid reveal-block">
-            <article className="metric-card metric-card-accent">
-              <span className="metric-label">{uiText.metrics.workersTitle}</span>
-              <strong className="metric-value">{totalWorkers}</strong>
-              <p className="metric-note">{selectedSupervisor === 'all' ? uiText.metrics.workersAllNote : selectedSupervisor}</p>
-            </article>
-            <article className="metric-card reveal-delay-1">
-              <span className="metric-label">{uiText.metrics.workTitle}</span>
-              <strong className="metric-value">{formatSeconds(totalWorkSeconds)}</strong>
-              <p className="metric-note">{formatPercent(workRatio)} {uiText.metrics.workNote}</p>
-            </article>
-            <article className="metric-card reveal-delay-2">
-              <span className="metric-label">{uiText.metrics.idleTitle}</span>
-              <strong className="metric-value">{formatSeconds(totalIdleSeconds)}</strong>
-              <p className="metric-note">{formatPercent(idleRatio)} {uiText.metrics.idleNote}</p>
-            </article>
-            <article className="metric-card reveal-delay-3">
-              <span className="metric-label">{uiText.metrics.sleepTitle}</span>
-              <strong className="metric-value">{formatSeconds(totalSleepSeconds)}</strong>
-              <p className="metric-note">{formatPercent(sleepRatio)} {uiText.metrics.sleepNote}</p>
-            </article>
-          </section>
+      {/* БЛОК 1 — ЕЖЕДНЕВНАЯ АНАЛИТИКА */}
+      <CollapsibleBlock
+        kicker="Блок 1 · Ежедневно"
+        title="Ежедневная аналитика"
+        description="Сколько человек вышло на смену по бригадам, активность и простой за выбранный день. Этот блок уходит в ежедневную рассылку."
+        actions={<SendReportControl type="daily" date={selectedDate} disabled={!selectedDate} />}
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Дата</span>
+            <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
+              {availableDates.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Выбранный день</span>
+            <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>
+          </div>
+        </div>
 
-          <section className="content-grid reveal-block">
-            <article className="panel panel-wide panel-timeline">
-              <div className="panel-head timeline-head">
-                <div>
-                  <p className="panel-kicker">Динамика</p>
-                  <h2>История смен по датам</h2>
-                  <p className="panel-description">Показывает {timelineMetricLabel.toLowerCase()} по дням, изменение к предыдущему дню и объем выборки.</p>
-                </div>
-                <div className="timeline-summary">
-                  <div className="timeline-summary-item">
-                    <span>Продуктивность</span>
-                    <strong>{selectedTimelineEntry ? formatPercent(selectedTimelineEntry.productivity) : '0%'}</strong>
-                    <p>{previousTimelineEntry ? formatSignedPercent(selectedTimelineEntry!.productivity - previousTimelineEntry.productivity) : 'Нет предыдущего дня'}</p>
+        {dailyLoading ? <div className="empty-state">Загружаем дневную аналитику...</div> : null}
+        {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
+
+        {!dailyLoading && !dailyError && dailyRows.length === 0 ? (
+          <div className="empty-state">Нет данных за выбранный день.</div>
+        ) : null}
+
+        {!dailyLoading && !dailyError && dailyRows.length > 0 ? (
+          <>
+            <div className="metrics-grid">
+              <article className="metric-card metric-card-accent">
+                <span className="metric-label">Вышло на смену</span>
+                <strong className="metric-value">{dailyTotals.workers}</strong>
+                <p className="metric-note">человек по всем бригадам</p>
+              </article>
+              <article className="metric-card">
+                <span className="metric-label">Активность в смене</span>
+                <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
+                <p className="metric-note">рабочее время от общего</p>
+              </article>
+              <article className="metric-card">
+                <span className="metric-label">Простой</span>
+                <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
+                <p className="metric-note">простой от общего времени</p>
+              </article>
+              <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
+                <span className="metric-label">Были на КПП</span>
+                <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
+                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'нарушений нет'}</p>
+              </article>
+            </div>
+
+            <div className="brigade-grid">
+              {dailyRows.map((brigade) => (
+                <article className="brigade-card" key={brigade.supervisor_name}>
+                  <div className="brigade-card-head">
+                    <div>
+                      <strong>{brigade.supervisor_name}</strong>
+                      <p>{brigade.workers} человек на смене</p>
+                    </div>
+                    <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
+                      {formatPercent(brigade.activity_pct)}
+                    </div>
                   </div>
-                  <div className="timeline-summary-item">
-                    <span>Дисциплина</span>
-                    <strong>{selectedTimelineEntry ? formatPercent(selectedTimelineEntry.discipline) : '0%'}</strong>
-                    <p>{previousTimelineEntry ? formatSignedPercent(selectedTimelineEntry!.discipline - previousTimelineEntry.discipline) : 'Нет предыдущего дня'}</p>
-                  </div>
-                  <div className="timeline-summary-item">
-                    <span>Лучший день</span>
-                    <strong>{bestDay ? formatShortDate(bestDay.report_date) : 'Нет данных'}</strong>
-                    <p>{bestDay ? formatPercent(bestDay.productivity) : '0%'}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="timeline-stage">
-                <div className="timeline-chart-shell">
-                  <svg className="timeline-chart" viewBox="0 0 560 160" preserveAspectRatio="none" aria-hidden="true">
-                    <defs>
-                      <linearGradient id="timelineArea" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="rgba(183,240,208,0.7)" />
-                        <stop offset="100%" stopColor="rgba(183,240,208,0.04)" />
-                      </linearGradient>
-                    </defs>
-                    <path d={timelinePath} fill="url(#timelineArea)" className="timeline-area" />
-                  </svg>
-                  <div className="timeline-columns">
-                    {timelineRows.map((row) => {
-                      const columnPercent = timelineMetric === 'workers'
-                        ? (row.workers / maxWorkers) * 100
-                        : timelineMetric === 'discipline'
-                          ? row.discipline
-                          : row.productivity
-                      const tooltipValue = timelineMetric === 'workers'
-                        ? row.workers
-                        : formatPercent(timelineMetric === 'discipline' ? row.discipline : row.productivity)
-                      return (
-                        <button
-                          type="button"
-                          key={row.report_date}
-                          className={`timeline-column${row.report_date === selectedDate ? ' timeline-column-active' : ''}`}
-                          onClick={() => setSelectedDate(row.report_date)}
-                          title={`${row.report_date}: ${tooltipValue}`}
-                        >
-                          <span className="timeline-bar" style={{ height: `${Math.max(columnPercent, 8)}%` }} />
-                          <span className="timeline-date">{formatShortDate(row.report_date)}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                {selectedTimelineEntry ? (
-                  <div className="timeline-insights-grid">
-                    <article className="timeline-insight-card">
-                      <span>Работа за день</span>
-                      <strong>{formatSeconds(selectedTimelineEntry.workSec)}</strong>
-                      <p>{selectedTimelineEntry.workers} сотрудников в выборке</p>
-                    </article>
-                    <article className="timeline-insight-card">
+                  <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} sleepSec={brigade.sleep_sec} totalSec={brigade.total_sec} />
+                  <div className="brigade-stats-grid">
+                    <div className="brigade-stat">
+                      <span>Активность</span>
+                      <strong>{formatPercent(brigade.activity_pct)}</strong>
+                    </div>
+                    <div className="brigade-stat">
                       <span>Простой</span>
-                      <strong>{formatSeconds(selectedTimelineEntry.idleSec)}</strong>
-                      <p>{formatPercent(selectedTimelineEntry.totalSec ? (selectedTimelineEntry.idleSec / selectedTimelineEntry.totalSec) * 100 : 0)} от tracked time</p>
-                    </article>
-                    <article className="timeline-insight-card">
-                      <span>Сон устройств</span>
-                      <strong>{formatSeconds(selectedTimelineEntry.sleepSec)}</strong>
-                      <p>{formatPercent(selectedTimelineEntry.totalSec ? (selectedTimelineEntry.sleepSec / selectedTimelineEntry.totalSec) * 100 : 0)} от tracked time</p>
-                    </article>
+                      <strong>{formatPercent(brigade.idle_pct)}</strong>
+                    </div>
+                    <div className="brigade-stat">
+                      <span>Рабочее время</span>
+                      <strong>{formatSeconds(brigade.work_sec)}</strong>
+                    </div>
+                    <div className={`brigade-stat${brigade.kpp_workers > 0 ? ' brigade-stat-alert' : ''}`}>
+                      <span>На КПП</span>
+                      <strong>{brigade.kpp_workers > 0 ? `${brigade.kpp_workers} чел.` : 'нет'}</strong>
+                    </div>
                   </div>
-                ) : null}
-              </div>
-            </article>
+                </article>
+              ))}
+            </div>
 
-            <article className="panel panel-side-accent">
-              <div className="panel-head">
+            <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}>
+              <div className="kpp-panel-head">
                 <div>
-                  <p className="panel-kicker">Ухудшения</p>
-                  <h2>Что ухудшилось сегодня</h2>
+                  <p className="panel-kicker">Контроль КПП</p>
+                  <h3>{kppEmployees.length > 0 ? 'Сотрудники в зоне КПП' : 'На КПП никого не было'}</h3>
                 </div>
+                {kppEmployees.length > 0 ? <span className="kpp-count">{kppEmployees.length}</span> : null}
               </div>
-              <div className="warning-grid">
-                {todayWarnings.length > 0 ? todayWarnings.map((warning) => (
-                  <article className="warning-card" key={warning.title}>
-                    <span>{warning.title}</span>
-                    <strong>{warning.value}</strong>
-                    <p>{warning.note}</p>
-                  </article>
-                )) : <div className="panel-collapsed-note">Сильных ухудшений по сравнению с предыдущим днем не видно.</div>}
-              </div>
-            </article>
-
-            <article className="panel panel-wide">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">{uiText.sections.brigadesKicker}</p>
-                  <h2>{uiText.sections.brigadesTitle}</h2>
-                  <p className="panel-description">{uiText.sections.brigadesDescription}</p>
-                </div>
-              </div>
-              <div className="brigade-legend">
-                <span>{uiText.sections.brigadesLegendTitle}</span>
-                <div className="brigade-legend-items">
-                  <div className="brigade-legend-item"><i className="legend-swatch brigade-visual-work" /><span>{uiText.table.work}</span></div>
-                  <div className="brigade-legend-item"><i className="legend-swatch brigade-visual-idle" /><span>{uiText.table.idle}</span></div>
-                  <div className="brigade-legend-item"><i className="legend-swatch brigade-visual-sleep" /><span>{uiText.table.sleep}</span></div>
-                </div>
-              </div>
-              <div className="brigade-card-grid">
-                {brigadeRows.map((brigade) => (
-                  <article className="brigade-card" key={brigade.supervisorName}>
-                    <div className="brigade-card-head">
-                      <div>
-                        <strong>{brigade.supervisorName}</strong>
-                        <p>{brigade.workers} {uiText.compareMeta.workersSuffix} {uiText.compareMeta.inReportSuffix}</p>
+              {kppEmployees.length > 0 ? (
+                <div className="kpp-list">
+                  {kppEmployees.map((employee) => (
+                    <div className="kpp-row" key={employee.ww_shift_id}>
+                      <div className="kpp-main">
+                        <strong>{employee.full_name}</strong>
+                        <span>
+                          #{employee.employee_number} · {employee.supervisor_name}
+                        </span>
                       </div>
-                      <div className="brigade-badge">{formatPercent(brigade.discipline)}</div>
+                      <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
                     </div>
-                    <div className="brigade-stack">
-                      <div className="brigade-stack-segment brigade-visual-work" style={{ width: `${brigade.totalSec ? (brigade.workSec / brigade.totalSec) * 100 : 0}%` }} />
-                      <div className="brigade-stack-segment brigade-visual-idle" style={{ width: `${brigade.totalSec ? (brigade.idleSec / brigade.totalSec) * 100 : 0}%` }} />
-                      <div className="brigade-stack-segment brigade-visual-sleep" style={{ width: `${brigade.totalSec ? (brigade.sleepSec / brigade.totalSec) * 100 : 0}%` }} />
-                    </div>
-                    <div className="brigade-total-line"><span>{uiText.compareMeta.trackedSuffix}</span><strong>{formatSeconds(brigade.totalSec)}</strong></div>
-                    <div className="brigade-stats-grid">
-                      <div className="brigade-stat"><span>{uiText.table.activity}</span><strong>{formatPercent(brigade.productivity)}</strong></div>
-                      <div className="brigade-stat"><span>{uiText.table.pv}</span><strong>{formatPercent(brigade.pvRatio)}</strong></div>
-                      <div className="brigade-stat"><span>{uiText.table.outsidePv}</span><strong>{formatSeconds(brigade.avgOutsidePvSec)}</strong></div>
-                      <div className="brigade-stat"><span>{uiText.table.lowActivityShare}</span><strong>{formatPercent(brigade.lowActivityShare)}</strong></div>
-                      <div className="brigade-stat"><span>{uiText.table.lostActivity}</span><strong>{formatSeconds(brigade.lostActivitySec)}</strong></div>
-                      <div className="brigade-stat"><span>{uiText.table.absence}</span><strong>{formatSeconds(brigade.avgAbsenceSec)}</strong></div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel panel-side-accent">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Риски</p>
-                  <h2>Проблемные смены</h2>
+                  ))}
                 </div>
-              </div>
-              <div className="leaderboard">
-                {problematicRows.map((row, index) => (
-                  <div className="leader-row warning-row" key={row.ww_shift_id}>
-                    <span className="leader-rank">{String(index + 1).padStart(2, '0')}</span>
-                    <div className="leader-main">
-                      <strong>{row.full_name}</strong>
-                      <p>{row.supervisor_name ?? uiText.table.noSupervisor}</p>
-                    </div>
-                    <div className="leader-metric">
-                      <strong>{formatPercent(row.productivity)}</strong>
-                      <span>{formatSeconds(row.absenceSec + row.lostActivitySec)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
+              ) : (
+                <p className="kpp-empty">Никто не фиксировался в зоне КПП (зона 13) за этот день.</p>
+              )}
+            </div>
+          </>
+        ) : null}
+      </CollapsibleBlock>
 
-            <article className="panel panel-side-accent">
+      {/* БЛОК 2 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
+      <CollapsibleBlock
+        kicker="Блок 2 · Еженедельно"
+        title="Еженедельная аналитика"
+        description="Сводка по бригадам за неделю (Пн–Вс). Этот блок уходит в еженедельную рассылку по понедельникам."
+        actions={<SendReportControl type="weekly" weekStart={selectedWeek} disabled={!selectedWeek} />}
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Неделя</span>
+            <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
+              {availableWeeks.map((week) => (
+                <option key={week.week_start} value={week.week_start}>
+                  {formatWeekRange(week.week_start, week.week_end)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Период</span>
+            <strong>{selectedWeekMeta ? formatWeekRange(selectedWeekMeta.week_start, selectedWeekMeta.week_end) : '—'}</strong>
+          </div>
+        </div>
+
+        {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
+        {weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length === 0 ? (
+          <div className="empty-state">Нет данных за выбранную неделю.</div>
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <div className="brigade-grid">
+            {weeklyRows.map((brigade) => (
+              <article className="brigade-card" key={brigade.supervisor_name}>
+                <div className="brigade-card-head">
+                  <div>
+                    <strong>{brigade.supervisor_name}</strong>
+                    <p>≈ {brigade.avg_workers} чел./день · {brigade.unique_employees} уникальных</p>
+                  </div>
+                  <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
+                    {formatPercent(brigade.activity_pct)}
+                  </div>
+                </div>
+                <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} sleepSec={brigade.sleep_sec} totalSec={brigade.total_sec} />
+                <div className="brigade-stats-grid">
+                  <div className="brigade-stat">
+                    <span>Активность</span>
+                    <strong>{formatPercent(brigade.activity_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Простой</span>
+                    <strong>{formatPercent(brigade.idle_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Дней в отчёте</span>
+                    <strong>{brigade.days}</strong>
+                  </div>
+                  <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
+                    <span>Смены на КПП</span>
+                    <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </CollapsibleBlock>
+
+      {/* БЛОК 3 — ДЕТАЛИЗАЦИЯ */}
+      <CollapsibleBlock
+        kicker="Блок 3 · Детализация"
+        title="Расшифровка по сотрудникам"
+        description="Полная таблица смен за выбранный день и топ по активности. Не входит в рассылку."
+        defaultOpen={false}
+      >
+        {dailyLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
+
+        {!dailyLoading && shiftRows.length > 0 ? (
+          <div className="detail-grid">
+            <article className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="panel-kicker">{uiText.sections.topKicker}</p>
-                  <h2>{uiText.sections.topTitle}</h2>
+                  <p className="panel-kicker">Топ 5</p>
+                  <h2>Самые активные смены</h2>
                 </div>
               </div>
               <div className="leaderboard">
@@ -785,7 +427,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span className="leader-rank">{String(index + 1).padStart(2, '0')}</span>
                     <div className="leader-main">
                       <strong>{row.full_name}</strong>
-                      <p>{row.supervisor_name ?? uiText.table.noSupervisor}</p>
+                      <p>{row.supervisor_name ?? NO_SUPERVISOR}</p>
                     </div>
                     <div className="leader-metric">
                       <strong>{formatPercent(row.productivity)}</strong>
@@ -795,52 +437,53 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 ))}
               </div>
             </article>
-          </section>
 
-          <section className="panel reveal-block">
-            <div className="panel-head">
-              <div>
-                <p className="panel-kicker">{uiText.sections.shiftsKicker}</p>
-                <h2>{uiText.sections.shiftsTitle}</h2>
+            <article className="panel panel-wide">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Смены</p>
+                  <h2>Сортируемая таблица за день</h2>
+                </div>
               </div>
-              <button type="button" className="panel-toggle" onClick={() => setShowShiftTable((current) => !current)}>
-                {showShiftTable ? uiText.sections.shiftsHide : uiText.sections.shiftsShow}
-              </button>
-            </div>
-            {showShiftTable ? (
               <div className="table-wrap">
                 <table className="analytics-table">
                   <thead>
                     <tr>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('full_name'); setSortDirection(sortKey === 'full_name' && sortDirection === 'asc' ? 'desc' : 'asc') }}>{getSortLabel(uiText.table.worker, 'full_name')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('supervisor_name'); setSortDirection(sortKey === 'supervisor_name' && sortDirection === 'asc' ? 'desc' : 'asc') }}>{getSortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('work_sec_total'); setSortDirection(sortKey === 'work_sec_total' && sortDirection === 'desc' ? 'asc' : 'desc') }}>{getSortLabel(uiText.table.work, 'work_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('idle_sec_total'); setSortDirection(sortKey === 'idle_sec_total' && sortDirection === 'desc' ? 'asc' : 'desc') }}>{getSortLabel(uiText.table.idle, 'idle_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('total_sec_total'); setSortDirection(sortKey === 'total_sec_total' && sortDirection === 'desc' ? 'asc' : 'desc') }}>{getSortLabel(uiText.table.total, 'total_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('productivity'); setSortDirection(sortKey === 'productivity' && sortDirection === 'desc' ? 'asc' : 'desc') }}>{getSortLabel(uiText.table.productivity, 'productivity')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => { setSortKey('sleep_sec_total'); setSortDirection(sortKey === 'sleep_sec_total' && sortDirection === 'desc' ? 'asc' : 'desc') }}>{getSortLabel(uiText.table.sleep, 'sleep_sec_total')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('idle_sec_total')}>{sortLabel(uiText.table.idle, 'idle_sec_total')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{sortLabel(uiText.table.total, 'total_sec_total')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{sortLabel(uiText.table.activity, 'productivity')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('kpp_sec_total')}>{sortLabel('КПП', 'kpp_sec_total')}</button></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRows.map((row) => (
-                      <tr key={row.ww_shift_id}>
-                        <td><div className="employee-cell"><strong>{row.full_name}</strong><span>#{row.employee_number}</span></div></td>
-                        <td>{row.supervisor_name ?? uiText.table.noSupervisor}</td>
+                    {sortedShiftRows.map((row) => (
+                      <tr key={row.ww_shift_id} className={row.kpp_sec_total > 0 ? 'row-alert' : undefined}>
+                        <td>
+                          <div className="employee-cell">
+                            <strong>{row.full_name}</strong>
+                            <span>#{row.employee_number}</span>
+                          </div>
+                        </td>
+                        <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
                         <td>{formatSeconds(row.work_sec_total)}</td>
                         <td>{formatSeconds(row.idle_sec_total)}</td>
                         <td>{formatSeconds(row.total_sec_total)}</td>
                         <td>{formatPercent(getRowProductivity(row))}</td>
-                        <td>{formatSeconds(row.sleep_sec_total)}</td>
+                        <td>{row.kpp_sec_total > 0 ? formatMinutes(row.kpp_sec_total) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : <div className="panel-collapsed-note">{uiText.sections.shiftsHiddenNote}</div>}
-          </section>
-        </>
-      ) : null}
+            </article>
+          </div>
+        ) : null}
+
+        {!dailyLoading && shiftRows.length === 0 ? <div className="empty-state">Нет смен за выбранный день.</div> : null}
+      </CollapsibleBlock>
     </>
   )
 }
-

@@ -1,0 +1,58 @@
+name: Send Reports
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 12:00 МСК — ежедневный отчёт за вчера
+    - cron: '30 9 * * 1'  # 12:30 МСК понедельник — недельный отчёт за прошлую неделю
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Тип отчёта'
+        required: true
+        default: daily
+        type: choice
+        options:
+          - daily
+          - weekly
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine report type
+        id: kind
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TYPE="${{ inputs.type }}"
+          elif [ "${{ github.event.schedule }}" = "30 9 * * 1" ]; then
+            TYPE="weekly"
+          else
+            TYPE="daily"
+          fi
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+          echo "Report type: $TYPE"
+
+      - name: Trigger send-report edge function
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          ADMIN_PASSWORD: ${{ secrets.SETTINGS_ADMIN_PASSWORD }}
+          REPORT_TYPE: ${{ steps.kind.outputs.type }}
+        run: |
+          set -e
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
+            "$SUPABASE_URL/functions/v1/send-report" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $ANON_KEY" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -H "x-settings-password: $ADMIN_PASSWORD" \
+            -H "x-triggered-by: schedule" \
+            -d "{\"type\":\"$REPORT_TYPE\"}")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "HTTP $CODE"
+          echo "$BODY"
+          if [ "$CODE" -ge 300 ]; then
+            echo "::error::send-report failed"
+            exit 1
+          fi

@@ -26,6 +26,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Local import/backfill logs
+backfill-log.txt
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

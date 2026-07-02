@@ -4,13 +4,16 @@
 
 ## Что есть сейчас
 
-- `#/` — основной дашборд
-- `#/settings` — отдельная страница настроек фронта и ручной импорт отчётов
+- `#/` — дашборд из трёх сворачиваемых блоков: ежедневная аналитика, еженедельная аналитика, детализация по сотрудникам
+- `#/settings` — настройки фронта, импорт отчётов и управление получателями рассылки
+- Рассылка отчётов заказчику на почту (ежедневно/еженедельно) — см. [docs/email-reports.md](docs/email-reports.md)
 - `npm run import:reports` — локальный импорт faceID + AA_BLE + LongIDLE
 - `npm run sync:drive` — автоимпорт трёх файлов из Google Drive
 - `supabase/site-settings.sql` — SQL для таблицы опубликованных настроек
 - `supabase/migrations/20260702_long_idle_and_drive.sql` — LongIDLE и расширение `import_files`
+- `supabase/migrations/20260703_dashboard_and_email.sql` — КПП, метрики по бригадам (день/неделя), получатели и лог рассылки
 - `supabase/functions/site-settings/index.ts` — edge function для защищенной публикации настроек
+- `supabase/functions/send-report/index.ts` — edge function рассылки отчётов (SMTP)
 
 ## Переменные окружения
 
