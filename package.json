@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "import:reports": "node scripts/import-reports.mjs",
     "sync:drive": "node scripts/sync-drive-reports.mjs",
+    "backfill:drive": "node scripts/backfill-drive-reports.mjs",
     "inspect:report": "node scripts/inspect-report-headers.mjs"
   },
   "dependencies": {

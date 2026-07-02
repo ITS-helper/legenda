@@ -42,6 +42,9 @@ GitHub Actions workflow [`.github/workflows/sync-drive-reports.yml`](../.github/
 - `GOOGLE_DRIVE_FOLDER_ID` (по умолчанию `1GozRP1VvLFkZooW9dQYuI_O-c5tqmRfO`)
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `GOOGLE_SERVICE_ACCOUNT_JSON` (рекомендуется для GitHub Actions: вставьте весь JSON service account одной строкой)
+
+Для GitHub Actions надёжнее завести secret `GOOGLE_SERVICE_ACCOUNT_JSON` с полным содержимым JSON-файла service account. Скрипт также поддерживает пару `EMAIL` + `PRIVATE_KEY`.
 
 ## Service Account Setup
 
@@ -88,6 +91,7 @@ npm run sync:drive -- --date 2026-07-01 --force
 |---------|----------------|
 | `Не найдены файлы за YYYY-MM-DD` | Файлы ещё не появились в нужной архивной папке или дата в имени не совпадает |
 | `invalid_grant` / auth error | `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` с корректными `\n` |
+| `DECODER routines::unsupported` | Добавьте secret `GOOGLE_SERVICE_ACCOUNT_JSON` с полным JSON service account |
 | `permission denied` | Папка расшарена на service account email |
 | `long_idle_facts does not exist` | Применить `supabase/migrations/20260702_long_idle_and_drive.sql` в SQL Editor |
 

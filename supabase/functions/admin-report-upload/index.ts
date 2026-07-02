@@ -333,11 +333,33 @@ Deno.serve(async (request) => {
 
     const batchId = batchRow.id
 
-    for (const table of ['long_idle_facts', 'ble_minute_facts', 'import_files', 'shifts']) {
-      const { error } = await supabase.from(table).delete().eq('batch_id', batchId)
+    const { data: existingShifts, error: existingShiftsError } = await supabase
+      .from('shifts')
+      .select('id')
+      .eq('report_date', reportDate)
+
+    if (existingShiftsError) {
+      throw existingShiftsError
+    }
+
+    const existingShiftIds = (existingShifts ?? []).map((row) => Number(row.id))
+    if (existingShiftIds.length > 0) {
+      const { error: sessionDeleteError } = await supabase.from('sessions').delete().in('shift_id', existingShiftIds)
+      if (sessionDeleteError) {
+        throw sessionDeleteError
+      }
+    }
+
+    for (const table of ['long_idle_facts', 'ble_minute_facts', 'shifts']) {
+      const { error } = await supabase.from(table).delete().eq('report_date', reportDate)
       if (error) {
         throw error
       }
+    }
+
+    const { error: importFilesDeleteError } = await supabase.from('import_files').delete().eq('batch_id', batchId)
+    if (importFilesDeleteError) {
+      throw importFilesDeleteError
     }
 
     await chunkedUpsert(

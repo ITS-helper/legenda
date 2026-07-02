@@ -56,16 +56,61 @@ function getYesterdayMoscowDate() {
   return todayUtc.toISOString().slice(0, 10)
 }
 
-function getDriveClient() {
-  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-
-  if (!clientEmail || !privateKey) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required')
+function normalizePrivateKey(raw) {
+  if (!raw) {
+    return ''
   }
 
+  let key = raw.trim()
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1)
+  }
+
+  key = key.replace(/\\n/g, '\n')
+
+  if (!key.includes('\n') && key.includes('-----BEGIN PRIVATE KEY-----')) {
+    key = key
+      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----\n')
+  }
+
+  return key
+}
+
+function getServiceAccountCredentials() {
+  const jsonSecret = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()
+  if (jsonSecret) {
+    const parsed = JSON.parse(jsonSecret)
+    const email = parsed.client_email
+    const privateKey = normalizePrivateKey(parsed.private_key)
+
+    if (!email || !privateKey) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON must include client_email and private_key')
+    }
+
+    return { email, privateKey }
+  }
+
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim()
+  const privateKey = normalizePrivateKey(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
+
+  if (!email || !privateKey) {
+    throw new Error(
+      'Set GOOGLE_SERVICE_ACCOUNT_JSON or both GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
+    )
+  }
+
+  return { email, privateKey }
+}
+
+function getDriveClient() {
+  const { email, privateKey } = getServiceAccountCredentials()
+
   const auth = new google.auth.JWT({
-    email: clientEmail,
+    email,
     key: privateKey,
     scopes: ['https://www.googleapis.com/auth/drive.readonly'],
   })
