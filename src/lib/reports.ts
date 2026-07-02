@@ -6,6 +6,7 @@ export type BrigadeDailyRow = {
   workers: number
   work_sec: number
   idle_sec: number
+  go_sec: number
   total_sec: number
   sleep_sec: number
   pv_sec: number
@@ -13,6 +14,7 @@ export type BrigadeDailyRow = {
   kpp_workers: number
   activity_pct: number
   idle_pct: number
+  go_pct: number
 }
 
 export type BrigadeWeeklyRow = {
@@ -24,6 +26,7 @@ export type BrigadeWeeklyRow = {
   avg_workers: number
   work_sec: number
   idle_sec: number
+  go_sec: number
   total_sec: number
   sleep_sec: number
   pv_sec: number
@@ -31,6 +34,7 @@ export type BrigadeWeeklyRow = {
   kpp_shifts: number
   activity_pct: number
   idle_pct: number
+  go_pct: number
 }
 
 export type ShiftMetricRow = {
@@ -195,12 +199,13 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
       acc.workers += row.workers
       acc.work_sec += row.work_sec
       acc.idle_sec += row.idle_sec
+      acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_sec += row.kpp_sec
       acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, idle_sec: 0, total_sec: 0, kpp_sec: 0, kpp_workers: 0 },
+    { workers: 0, work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_sec: 0, kpp_workers: 0 },
   )
 }
 

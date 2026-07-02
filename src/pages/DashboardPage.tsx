@@ -31,15 +31,25 @@ function getRowProductivity(row: ShiftMetricRow) {
   return ratio(row.work_sec_total, row.total_sec_total)
 }
 
-function StructureBar({ workSec, idleSec, sleepSec, totalSec }: { workSec: number; idleSec: number; sleepSec: number; totalSec: number }) {
+function StructureBar({ workSec, idleSec, goSec, totalSec }: { workSec: number; idleSec: number; goSec: number; totalSec: number }) {
   const workWidth = `${ratio(workSec, totalSec)}%`
   const idleWidth = `${ratio(idleSec, totalSec)}%`
-  const sleepWidth = `${ratio(sleepSec, totalSec)}%`
+  const goWidth = `${ratio(goSec, totalSec)}%`
   return (
     <div className="structure-bar">
-      <div className="structure-segment structure-work" style={{ width: workWidth }} />
-      <div className="structure-segment structure-idle" style={{ width: idleWidth }} />
-      <div className="structure-segment structure-sleep" style={{ width: sleepWidth }} />
+      <div className="structure-segment structure-work" style={{ width: workWidth }} title="Работа" />
+      <div className="structure-segment structure-idle" style={{ width: idleWidth }} title="Простой" />
+      <div className="structure-segment structure-go" style={{ width: goWidth }} title="Ходьба между зонами" />
+    </div>
+  )
+}
+
+function StructureLegend() {
+  return (
+    <div className="structure-legend">
+      <span><i className="legend-dot structure-work" /> Работа</span>
+      <span><i className="legend-dot structure-idle" /> Простой</span>
+      <span><i className="legend-dot structure-go" /> Ходьба между зонами</span>
     </div>
   )
 }
@@ -143,6 +153,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const dailyTotals = useMemo(() => sumDaily(dailyRows), [dailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyIdle = ratio(dailyTotals.idle_sec, dailyTotals.total_sec)
+  const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
 
   const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
 
@@ -262,6 +273,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
                 <p className="metric-note">простой от общего времени</p>
               </article>
+              <article className="metric-card">
+                <span className="metric-label">Ходьба между зонами</span>
+                <strong className="metric-value">{formatPercent(dailyGo)}</strong>
+                <p className="metric-note">перемещения от общего времени</p>
+              </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Были на КПП</span>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
@@ -281,7 +297,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       {formatPercent(brigade.activity_pct)}
                     </div>
                   </div>
-                  <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} sleepSec={brigade.sleep_sec} totalSec={brigade.total_sec} />
+                  <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} goSec={brigade.go_sec} totalSec={brigade.total_sec} />
+                  <StructureLegend />
                   <div className="brigade-stats-grid">
                     <div className="brigade-stat">
                       <span>Активность</span>
@@ -292,8 +309,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <strong>{formatPercent(brigade.idle_pct)}</strong>
                     </div>
                     <div className="brigade-stat">
-                      <span>Рабочее время</span>
-                      <strong>{formatSeconds(brigade.work_sec)}</strong>
+                      <span>Ходьба между зонами</span>
+                      <strong>{formatPercent(brigade.go_pct)}</strong>
                     </div>
                     <div className={`brigade-stat${brigade.kpp_workers > 0 ? ' brigade-stat-alert' : ''}`}>
                       <span>На КПП</span>
@@ -378,7 +395,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     {formatPercent(brigade.activity_pct)}
                   </div>
                 </div>
-                <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} sleepSec={brigade.sleep_sec} totalSec={brigade.total_sec} />
+                <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} goSec={brigade.go_sec} totalSec={brigade.total_sec} />
+                <StructureLegend />
                 <div className="brigade-stats-grid">
                   <div className="brigade-stat">
                     <span>Активность</span>
@@ -387,6 +405,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   <div className="brigade-stat">
                     <span>Простой</span>
                     <strong>{formatPercent(brigade.idle_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Ходьба между зонами</span>
+                    <strong>{formatPercent(brigade.go_pct)}</strong>
                   </div>
                   <div className="brigade-stat">
                     <span>Дней в отчёте</span>

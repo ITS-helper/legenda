@@ -16,11 +16,13 @@ type BrigadeDailyRow = {
   workers: number
   work_sec: number
   idle_sec: number
+  go_sec: number
   total_sec: number
   kpp_sec: number
   kpp_workers: number
   activity_pct: number
   idle_pct: number
+  go_pct: number
 }
 
 type BrigadeWeeklyRow = {
@@ -32,11 +34,13 @@ type BrigadeWeeklyRow = {
   avg_workers: number
   work_sec: number
   idle_sec: number
+  go_sec: number
   total_sec: number
   kpp_sec: number
   kpp_shifts: number
   activity_pct: number
   idle_pct: number
+  go_pct: number
 }
 
 type KppRow = {
@@ -172,6 +176,7 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${row.workers}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.go_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;color:${row.kpp_workers > 0 ? '#c0392b' : '#12332a'};">${row.kpp_workers > 0 ? `${row.kpp_workers} (${formatMinutes(row.kpp_sec)})` : '—'}</td>
     </tr>`,
     )
@@ -183,6 +188,7 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
       <th style="padding:10px 12px;text-align:center;">Вышло</th>
       <th style="padding:10px 12px;text-align:center;">Активность</th>
       <th style="padding:10px 12px;text-align:center;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;">Ходьба</th>
       <th style="padding:10px 12px;text-align:center;">КПП</th>
     </tr></thead>
     <tbody>${body}</tbody>
@@ -198,6 +204,7 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${row.unique_employees}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.go_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;color:${row.kpp_shifts > 0 ? '#c0392b' : '#12332a'};">${row.kpp_shifts > 0 ? row.kpp_shifts : '—'}</td>
     </tr>`,
     )
@@ -210,6 +217,7 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       <th style="padding:10px 12px;text-align:center;">Уникальных</th>
       <th style="padding:10px 12px;text-align:center;">Активность</th>
       <th style="padding:10px 12px;text-align:center;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;">Ходьба</th>
       <th style="padding:10px 12px;text-align:center;">Смены КПП</th>
     </tr></thead>
     <tbody>${body}</tbody>
@@ -260,14 +268,16 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       acc.workers += row.workers
       acc.work_sec += row.work_sec
       acc.idle_sec += row.idle_sec
+      acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, idle_sec: 0, total_sec: 0, kpp_workers: 0 },
+    { workers: 0, work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_workers: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
   const idle = totals.total_sec > 0 ? (totals.idle_sec / totals.total_sec) * 100 : 0
+  const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
     <div style="padding:24px 24px 8px;">
@@ -280,6 +290,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
           ${metricCell('Вышло на смену', String(totals.workers))}
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
+          ${metricCell('Ходьба', pct(go))}
           ${metricCell('Были на КПП', String(totals.kpp_workers), totals.kpp_workers > 0)}
         </tr>
       </table>
@@ -307,14 +318,16 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     (acc, row) => {
       acc.work_sec += row.work_sec
       acc.idle_sec += row.idle_sec
+      acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_shifts += row.kpp_shifts
       return acc
     },
-    { work_sec: 0, idle_sec: 0, total_sec: 0, kpp_shifts: 0 },
+    { work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_shifts: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
   const idle = totals.total_sec > 0 ? (totals.idle_sec / totals.total_sec) * 100 : 0
+  const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
     <div style="padding:24px 24px 8px;">
@@ -326,6 +339,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
         <tr>
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
+          ${metricCell('Ходьба', pct(go))}
           ${metricCell('Смены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0)}
         </tr>
       </table>

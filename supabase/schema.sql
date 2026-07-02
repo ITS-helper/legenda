@@ -208,6 +208,7 @@ select
   count(*) as workers,
   sum(work_sec_total) as work_sec,
   sum(idle_sec_total) as idle_sec,
+  sum(go_sec_total) as go_sec,
   sum(total_sec_total) as total_sec,
   sum(sleep_sec_total) as sleep_sec,
   sum(pv_sec_total) as pv_sec,
@@ -218,7 +219,10 @@ select
     else 0 end as activity_pct,
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(idle_sec_total) / sum(total_sec_total), 1)
-    else 0 end as idle_pct
+    else 0 end as idle_pct,
+  case when sum(total_sec_total) > 0
+    then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
+    else 0 end as go_pct
 from analytics.shift_daily_metrics
 group by report_date, coalesce(supervisor_name, 'Без начальника');
 
@@ -232,6 +236,7 @@ select
   round(count(*)::numeric / nullif(count(distinct report_date), 0), 1) as avg_workers,
   sum(work_sec_total) as work_sec,
   sum(idle_sec_total) as idle_sec,
+  sum(go_sec_total) as go_sec,
   sum(total_sec_total) as total_sec,
   sum(sleep_sec_total) as sleep_sec,
   sum(pv_sec_total) as pv_sec,
@@ -242,7 +247,10 @@ select
     else 0 end as activity_pct,
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(idle_sec_total) / sum(total_sec_total), 1)
-    else 0 end as idle_pct
+    else 0 end as idle_pct,
+  case when sum(total_sec_total) > 0
+    then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
+    else 0 end as go_pct
 from analytics.shift_daily_metrics
 group by 1, 2, 3;
 
