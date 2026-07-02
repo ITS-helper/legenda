@@ -17,6 +17,7 @@ import {
   normalizeReportDateInput,
   parseBleRows,
   parseFaceRows,
+  parseIdleEpisodeRows,
   parseLongIdleRows,
   REPORT_FILE_PATTERNS,
 } from './lib/report-parsers.mjs'
@@ -29,6 +30,8 @@ dotenv.config({ path: path.join(projectRoot, '.env.local') })
 dotenv.config({ path: path.join(projectRoot, '.env') })
 
 const REQUIRED_SOURCES = ['faceid', 'aa_ble', 'long_idle']
+const OPTIONAL_SOURCES = ['idle_episode']
+const ALL_SOURCES = [...REQUIRED_SOURCES, ...OPTIONAL_SOURCES]
 
 function getArg(flagName) {
   const index = process.argv.indexOf(flagName)
@@ -173,12 +176,15 @@ async function resolveArchiveFolderIds(drive, rootFolderId) {
 
   const archiveFolderIds = {}
 
-  for (const sourceType of REQUIRED_SOURCES) {
+  for (const sourceType of ALL_SOURCES) {
     const folderName = DRIVE_ARCHIVE_FOLDERS[sourceType]
     const folderId = foldersByName.get(folderName.toLowerCase())
 
     if (!folderId) {
-      throw new Error(`В корне LEGENDA не найдена папка архива: ${folderName}`)
+      if (REQUIRED_SOURCES.includes(sourceType)) {
+        throw new Error(`В корне LEGENDA не найдена папка архива: ${folderName}`)
+      }
+      continue
     }
 
     archiveFolderIds[sourceType] = folderId
@@ -191,8 +197,10 @@ async function listReportFilesFromArchives(drive, rootFolderId) {
   const archiveFolderIds = await resolveArchiveFolderIds(drive, rootFolderId)
   const filesBySource = {}
 
-  for (const sourceType of REQUIRED_SOURCES) {
-    filesBySource[sourceType] = await listXlsxFilesRecursively(drive, archiveFolderIds[sourceType])
+  for (const sourceType of ALL_SOURCES) {
+    filesBySource[sourceType] = archiveFolderIds[sourceType]
+      ? await listXlsxFilesRecursively(drive, archiveFolderIds[sourceType])
+      : []
   }
 
   return filesBySource
@@ -213,9 +221,10 @@ function findReportFileForDate(files, sourceType, reportDate) {
 
 function findReportFilesForDate(filesBySource, reportDate) {
   return {
-    faceid: findReportFileForDate(filesBySource.faceid, 'faceid', reportDate),
-    aa_ble: findReportFileForDate(filesBySource.aa_ble, 'aa_ble', reportDate),
-    long_idle: findReportFileForDate(filesBySource.long_idle, 'long_idle', reportDate),
+    faceid: findReportFileForDate(filesBySource.faceid ?? [], 'faceid', reportDate),
+    aa_ble: findReportFileForDate(filesBySource.aa_ble ?? [], 'aa_ble', reportDate),
+    long_idle: findReportFileForDate(filesBySource.long_idle ?? [], 'long_idle', reportDate),
+    idle_episode: findReportFileForDate(filesBySource.idle_episode ?? [], 'idle_episode', reportDate),
   }
 }
 
@@ -270,7 +279,8 @@ async function main() {
     throw new Error(message)
   }
 
-  const nextFileMeta = REQUIRED_SOURCES.map((sourceType) => ({
+  const presentSources = ALL_SOURCES.filter((sourceType) => reportFiles[sourceType])
+  const nextFileMeta = presentSources.map((sourceType) => ({
     sourceType,
     fileName: reportFiles[sourceType].name,
     googleFileId: reportFiles[sourceType].id,
@@ -309,6 +319,12 @@ async function main() {
     const bleRows = parseBleRows(blePath)
     const longIdleRows = parseLongIdleRows(longIdlePath)
 
+    let idleEpisodeRows = []
+    if (reportFiles.idle_episode) {
+      const idleEpisodePath = await downloadDriveFile(drive, reportFiles.idle_episode, tempDir)
+      idleEpisodeRows = parseIdleEpisodeRows(idleEpisodePath)
+    }
+
     const result = await importDailyBatch(supabase, {
       reportDate,
       sourceDayKey,
@@ -316,6 +332,7 @@ async function main() {
       faceRows,
       bleRows,
       longIdleRows,
+      idleEpisodeRows,
       files: nextFileMeta,
     })
 

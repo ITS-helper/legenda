@@ -144,6 +144,7 @@ export async function importDailyBatch(supabase, options) {
     faceRows = [],
     bleRows = [],
     longIdleRows = [],
+    idleEpisodeRows = [],
     files,
   } = options
 
@@ -204,7 +205,7 @@ export async function importDailyBatch(supabase, options) {
     }
   }
 
-  for (const table of ['long_idle_facts', 'ble_minute_facts', 'shifts']) {
+  for (const table of ['idle_episodes', 'long_idle_facts', 'ble_minute_facts', 'shifts']) {
     const { error } = await supabase.from(table).delete().eq('report_date', reportDate)
     if (error) {
       throw error
@@ -355,6 +356,31 @@ export async function importDailyBatch(supabase, options) {
 
   await chunkedInsert(supabase, 'long_idle_facts', mapLongIdleFactRows(batchId, longIdleRows))
 
+  if (idleEpisodeRows.length > 0) {
+    await chunkedInsert(
+      supabase,
+      'idle_episodes',
+      idleEpisodeRows
+        .filter((row) => Number.isFinite(row.ww_shift_id) && row.report_date)
+        .map((row) => ({
+          batch_id: batchId,
+          report_date: row.report_date,
+          ww_shift_id: row.ww_shift_id,
+          session_id: Number.isFinite(row.session_id) ? row.session_id : null,
+          employee_number: row.employee_number,
+          full_name: row.full_name,
+          dt_start: row.dt_start,
+          dt_end: row.dt_end,
+          duration_min: row.duration_min,
+          work_type: row.work_type,
+          work_code: row.work_code,
+          ble_tag_number: row.ble_tag_number,
+          ble_tag_zone: row.ble_tag_zone,
+          ble_label: row.ble_label,
+        })),
+    )
+  }
+
   const { error: readyError } = await supabase
     .from('import_batches')
     .update({
@@ -373,6 +399,7 @@ export async function importDailyBatch(supabase, options) {
     importedFaceRows: faceRows.length,
     importedBleRows: bleRows.length,
     importedLongIdleRows: longIdleRows.length,
+    importedIdleEpisodes: idleEpisodeRows.length,
     importedRows: bleRows.length,
     shifts: shiftRows.length,
     sessions: sessionRows.length,

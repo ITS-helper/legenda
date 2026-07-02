@@ -12,15 +12,20 @@ import {
   loadAvailableWeeks,
   loadBrigadeDaily,
   loadBrigadeWeekly,
+  loadIdleEpisodes,
   loadKppEmployees,
   loadShiftRows,
+  loadZoneDaily,
   ratio,
   sumDaily,
   type BrigadeDailyRow,
   type BrigadeWeeklyRow,
+  type IdleEpisode,
   type KppEmployee,
   type ShiftMetricRow,
+  type ZoneDailyRow,
 } from '../lib/reports'
+import { isAlertZone } from '../lib/zones'
 
 type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
@@ -63,6 +68,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
+  const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
+  const [idleEpisodes, setIdleEpisodes] = useState<IdleEpisode[]>([])
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
@@ -104,15 +111,19 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, kpp, shifts] = await Promise.all([
+        const [brigades, kpp, shifts, zones, episodes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
           loadKppEmployees(selectedDate),
           loadShiftRows(selectedDate),
+          loadZoneDaily(selectedDate),
+          loadIdleEpisodes(selectedDate),
         ])
         if (cancelled) return
         setDailyRows(brigades)
         setKppEmployees(kpp)
         setShiftRows(shifts)
+        setZoneRows(zones)
+        setIdleEpisodes(episodes)
       } catch (error) {
         if (!cancelled) setDailyError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -154,6 +165,22 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyIdle = ratio(dailyTotals.idle_sec, dailyTotals.total_sec)
   const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
+
+  const zoneTotalSec = useMemo(() => zoneRows.reduce((sum, row) => sum + row.sec, 0), [zoneRows])
+
+  const idleByZone = useMemo(() => {
+    const map = new Map<string, { zonaName: string; minutes: number; count: number; alert: boolean }>()
+    for (const episode of idleEpisodes) {
+      const key = episode.zonaName
+      const current = map.get(key) ?? { zonaName: key, minutes: 0, count: 0, alert: isAlertZone(episode.ble_tag_zone) }
+      current.minutes += episode.duration_min
+      current.count += 1
+      map.set(key, current)
+    }
+    return [...map.values()].sort((left, right) => right.minutes - left.minutes)
+  }, [idleEpisodes])
+
+  const idleTotalMin = useMemo(() => idleEpisodes.reduce((sum, e) => sum + e.duration_min, 0), [idleEpisodes])
 
   const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
 
@@ -228,7 +255,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
-        description="Сколько человек вышло на смену по бригадам, активность и простой за выбранный день. Этот блок уходит в ежедневную рассылку."
+        description="Сколько человек вышло на смену по бригадам, активность (work_sec), простой (idle_sec) и ходьба (go_sec) за выбранный день. Проценты считаются от общего времени трекинга. Этот блок уходит в ежедневную рассылку."
         actions={<SendReportControl type="daily" date={selectedDate} disabled={!selectedDate} />}
       >
         <div className="filter-row">
@@ -264,24 +291,24 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="metric-note">человек по всем бригадам</p>
               </article>
               <article className="metric-card">
-                <span className="metric-label">Активность в смене</span>
+                <span className="metric-label">Активность</span>
                 <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
-                <p className="metric-note">рабочее время от общего</p>
+                <p className="metric-note">активная работа (work_sec) от общего времени</p>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Простой</span>
                 <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
-                <p className="metric-note">простой от общего времени</p>
+                <p className="metric-note">бездействие (idle_sec), включая слабую активность</p>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Ходьба между зонами</span>
                 <strong className="metric-value">{formatPercent(dailyGo)}</strong>
-                <p className="metric-note">перемещения от общего времени</p>
+                <p className="metric-note">перемещения (go_sec) от общего времени</p>
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Были на КПП</span>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
-                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'нарушений нет'}</p>
+                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП (zona 13), суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП (zona 13) никого'}</p>
               </article>
             </div>
 
@@ -347,6 +374,72 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="kpp-empty">Никто не фиксировался в зоне КПП (зона 13) за этот день.</p>
               )}
             </div>
+
+            <div className="zone-panel">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Местоположение</p>
+                  <h3>Распределение времени по зонам</h3>
+                  <p className="panel-description">Где сотрудники проводили время за день (по BLE-меткам, zona).</p>
+                </div>
+              </div>
+              {zoneRows.length > 0 ? (
+                <div className="zone-list">
+                  {zoneRows.map((zone) => (
+                    <div className={`zone-row${isAlertZone(zone.zona) ? ' zone-row-alert' : ''}`} key={zone.zona}>
+                      <div className="zone-row-head">
+                        <span className="zone-name">{zone.zonaName}</span>
+                        <span className="zone-value">{formatSeconds(zone.sec)} · {formatPercent(ratio(zone.sec, zoneTotalSec))}</span>
+                      </div>
+                      <div className="zone-bar">
+                        <div
+                          className={`zone-bar-fill${isAlertZone(zone.zona) ? ' zone-bar-fill-alert' : ''}`}
+                          style={{ width: `${Math.max(ratio(zone.sec, zoneTotalSec), 1)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="kpp-empty">Нет данных по зонам за выбранный день.</p>
+              )}
+            </div>
+
+            <div className={`zone-panel${idleEpisodes.length > 0 ? ' kpp-panel-alert' : ''}`}>
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Отчёт 10</p>
+                  <h3>Длительные простои</h3>
+                  <p className="panel-description">Эпизоды бездействия от 5 минут с привязкой к зоне.</p>
+                </div>
+                {idleEpisodes.length > 0 ? (
+                  <div className="zone-summary">
+                    <strong>{idleEpisodes.length}</strong>
+                    <span>эпизодов · {formatMinutes(idleTotalMin * 60)}</span>
+                  </div>
+                ) : null}
+              </div>
+              {idleEpisodes.length > 0 ? (
+                <div className="zone-list">
+                  {idleByZone.map((zone) => (
+                    <div className={`zone-row${zone.alert ? ' zone-row-alert' : ''}`} key={zone.zonaName}>
+                      <div className="zone-row-head">
+                        <span className="zone-name">{zone.zonaName}</span>
+                        <span className="zone-value">{zone.count} эп. · {zone.minutes} мин</span>
+                      </div>
+                      <div className="zone-bar">
+                        <div
+                          className={`zone-bar-fill${zone.alert ? ' zone-bar-fill-alert' : ''}`}
+                          style={{ width: `${Math.max(ratio(zone.minutes, idleTotalMin), 1)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="kpp-empty">Отчёт 10 за этот день не загружен или простоев нет.</p>
+              )}
+            </div>
           </>
         ) : null}
       </CollapsibleBlock>
@@ -355,7 +448,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 2 · Еженедельно"
         title="Еженедельная аналитика"
-        description="Сводка по бригадам за неделю (Пн–Вс). Этот блок уходит в еженедельную рассылку по понедельникам."
+        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, простой и ходьба. Этот блок уходит в еженедельную рассылку по понедельникам."
         actions={<SendReportControl type="weekly" weekStart={selectedWeek} disabled={!selectedWeek} />}
       >
         <div className="filter-row">
@@ -429,7 +522,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 3 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день и топ по активности. Не входит в рассылку."
+        description="Полная таблица смен за выбранный день (работа / простой / всего / активность / КПП) и топ по активности. Не входит в рассылку."
         defaultOpen={false}
       >
         {dailyLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}

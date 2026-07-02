@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { zoneName } from './zones'
 
 export type BrigadeDailyRow = {
   report_date: string
@@ -8,7 +9,6 @@ export type BrigadeDailyRow = {
   idle_sec: number
   go_sec: number
   total_sec: number
-  sleep_sec: number
   pv_sec: number
   kpp_sec: number
   kpp_workers: number
@@ -28,13 +28,31 @@ export type BrigadeWeeklyRow = {
   idle_sec: number
   go_sec: number
   total_sec: number
-  sleep_sec: number
   pv_sec: number
   kpp_sec: number
   kpp_shifts: number
   activity_pct: number
   idle_pct: number
   go_pct: number
+}
+
+export type ZoneDailyRow = {
+  zona: number
+  zonaName: string
+  sec: number
+  shifts: number
+}
+
+export type IdleEpisode = {
+  ww_shift_id: number
+  session_id: number | null
+  employee_number: string | null
+  full_name: string | null
+  dt_start: string | null
+  dt_end: string | null
+  duration_min: number
+  ble_tag_zone: number | null
+  zonaName: string
 }
 
 export type ShiftMetricRow = {
@@ -51,7 +69,6 @@ export type ShiftMetricRow = {
   go_sec_total: number
   work_sec_total: number
   total_sec_total: number
-  sleep_sec_total: number
   pv_sec_total: number
   outside_pv_sec_total: number
   kpp_sec_total: number
@@ -211,4 +228,56 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
 
 export function ratio(part: number, total: number) {
   return total > 0 ? (part / total) * 100 : 0
+}
+
+export async function loadZoneDaily(reportDate: string, supervisor?: string) {
+  let query = supabase
+    .schema('analytics')
+    .from('zone_daily_metrics')
+    .select('zona, sec, shifts, supervisor_name')
+    .eq('report_date', reportDate)
+
+  if (supervisor && supervisor !== 'all') {
+    query = query.eq('supervisor_name', supervisor)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const totals = new Map<number, { sec: number; shifts: number }>()
+  for (const row of data ?? []) {
+    const zona = Number(row.zona)
+    if (!Number.isFinite(zona)) continue
+    const current = totals.get(zona) ?? { sec: 0, shifts: 0 }
+    current.sec += Number(row.sec)
+    current.shifts = Math.max(current.shifts, Number(row.shifts))
+    totals.set(zona, current)
+  }
+
+  return [...totals.entries()]
+    .map(([zona, value]) => ({ zona, zonaName: zoneName(zona), sec: value.sec, shifts: value.shifts }))
+    .sort((left, right) => right.sec - left.sec) satisfies ZoneDailyRow[]
+}
+
+export async function loadIdleEpisodes(reportDate: string) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('idle_episodes')
+    .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
+    .eq('report_date', reportDate)
+    .order('duration_min', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    ww_shift_id: Number(row.ww_shift_id),
+    session_id: row.session_id === null ? null : Number(row.session_id),
+    employee_number: (row.employee_number as string | null) ?? null,
+    full_name: (row.full_name as string | null) ?? null,
+    dt_start: (row.dt_start as string | null) ?? null,
+    dt_end: (row.dt_end as string | null) ?? null,
+    duration_min: Number(row.duration_min),
+    ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
+    zonaName: zoneName(row.ble_tag_zone as number | null),
+  })) satisfies IdleEpisode[]
 }

@@ -10,6 +10,7 @@ import {
   assertSingleReportDate,
   parseBleRows,
   parseFaceRows,
+  parseIdleEpisodeRows,
   parseLongIdleRows,
 } from './lib/report-parsers.mjs'
 
@@ -75,6 +76,11 @@ async function main() {
     process.env.LOCAL_LONG_IDLE_REPORT_PATH,
     /LongIDLE.*LEGENDA.*\.xlsx$/i,
   )
+  const idleEpisodePath = resolveInputPath(
+    getArg('--idle-episode'),
+    process.env.LOCAL_IDLE_EPISODE_REPORT_PATH,
+    /10_report_10.*LEGENDA.*\.xlsx$/i,
+  )
 
   assertFileExists(facePath, 'faceID')
   assertFileExists(blePath, 'AA_BLE')
@@ -94,6 +100,19 @@ async function main() {
   assertSingleReportDate(bleRows, reportDate, 'AA_BLE')
   assertSingleReportDate(longIdleRows, reportDate, 'LongIDLE')
 
+  const files = [
+    { sourceType: 'faceid', fileName: path.basename(facePath) },
+    { sourceType: 'aa_ble', fileName: path.basename(blePath) },
+    { sourceType: 'long_idle', fileName: path.basename(longIdlePath) },
+  ]
+
+  let idleEpisodeRows = []
+  if (idleEpisodePath && fs.existsSync(idleEpisodePath)) {
+    idleEpisodeRows = parseIdleEpisodeRows(idleEpisodePath)
+    assertSingleReportDate(idleEpisodeRows, reportDate, 'Отчёт 10')
+    files.push({ sourceType: 'idle_episode', fileName: path.basename(idleEpisodePath) })
+  }
+
   const sourceDayKey = `manual:${reportDate}`
 
   const result = await importDailyBatch(supabase, {
@@ -103,11 +122,8 @@ async function main() {
     faceRows,
     bleRows,
     longIdleRows,
-    files: [
-      { sourceType: 'faceid', fileName: path.basename(facePath) },
-      { sourceType: 'aa_ble', fileName: path.basename(blePath) },
-      { sourceType: 'long_idle', fileName: path.basename(longIdlePath) },
-    ],
+    idleEpisodeRows,
+    files,
   })
 
   console.log(JSON.stringify(result, null, 2))

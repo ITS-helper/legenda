@@ -1,5 +1,15 @@
 # Report Sources
 
+> Полные определения всех метрик и полей — в [metrics-reference.md](./metrics-reference.md)
+> (перенос официального «Описания метрик Workwatch»). Этот файл описывает только
+> практическую структуру импортируемых XLS. При расхождениях приоритет у
+> `metrics-reference.md`.
+>
+> **Важно (по документу):** поля `sleep`, `wear`, `working_hours`, `work_code`,
+> `chosen_metka`, `chosen_mapped_metka` в отчёте 11 (AA/BLE) **не используются** —
+> не показывать их как метрики. Активность = `work_sec`, ходьба = `go_sec`,
+> простой = `idle_sec` (включает «слабую активность»).
+
 ## Current Source Files
 
 Validated against real files dated `2026-06-17` and `2026-07-01`:
@@ -236,6 +246,18 @@ Combined:
 - supervisor comparison
 - brigade comparison
 - employee ranking by productive time
+
+## Source 4: Report 10 (Длительные простои)
+
+Опционально импортируется из папки `10_report_10_long_idle_arh`.
+Файл: `10_report_10_длительные_простои_LEGENDA_!NEW!_YYYY-MM-DD.xlsx`, лист `Sheet2`.
+
+Одна строка = один эпизод длительного простоя (≥ 5 мин). Колонки (0-based):
+`ID смены WW`, `session_id`, `plan_work_begin`, `ТН`, `ФИО`, `dt_start`, `dt_end`,
+`duration` (мин), `work_type`, `work_code`, `chosen_ble_tag_number`,
+`chosen_ble_tag_zone`, `ble_label`. Пишется в таблицу `analytics.idle_episodes`.
+Полные определения — в [metrics-reference.md](./metrics-reference.md), зоны — в
+[zones-reference.md](./zones-reference.md).
 
 ## Importer Rules We Should Implement
 

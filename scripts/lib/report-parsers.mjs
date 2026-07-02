@@ -202,6 +202,24 @@ function mapBleRow(row) {
   }
 }
 
+function mapIdleEpisodeRow(row) {
+  return {
+    ww_shift_id: Number(row[0]),
+    session_id: Number(row[1]),
+    report_date: parseReportDate(row[2]) ?? parseReportDate(row[5]),
+    employee_number: normalizeText(row[3]),
+    full_name: normalizeText(row[4]),
+    dt_start: parseDateValue(row[5]),
+    dt_end: parseDateValue(row[6]),
+    duration_min: normalizeInteger(row[7]),
+    work_type: normalizeInteger(row[8]),
+    work_code: normalizeInteger(row[9]),
+    ble_tag_number: normalizeInteger(row[10]),
+    ble_tag_zone: normalizeInteger(row[11]),
+    ble_label: normalizeText(row[12]),
+  }
+}
+
 function mapLongIdleRow(row) {
   return {
     employee_number: normalizeText(row[0]),
@@ -260,6 +278,10 @@ export function parseLongIdleRowsFromSheet(rows) {
   return filterDataRows(rows).map(mapLongIdleRow)
 }
 
+export function parseIdleEpisodeRowsFromSheet(rows) {
+  return filterDataRows(rows).map(mapIdleEpisodeRow)
+}
+
 export function parseFaceRows(filePath) {
   return parseFaceRowsFromSheet(sheetToRowsFromPath(filePath, 'Sheet2'))
 }
@@ -270,6 +292,10 @@ export function parseBleRows(filePath) {
 
 export function parseLongIdleRows(filePath) {
   return parseLongIdleRowsFromSheet(sheetToRowsFromPath(filePath, 'Sheet2'))
+}
+
+export function parseIdleEpisodeRows(filePath) {
+  return parseIdleEpisodeRowsFromSheet(sheetToRowsFromPath(filePath, 'Sheet2'))
 }
 
 export function parseFaceRowsFromBuffer(bytes) {
@@ -303,6 +329,7 @@ export const REPORT_FILE_PATTERNS = {
   faceid: /6_report_6_faceID.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
   aa_ble: /11_отчет по АА_BLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
   long_idle: /8_report_8_LongIDLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
+  idle_episode: /10_report_10.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
 }
 
 /** Archive subfolders inside the LEGENDA Drive root (case-insensitive match). */
@@ -310,6 +337,7 @@ export const DRIVE_ARCHIVE_FOLDERS = {
   faceid: '6_report_6_faceID_arh',
   aa_ble: 'aa_ble_arh',
   long_idle: '8_report_8_LongIDLE_arh',
+  idle_episode: '10_report_10_long_idle_arh',
 }
 
 /** Root archive folders that must be skipped during Drive sync. */

@@ -29,6 +29,9 @@ dist-ssr
 # Local import/backfill logs
 backfill-log.txt
 
+# Temporary docx/text extraction
+.docx-extract/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
