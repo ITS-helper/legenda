@@ -80,6 +80,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [kppOpen, setKppOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -255,7 +256,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
-        description="Сколько человек вышло на смену по бригадам, активность (work_sec), простой (idle_sec) и ходьба (go_sec) за выбранный день. Проценты считаются от общего времени трекинга. Этот блок уходит в ежедневную рассылку."
+        description="Сколько человек вышло на смену по бригадам, активность, простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга. Этот блок уходит в ежедневную рассылку."
         actions={<SendReportControl type="daily" date={selectedDate} disabled={!selectedDate} />}
       >
         <div className="filter-row">
@@ -293,22 +294,22 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               <article className="metric-card">
                 <span className="metric-label">Активность</span>
                 <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
-                <p className="metric-note">активная работа (work_sec) от общего времени</p>
+                <p className="metric-note">доля активной работы от общего времени</p>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Простой</span>
                 <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
-                <p className="metric-note">бездействие (idle_sec), включая слабую активность</p>
+                <p className="metric-note">бездействие, включая слабую активность</p>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Ходьба между зонами</span>
                 <strong className="metric-value">{formatPercent(dailyGo)}</strong>
-                <p className="metric-note">перемещения (go_sec) от общего времени</p>
+                <p className="metric-note">перемещения между зонами от общего времени</p>
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Были на КПП</span>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
-                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП (zona 13), суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП (zona 13) никого'}</p>
+                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого'}</p>
               </article>
             </div>
 
@@ -348,31 +349,43 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               ))}
             </div>
 
-            <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}>
+            <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
               <div className="kpp-panel-head">
-                <div>
-                  <p className="panel-kicker">Контроль КПП</p>
-                  <h3>{kppEmployees.length > 0 ? 'Сотрудники в зоне КПП' : 'На КПП никого не было'}</h3>
-                </div>
+                <button
+                  type="button"
+                  className="kpp-panel-toggle"
+                  onClick={() => setKppOpen((current) => !current)}
+                  aria-expanded={kppOpen}
+                >
+                  <span className={`kpp-panel-chevron${kppOpen ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
+                    ▸
+                  </span>
+                  <span className="kpp-panel-titles">
+                    <span className="panel-kicker">Контроль КПП</span>
+                    <span className="kpp-panel-title">{kppEmployees.length > 0 ? 'Сотрудники в зоне КПП' : 'На КПП никого не было'}</span>
+                  </span>
+                </button>
                 {kppEmployees.length > 0 ? <span className="kpp-count">{kppEmployees.length}</span> : null}
               </div>
-              {kppEmployees.length > 0 ? (
-                <div className="kpp-list">
-                  {kppEmployees.map((employee) => (
-                    <div className="kpp-row" key={employee.ww_shift_id}>
-                      <div className="kpp-main">
-                        <strong>{employee.full_name}</strong>
-                        <span>
-                          #{employee.employee_number} · {employee.supervisor_name}
-                        </span>
+              {kppOpen ? (
+                kppEmployees.length > 0 ? (
+                  <div className="kpp-list">
+                    {kppEmployees.map((employee) => (
+                      <div className="kpp-row" key={employee.ww_shift_id}>
+                        <div className="kpp-main">
+                          <strong>{employee.full_name}</strong>
+                          <span>
+                            #{employee.employee_number} · {employee.supervisor_name}
+                          </span>
+                        </div>
+                        <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
                       </div>
-                      <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="kpp-empty">Никто не фиксировался в зоне КПП (зона 13) за этот день.</p>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <p className="kpp-empty">Никто не фиксировался в зоне КПП за этот день.</p>
+                )
+              ) : null}
             </div>
 
             <div className="zone-panel">
@@ -380,7 +393,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <div>
                   <p className="panel-kicker">Местоположение</p>
                   <h3>Распределение времени по зонам</h3>
-                  <p className="panel-description">Где сотрудники проводили время за день (по BLE-меткам, zona).</p>
+                  <p className="panel-description">Где сотрудники проводили время за день.</p>
                 </div>
               </div>
               {zoneRows.length > 0 ? (
@@ -408,7 +421,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             <div className={`zone-panel${idleEpisodes.length > 0 ? ' kpp-panel-alert' : ''}`}>
               <div className="panel-head">
                 <div>
-                  <p className="panel-kicker">Отчёт 10</p>
+                  <p className="panel-kicker">Простои</p>
                   <h3>Длительные простои</h3>
                   <p className="panel-description">Эпизоды бездействия от 5 минут с привязкой к зоне.</p>
                 </div>
@@ -437,7 +450,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   ))}
                 </div>
               ) : (
-                <p className="kpp-empty">Отчёт 10 за этот день не загружен или простоев нет.</p>
+                <p className="kpp-empty">Данные о длительных простоях за этот день не загружены или простоев нет.</p>
               )}
             </div>
           </>
