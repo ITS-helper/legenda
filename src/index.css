@@ -1,19 +1,101 @@
-:root {
-  --text: #d7e3de;
-  --text-h: #f4faf7;
-  --bg: #081413;
-  --border: rgba(255, 255, 255, 0.12);
+/* ===== Brand fonts (TT Norms + Nunito Sans) ===== */
+@font-face {
+  font-family: 'TT Norms';
+  src: url('./fonts/TTNorms-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TT Norms';
+  src: url('./fonts/TTNorms-Medium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TT Norms';
+  src: url('./fonts/TTNorms-Bold.woff') format('woff');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TT Norms';
+  src: url('./fonts/TTNorms-Light.woff') format('woff');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TT Norms';
+  src: url('./fonts/TTNorms-Heavy.woff') format('woff');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  src: url('./fonts/NunitoSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  src: url('./fonts/NunitoSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  src: url('./fonts/NunitoSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
-  --sans: 'Segoe UI', 'Trebuchet MS', sans-serif;
-  --heading: Georgia, 'Times New Roman', serif;
+:root {
+  /* Brand palette (from Legenda main app) */
+  --brand: #004ecf;
+  --brand-strong: #003ea8;
+  --brand-soft: rgba(0, 78, 207, 0.08);
+  --brand-soft-2: rgba(0, 78, 207, 0.14);
+  --teal: #00d5b4;
+
+  /* Light theme surfaces */
+  --page: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #f5f7fb;
+  --surface-3: #eef2f7;
+
+  /* Text */
+  --text: #33404f;
+  --text-h: #0f1b2d;
+  --text-muted: #6b7a8d;
+  --kicker: #8a97a8;
+
+  /* Lines */
+  --border: rgba(15, 27, 45, 0.1);
+  --border-strong: rgba(15, 27, 45, 0.16);
+
+  /* Status */
+  --work: #00d5b4;
+  --idle: #f5a623;
+  --go: #004ecf;
+  --alert: #d1495b;
+  --alert-soft: rgba(209, 73, 91, 0.1);
+  --alert-strong: rgba(209, 73, 91, 0.45);
+
+  --sans: 'TT Norms', 'Nunito Sans', 'Segoe UI', system-ui, sans-serif;
+  --heading: 'TT Norms', 'Nunito Sans', 'Segoe UI', system-ui, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
+  font: 17px/145% var(--sans);
+  letter-spacing: 0.1px;
   color: var(--text);
-  background:
-    radial-gradient(circle at top, rgba(80, 128, 111, 0.45), transparent 30%),
-    linear-gradient(160deg, #071211 0%, #0b1816 45%, #112320 100%);
+  background: var(--page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -27,34 +109,34 @@
 #root {
   min-height: 100svh;
   text-align: left;
-  min-height: 100svh;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--page);
 }
 
 h1,
 h2 {
   font-family: var(--heading);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-h);
 }
 
 h1 {
-  font-size: clamp(40px, 7vw, 76px);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
   margin: 0;
   @media (max-width: 1024px) {
-    font-size: 36px;
+    font-size: 30px;
   }
 }
 h2 {
   font-size: 24px;
   line-height: 118%;
-  letter-spacing: -0.24px;
+  letter-spacing: -0.01em;
   margin: 0 0 8px;
   @media (max-width: 1024px) {
     font-size: 20px;
@@ -72,5 +154,5 @@ code {
   font-size: 15px;
   line-height: 135%;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-3);
 }

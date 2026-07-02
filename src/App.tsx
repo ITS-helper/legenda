@@ -67,12 +67,17 @@ function App() {
   return (
     <main className="app-shell">
       <header className="app-topbar">
-        <a className={route === 'dashboard' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/">
-          Дашборд
+        <a className="topbar-brand" href="#/">
+          <img src={`${import.meta.env.BASE_URL}brand/legenda-logo.svg`} alt="Legenda" />
         </a>
-        <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
-          Админка фронта
-        </a>
+        <nav className="topbar-nav">
+          <a className={route === 'dashboard' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/">
+            Дашборд
+          </a>
+          <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
+            Админка фронта
+          </a>
+        </nav>
       </header>
 
       {uiTextLoading ? <section className="empty-state">Загружаем настройки интерфейса...</section> : null}
