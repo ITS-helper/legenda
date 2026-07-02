@@ -318,6 +318,30 @@ export const DRIVE_IGNORED_ARCHIVE_FOLDERS = new Set([
   '10_report_10_long_idle_arh',
 ])
 
+export function normalizeReportDateInput(value) {
+  if (!value) {
+    return null
+  }
+
+  const trimmed = value.trim()
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed
+  }
+
+  const dotted = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (dotted) {
+    return `${dotted[3]}-${dotted[2]}-${dotted[1]}`
+  }
+
+  const slashed = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (slashed) {
+    return `${slashed[3]}-${slashed[2]}-${slashed[1]}`
+  }
+
+  throw new Error(`Некорректная дата "${value}". Используйте YYYY-MM-DD, например 2026-07-01`)
+}
+
 export function extractReportDateFromFileName(fileName) {
   for (const pattern of Object.values(REPORT_FILE_PATTERNS)) {
     const match = fileName.match(pattern)

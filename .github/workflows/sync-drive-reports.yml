@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       report_date:
-        description: 'Дата отчета YYYY-MM-DD (по умолчанию вчера по МСК)'
+        description: 'Дата отчета: 2026-07-01 или 01.07.2026 (пусто = вчера по МСК)'
         required: false
         type: string
       force:

@@ -14,6 +14,7 @@ import {
 } from './lib/import-batch.mjs'
 import {
   DRIVE_ARCHIVE_FOLDERS,
+  normalizeReportDateInput,
   parseBleRows,
   parseFaceRows,
   parseLongIdleRows,
@@ -239,7 +240,7 @@ function filesUnchanged(existingFiles, nextFiles) {
 }
 
 async function main() {
-  const reportDate = getArg('--date') ?? getYesterdayMoscowDate()
+  const reportDate = normalizeReportDateInput(getArg('--date')) ?? getYesterdayMoscowDate()
   const force = hasFlag('--force')
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? '1GozRP1VvLFkZooW9dQYuI_O-c5tqmRfO'
   const supabaseUrl = process.env.VITE_SUPABASE_URL
