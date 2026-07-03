@@ -34,7 +34,25 @@ export function formatVolumeEntryCount(count: number) {
 }
 
 export function mergeDateLists(...lists: string[][]) {
-  return [...new Set(lists.flat())].sort((left, right) => right.localeCompare(left))
+  return [...new Set(lists.flat().map(normalizeReportDate).filter(Boolean))].sort((left, right) =>
+    right.localeCompare(left),
+  )
+}
+
+export function normalizeReportDate(value: string | null | undefined) {
+  if (!value) return ''
+  return value.slice(0, 10)
+}
+
+export function formatVolumeCardSummary(entries: VolumeEntry[]) {
+  if (entries.length === 0) return '—'
+  const preview = entries
+    .slice(0, 2)
+    .map((entry) => entry.value_text.trim())
+    .filter(Boolean)
+    .join(' · ')
+  if (!preview) return '—'
+  return entries.length > 2 ? `${preview} …` : preview
 }
 
 export async function loadVolumeDates() {
@@ -45,20 +63,26 @@ export async function loadVolumeDates() {
     .order('report_date', { ascending: false })
 
   if (error) throw error
-  return [...new Set((data ?? []).map((row) => row.report_date as string))]
+  return [...new Set((data ?? []).map((row) => normalizeReportDate(row.report_date as string)))]
 }
 
 export async function loadVolumeEntries(reportDate: string) {
+  const date = normalizeReportDate(reportDate)
+  if (!date) return []
+
   const { data, error } = await supabase
     .schema('analytics')
     .from('volume_entries')
     .select('id, report_date, label, value_text, note, sort_order, updated_at')
-    .eq('report_date', reportDate)
+    .eq('report_date', date)
     .order('sort_order', { ascending: true })
     .order('id', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as VolumeEntry[]
+  return (data ?? []).map((row) => ({
+    ...(row as VolumeEntry),
+    report_date: normalizeReportDate(row.report_date as string),
+  }))
 }
 
 export async function saveVolumeEntries(password: string, reportDate: string, entries: VolumeEntryDraft[]) {
@@ -68,7 +92,7 @@ export async function saveVolumeEntries(password: string, reportDate: string, en
       method: 'PUT',
       headers: getEdgeFunctionHeaders(password, true),
       body: JSON.stringify({
-        report_date: reportDate,
+        report_date: normalizeReportDate(reportDate),
         entries: entries.map((entry, index) => ({
           label: entry.label,
           value_text: entry.value_text,

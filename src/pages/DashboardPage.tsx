@@ -25,6 +25,7 @@ import {
   loadShiftRows,
   loadShiftRowsForRange,
   loadZoneDaily,
+  pvPercentFromZoneRows,
   ratio,
   sumDaily,
   topActivityDaily,
@@ -37,7 +38,14 @@ import {
   type ShiftMetricRow,
   type ZoneDailyRow,
 } from '../lib/reports'
-import { formatVolumeEntryCount, loadVolumeDates, loadVolumeEntries, mergeDateLists, type VolumeEntry } from '../lib/volumes'
+import {
+  formatVolumeCardSummary,
+  loadVolumeDates,
+  loadVolumeEntries,
+  mergeDateLists,
+  normalizeReportDate,
+  type VolumeEntry,
+} from '../lib/volumes'
 import { isAlertZone } from '../lib/zones'
 
 type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
@@ -118,7 +126,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dynamicsError, setDynamicsError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(true)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
-  const [volumesLoading, setVolumesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!selectedDate) return
+    setVolumesDate(selectedDate)
+  }, [selectedDate])
 
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -167,12 +179,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, kpp, shifts, zones, episodes] = await Promise.all([
+        const [brigades, kpp, shifts, zones, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
           loadKppEmployees(selectedDate),
           loadShiftRows(selectedDate),
           loadZoneDaily(selectedDate),
           loadIdleEpisodes(selectedDate),
+          loadVolumeEntries(selectedDate).catch(() => [] as VolumeEntry[]),
         ])
         if (cancelled) return
         setDailyRows(brigades)
@@ -180,6 +193,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setShiftRows(shifts)
         setZoneRows(zones)
         setIdleEpisodes(episodes)
+        setVolumeEntries(volumes)
       } catch (error) {
         if (!cancelled) setDailyError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -193,37 +207,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     }
   }, [selectedDate])
 
-  useEffect(() => {
-    if (!selectedDate) return
-    let cancelled = false
-
-    async function loadVolumesSummary() {
-      setVolumesLoading(true)
-      try {
-        const entries = await loadVolumeEntries(selectedDate)
-        if (!cancelled) setVolumeEntries(entries)
-      } catch {
-        if (!cancelled) setVolumeEntries([])
-      } finally {
-        if (!cancelled) setVolumesLoading(false)
-      }
-    }
-
-    void loadVolumesSummary()
-    return () => {
-      cancelled = true
-    }
-  }, [selectedDate])
-
   async function refreshVolumesForBlock(date: string) {
-    if (!date) return
+    const normalized = normalizeReportDate(date)
+    if (!normalized) return
     try {
-      const entries = await loadVolumeEntries(date)
-      if (date === selectedDate) setVolumeEntries(entries)
+      const entries = await loadVolumeEntries(normalized)
+      if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries(entries)
       const dates = await loadVolumeDates()
       setVolumeDates(dates)
     } catch {
-      if (date === selectedDate) setVolumeEntries([])
+      if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries([])
     }
   }
 
@@ -314,7 +307,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
   const dailyLongIdle = ratio(dailyTotals.long_idle_sec, dailyTotals.total_sec)
   const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
-  const dailyPv = ratio(dailyTotals.pv_sec, dailyTotals.total_sec)
+  const dailyPv = useMemo(() => pvPercentFromZoneRows(zoneRows), [zoneRows])
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -456,19 +449,19 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className="metric-card">
                 <span className="metric-label">В рабочей зоне (ПВ)</span>
-                <p className="metric-note">зоны проведения работ, от общего времени</p>
-                <strong className="metric-value">{formatPercent(dailyPv)}</strong>
+                <p className="metric-note">зоны проведения работ, от времени в зонах (без «вне зоны»)</p>
+                <strong className="metric-value">{zoneRows.length > 0 ? formatPercent(dailyPv) : '—'}</strong>
               </article>
               <a className="metric-card metric-card-link" href="#block-volumes">
                 <span className="metric-label">Объёмы</span>
                 <p className="metric-note">
                   {volumeEntries.length > 0
-                    ? 'ручной ввод показателей за день'
-                    : volumesLoading
+                    ? `${volumeEntries.length} ${volumeEntries.length === 1 ? 'показатель' : volumeEntries.length < 5 ? 'показателя' : 'показателей'} за день`
+                    : dailyLoading
                       ? 'загрузка...'
                       : 'добавьте значения в блоке 5'}
                 </p>
-                <strong className="metric-value">{formatVolumeEntryCount(volumeEntries.length)}</strong>
+                <strong className="metric-value">{formatVolumeCardSummary(volumeEntries)}</strong>
               </a>
             </div>
 

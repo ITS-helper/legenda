@@ -544,6 +544,16 @@ export function ratio(part: number, total: number) {
   return total > 0 ? (part / total) * 100 : 0
 }
 
+/** Зона проведения работ (ПВ) — zona=1, см. docs/zones-reference.md */
+export const PV_ZONE = 1
+
+/** Доля ПВ от суммы времени по зонам без zone=0 (как в блоке «Местоположение»). */
+export function pvPercentFromZoneRows(zoneRows: ZoneDailyRow[]) {
+  const totalSec = zoneRows.reduce((sum, row) => sum + row.sec, 0)
+  const pvSec = zoneRows.find((row) => row.zona === PV_ZONE)?.sec ?? 0
+  return ratio(pvSec, totalSec)
+}
+
 export async function loadZoneDaily(reportDate: string, supervisor?: string) {
   let query = supabase
     .schema('analytics')
