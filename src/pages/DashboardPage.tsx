@@ -450,7 +450,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className="metric-card">
                 <span className="metric-label">В рабочей зоне (ПВ)</span>
-                <p className="metric-note">зоны проведения работ, от времени в зонах (без «вне зоны»)</p>
+                <p className="metric-note">рабочая зона от общего количества времени на смене</p>
                 <strong className="metric-value">{zoneRows.length > 0 ? formatPercent(dailyPv) : '—'}</strong>
               </article>
               <a className="metric-card metric-card-link" href="#block-volumes">
