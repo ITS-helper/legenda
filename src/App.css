@@ -810,6 +810,27 @@
   gap: 18px;
 }
 
+.settings-send-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.settings-send-block {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--surface-3);
+  background: var(--surface-2);
+}
+
+.settings-send-caption {
+  margin: -4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .settings-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

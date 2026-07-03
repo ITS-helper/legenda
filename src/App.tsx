@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { defaultUiText, type UiText } from './content/uiText'
-import { loadPublishedUiText, publishUiText, type SettingsSnapshot } from './lib/siteSettings'
+import { loadPublishedUiText } from './lib/siteSettings'
 import { DashboardPage } from './pages/DashboardPage'
 import { SettingsPage } from './pages/SettingsPage'
 import './App.css'
@@ -58,12 +58,6 @@ function App() {
     }
   }, [])
 
-  async function handlePublish(next: UiText, password: string): Promise<SettingsSnapshot> {
-    const saved = await publishUiText(next, password)
-    setUiText(saved.value)
-    return saved
-  }
-
   return (
     <main className="app-shell">
       <header className="app-topbar">
@@ -75,23 +69,21 @@ function App() {
             Дашборд
           </a>
           <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
-            Админка фронта
+            Настройки
           </a>
         </nav>
       </header>
 
-      {uiTextLoading ? <section className="empty-state">Загружаем настройки интерфейса...</section> : null}
-      {uiTextError ? (
+      {route === 'settings' ? <SettingsPage /> : null}
+
+      {route === 'dashboard' && uiTextLoading ? <section className="empty-state">Загружаем настройки интерфейса...</section> : null}
+      {route === 'dashboard' && uiTextError ? (
         <section className="empty-state error-state">
           Не удалось загрузить опубликованные настройки: {uiTextError}
         </section>
       ) : null}
 
-      {!uiTextLoading && route === 'settings' ? (
-        <SettingsPage initialUiText={uiText} onPublish={handlePublish} />
-      ) : null}
-
-      {!uiTextLoading && route === 'dashboard' ? <DashboardPage uiText={uiText} /> : null}
+      {route === 'dashboard' && !uiTextLoading ? <DashboardPage uiText={uiText} /> : null}
     </main>
   )
 }

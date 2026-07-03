@@ -1,7 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
-import { SendReportControl } from '../components/SendReportControl'
 import {
   formatFullDate,
   formatMinutes,
@@ -241,10 +240,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     <>
       <section className="hero-block dashboard-hero reveal-block">
         <p className="eyebrow">{uiText.brand}</p>
-        <h1>Аналитика смен и рассылки</h1>
+        <h1>Аналитика смен</h1>
         <p className="hero-copy">
-          Дашборд разбит на три блока: ежедневная сводка для рассылки, еженедельная аналитика и детализация по сотрудникам.
-          Дневной и недельный блоки можно отправить заказчику на почту прямо отсюда.
+          Дашборд разбит на три блока: ежедневная сводка, еженедельная аналитика и детализация по сотрудникам.
         </p>
       </section>
 
@@ -256,8 +254,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
-        description="Сколько человек вышло на смену по бригадам, активность, простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга. Этот блок уходит в ежедневную рассылку."
-        actions={<SendReportControl type="daily" date={selectedDate} disabled={!selectedDate} />}
+        description="Сколько человек вышло на смену по бригадам, активность, простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -461,8 +458,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 2 · Еженедельно"
         title="Еженедельная аналитика"
-        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, простой и ходьба. Этот блок уходит в еженедельную рассылку по понедельникам."
-        actions={<SendReportControl type="weekly" weekStart={selectedWeek} disabled={!selectedWeek} />}
+        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, простой и ходьба."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -535,7 +531,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 3 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день (работа / простой / всего / активность / КПП) и топ по активности. Не входит в рассылку."
+        description="Полная таблица смен за выбранный день (работа / простой / всего / активность / КПП) и топ по активности."
         defaultOpen={false}
       >
         {dailyLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
