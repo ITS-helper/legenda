@@ -28,7 +28,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <img className="login-logo" src={`${import.meta.env.BASE_URL}brand/legenda-logo.svg`} alt="Legenda" />
         <p className="panel-kicker">Legenda Analytics</p>
         <h1>Вход в систему</h1>
-        <p className="login-lead">Введите пароль админки для доступа к дашборду и настройкам рассылки.</p>
 
         <form className="login-form" onSubmit={(event) => void handleSubmit(event)}>
           <label className="login-field">
@@ -37,7 +36,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Пароль админки"
               autoComplete="current-password"
               disabled={busy}
               autoFocus

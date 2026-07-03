@@ -28,10 +28,10 @@ export function getEdgeFunctionHeaders(password?: string, contentType = false) {
 
 export function formatEdgeFunctionError(message: string) {
   if (message === 'Invalid settings password' || message === 'Неверный пароль админки') {
-    return 'Неверный пароль админки. Используйте SETTINGS_ADMIN_PASSWORD из GitHub Secrets / Supabase.'
+    return 'Неверный пароль.'
   }
   if (message === 'SETTINGS_ADMIN_PASSWORD is not configured') {
-    return 'На сервере не настроен пароль админки (SETTINGS_ADMIN_PASSWORD).'
+    return 'На сервере не настроен пароль (SETTINGS_ADMIN_PASSWORD).'
   }
   if (message === 'Supabase service credentials are missing') {
     return 'У edge function нет доступа к Supabase (service role).'
