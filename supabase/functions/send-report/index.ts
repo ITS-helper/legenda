@@ -82,7 +82,7 @@ function isAuthorized(request: Request) {
     return { ok: false, response: jsonResponse({ error: 'SETTINGS_ADMIN_PASSWORD is not configured' }, 500) }
   }
   if (!requestPassword || requestPassword !== expectedPassword) {
-    return { ok: false, response: jsonResponse({ error: 'Invalid settings password' }, 401) }
+    return { ok: false, response: jsonResponse({ error: 'Неверный пароль админки' }, 401) }
   }
   return { ok: true as const }
 }

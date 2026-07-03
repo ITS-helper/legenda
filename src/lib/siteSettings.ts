@@ -1,4 +1,9 @@
 ﻿import { defaultUiText, type UiText } from '../content/uiText'
+import {
+  getEdgeFunctionHeaders,
+  getEdgeFunctionUrl,
+  readEdgeFunctionJson,
+} from './edgeFunctions'
 import { deepMergeUiText } from './uiTextEditor'
 import * as XLSX from 'xlsx'
 
@@ -138,10 +143,6 @@ function getSiteSettingsFunctionUrl(scope: SettingsScope) {
   const url = new URL('/functions/v1/site-settings', import.meta.env.VITE_SUPABASE_URL)
   url.searchParams.set('scope', scope)
   return url.toString()
-}
-
-function getFunctionUrl(functionName: string) {
-  return new URL(`/functions/v1/${functionName}`, import.meta.env.VITE_SUPABASE_URL).toString()
 }
 
 function normalizeText(value: unknown) {
@@ -374,15 +375,7 @@ function assertSingleReportDate(rows: { report_date: string | null }[], reportDa
 }
 
 async function requestSiteSettings(scope: SettingsScope, options: SettingsRequestOptions = {}) {
-  const headers: Record<string, string> = {}
-
-  if (options.password?.trim()) {
-    headers['x-settings-password'] = options.password.trim()
-  }
-
-  if (options.value) {
-    headers['Content-Type'] = 'application/json'
-  }
+  const headers = getEdgeFunctionHeaders(options.password, Boolean(options.value))
 
   const response = await fetch(getSiteSettingsFunctionUrl(scope), {
     method: options.method ?? 'GET',
@@ -390,11 +383,7 @@ async function requestSiteSettings(scope: SettingsScope, options: SettingsReques
     body: options.value ? JSON.stringify({ value: options.value }) : undefined,
   })
 
-  const payload = (await response.json().catch(() => null)) as SiteSettingsResponse | null
-
-  if (!response.ok) {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
-  }
+  const payload = await readEdgeFunctionJson<SiteSettingsResponse>(response)
 
   return {
     scope,
@@ -449,12 +438,9 @@ export async function uploadDailyReports(
   assertSingleReportDate(faceRows, reportDate, 'faceID')
   assertSingleReportDate(longIdleRows, reportDate, 'LongIDLE')
 
-  const response = await fetch(getFunctionUrl('admin-report-upload'), {
+  const response = await fetch(getEdgeFunctionUrl('admin-report-upload'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-settings-password': password.trim(),
-    },
+    headers: getEdgeFunctionHeaders(password, true),
     body: JSON.stringify({
       reportDate,
       fileName: bleFile.name,
@@ -466,10 +452,10 @@ export async function uploadDailyReports(
     }),
   })
 
-  const payload = (await response.json().catch(() => null)) as ReportUploadResponse | null
+  const payload = await readEdgeFunctionJson<ReportUploadResponse>(response)
 
-  if (!response.ok || !payload?.ok || !payload.batchId || !payload.reportDate || typeof payload.importedRows !== 'number') {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
+  if (!payload?.ok || !payload.batchId || !payload.reportDate || typeof payload.importedRows !== 'number') {
+    throw new Error('Не удалось загрузить отчёты')
   }
 
   return payload as ReportUploadResult

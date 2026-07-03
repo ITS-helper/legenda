@@ -122,8 +122,11 @@ export function SettingsPage() {
         if (previewWindow) {
           previewWindow.document.write(result.previewHtml)
           previewWindow.document.close()
+          setSendStatus('Предпросмотр открыт в новой вкладке')
+        } else {
+          setSendError(true)
+          setSendStatus('Браузер заблокировал новую вкладку. Разрешите всплывающие окна для сайта.')
         }
-        setSendStatus('Предпросмотр открыт в новой вкладке')
       } else {
         setSendStatus(
           result.recipients.length > 0
@@ -159,7 +162,7 @@ export function SettingsPage() {
         <div>
           <p className="panel-kicker">Настройки</p>
           <h2>Рассылка отчётов</h2>
-          <p>Управление получателями и ручная отправка ежедневных и еженедельных отчётов.</p>
+          <p>Управление получателями и ручная отправка ежедневных и еженедельных отчётов. Пароль — тот же, что в GitHub Secrets → SETTINGS_ADMIN_PASSWORD.</p>
         </div>
       </div>
 

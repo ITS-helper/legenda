@@ -1,3 +1,10 @@
+import {
+  formatEdgeFunctionError,
+  getEdgeFunctionHeaders,
+  getEdgeFunctionUrl,
+  readEdgeFunctionJson,
+} from './edgeFunctions'
+
 export type ReportType = 'daily' | 'weekly'
 
 export type EmailRecipient = {
@@ -19,7 +26,6 @@ export type SendReportResult = {
 
 type RecipientsResponse = {
   recipients?: EmailRecipient[]
-  error?: string
 }
 
 type SendResponse = {
@@ -28,11 +34,6 @@ type SendResponse = {
   periodKey?: string
   recipients?: string[]
   previewHtml?: string
-  error?: string
-}
-
-function getFunctionUrl(functionName: string) {
-  return new URL(`/functions/v1/${functionName}`, import.meta.env.VITE_SUPABASE_URL).toString()
 }
 
 function withResource(url: string, resource: string) {
@@ -42,34 +43,23 @@ function withResource(url: string, resource: string) {
 }
 
 export async function loadRecipients(password: string) {
-  const response = await fetch(withResource(getFunctionUrl('send-report'), 'recipients'), {
+  const response = await fetch(withResource(getEdgeFunctionUrl('send-report'), 'recipients'), {
     method: 'GET',
-    headers: { 'x-settings-password': password.trim() },
+    headers: getEdgeFunctionHeaders(password),
   })
 
-  const payload = (await response.json().catch(() => null)) as RecipientsResponse | null
-  if (!response.ok) {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
-  }
-
+  const payload = await readEdgeFunctionJson<RecipientsResponse>(response)
   return payload?.recipients ?? []
 }
 
 export async function saveRecipients(password: string, recipients: EmailRecipient[]) {
-  const response = await fetch(withResource(getFunctionUrl('send-report'), 'recipients'), {
+  const response = await fetch(withResource(getEdgeFunctionUrl('send-report'), 'recipients'), {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-settings-password': password.trim(),
-    },
+    headers: getEdgeFunctionHeaders(password, true),
     body: JSON.stringify({ recipients }),
   })
 
-  const payload = (await response.json().catch(() => null)) as RecipientsResponse | null
-  if (!response.ok) {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
-  }
-
+  const payload = await readEdgeFunctionJson<RecipientsResponse>(response)
   return payload?.recipients ?? []
 }
 
@@ -82,12 +72,9 @@ type SendReportOptions = {
 }
 
 export async function sendReport(options: SendReportOptions) {
-  const response = await fetch(getFunctionUrl('send-report'), {
+  const response = await fetch(getEdgeFunctionUrl('send-report'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-settings-password': options.password.trim(),
-    },
+    headers: getEdgeFunctionHeaders(options.password, true),
     body: JSON.stringify({
       type: options.type,
       date: options.date,
@@ -96,9 +83,9 @@ export async function sendReport(options: SendReportOptions) {
     }),
   })
 
-  const payload = (await response.json().catch(() => null)) as SendResponse | null
-  if (!response.ok || !payload?.ok) {
-    throw new Error(payload?.error ?? `HTTP ${response.status}`)
+  const payload = await readEdgeFunctionJson<SendResponse>(response)
+  if (!payload?.ok) {
+    throw new Error(formatEdgeFunctionError('Не удалось отправить отчёт'))
   }
 
   return payload as SendReportResult
