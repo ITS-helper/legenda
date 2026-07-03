@@ -193,6 +193,7 @@
 | Длительный простой | отчёт 10 | `sum(duration_min) / sum(total_sec)` для эпизодов **≥ 10 мин** (в проекте Legenda; в Workwatch по умолчанию 5 мин) |
 | Ходьба между зонами | отчёт 11 | `sum(go_sec) / sum(total_sec)` |
 | На КПП | отчёт 11 | время в `zona = 13` |
+| Длительность смены | отчёт 6 | `avg(on_watch_duration_seconds)` по сменам бригады за день / неделю |
 
 **Не используются (по документу), не показывать как метрики:** `sleep`, `wear`,
 `working_hours`, `work_code`, `chosen_metka`, `chosen_mapped_metka`.

@@ -25,6 +25,7 @@ type BrigadeDailyRow = {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
+  avg_shift_duration_sec: number
 }
 
 type BrigadeWeeklyRow = {
@@ -45,6 +46,7 @@ type BrigadeWeeklyRow = {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
+  avg_shift_duration_sec: number
 }
 
 type KppRow = {
@@ -157,6 +159,13 @@ function addDaysIso(dateIso: string, days: number) {
 
 function formatMinutes(totalSeconds: number) {
   return `${Math.round(Math.max(0, totalSeconds) / 60)} мин`
+}
+
+function formatShiftDuration(totalSeconds: number) {
+  const safe = Math.max(0, Math.round(totalSeconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  return `${hours}ч ${String(minutes).padStart(2, '0')}м`
 }
 
 function pct(value: number) {
@@ -363,13 +372,40 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
     )
     .join('')
 
-  return `<div style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
-    <div style="padding:16px 20px;">
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
+    <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Топ 3 по активности</span>
-      <div style="font-weight:700;color:${COLORS.textH};">${periodLabel}</div>
-    </div>
+      ${periodLabel} (${rows.length})
+    </summary>
     <div style="padding:0 16px 16px;">${items}</div>
-  </div>`
+  </details>`
+}
+
+function shiftDurationBlock(
+  rows: Array<{ supervisor_name: string; avg_shift_duration_sec: number }>,
+  periodLabel: string,
+) {
+  const withData = rows.filter((row) => row.avg_shift_duration_sec > 0)
+  if (withData.length === 0) {
+    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Нет данных о длительности смены ${periodLabel}.</div>`
+  }
+
+  const items = withData
+    .map(
+      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
+      <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</div>
+      <div style="font-weight:700;color:${COLORS.textH};white-space:nowrap;">${formatShiftDuration(row.avg_shift_duration_sec)}</div>
+    </div>`,
+    )
+    .join('')
+
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};overflow:hidden;">
+    <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Длительность смены</span>
+      Среднее время смены ${periodLabel} (${withData.length})
+    </summary>
+    <div style="padding:0 16px 16px;">${items}</div>
+  </details>`
 }
 
 function attentionBlock(rows: AttentionRow[], periodLabel: string) {
@@ -548,6 +584,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
       ${brigadeTableDaily(brigades)}
+      ${shiftDurationBlock(brigades, 'за день')}
       ${topActivityBlock(topActivity, 'за день')}
       ${kppBlock(kpp)}
       ${attentionBlock(attention, 'за день')}
@@ -611,6 +648,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
       ${brigadeTableWeekly(brigades)}
+      ${shiftDurationBlock(brigades, 'за неделю')}
       ${topActivityBlock(topActivity, 'за неделю')}
       ${attentionBlock(attention, 'за неделю')}
     </div>

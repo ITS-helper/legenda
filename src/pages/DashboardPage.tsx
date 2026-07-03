@@ -2,6 +2,7 @@
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { AttentionPanel } from '../components/AttentionPanel'
+import { ShiftDurationPanel } from '../components/ShiftDurationPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import {
   aggregateLowActivityWeekly,
@@ -105,7 +106,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [kppOpen, setKppOpen] = useState(false)
+  const [shiftDurationOpen, setShiftDurationOpen] = useState(false)
+  const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
+  const [shiftDurationWeeklyOpen, setShiftDurationWeeklyOpen] = useState(false)
+  const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
   const [weeklyAttentionOpen, setWeeklyAttentionOpen] = useState(false)
 
   useEffect(() => {
@@ -280,7 +285,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         <p className="eyebrow">{uiText.brand}</p>
         <h1>Аналитика смен</h1>
         <p className="hero-copy">
-          Дашборд разбит на четыре блока: ежедневная сводка, местоположение и простои, еженедельная аналитика и детализация по сотрудникам.
+          Дашборд разбит на четыре блока: ежедневная сводка, еженедельная аналитика, местоположение и простои и детализация по сотрудникам.
         </p>
       </section>
 
@@ -399,7 +404,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               ))}
             </div>
 
-            <TopActivityPanel employees={topDaily} periodLabel="за день" />
+            <ShiftDurationPanel
+              brigades={dailyRows}
+              open={shiftDurationOpen}
+              onToggle={() => setShiftDurationOpen((current) => !current)}
+              periodLabel="за день"
+              emptyMessage="Нет данных о длительности смен за этот день."
+            />
+
+            <TopActivityPanel
+              employees={topDaily}
+              periodLabel="за день"
+              open={topDailyOpen}
+              onToggle={() => setTopDailyOpen((current) => !current)}
+            />
 
             <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
               <div className="kpp-panel-head">
@@ -451,9 +469,120 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 2 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      {/* БЛОК 2 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
       <CollapsibleBlock
-        kicker="Блок 2 · Зоны"
+        kicker="Блок 2 · Еженедельно"
+        title="Еженедельная аналитика"
+        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, слабая активность, длительный простой и ходьба."
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Неделя</span>
+            <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
+              {availableWeeks.map((week) => (
+                <option key={week.week_start} value={week.week_start}>
+                  {formatWeekRange(week.week_start, week.week_end)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Период</span>
+            <strong>{selectedWeekMeta ? formatWeekRange(selectedWeekMeta.week_start, selectedWeekMeta.week_end) : '—'}</strong>
+          </div>
+        </div>
+
+        {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
+        {weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length === 0 ? (
+          <div className="empty-state">Нет данных за выбранную неделю.</div>
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <div className="brigade-grid">
+            {weeklyRows.map((brigade) => (
+              <article className="brigade-card" key={brigade.supervisor_name}>
+                <div className="brigade-card-head">
+                  <div>
+                    <strong>{brigade.supervisor_name}</strong>
+                    <p>≈ {brigade.avg_workers} чел./день · {brigade.unique_employees} уникальных</p>
+                  </div>
+                  <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
+                    {formatPercent(brigade.activity_pct)}
+                  </div>
+                </div>
+                <StructureBar
+                  workSec={brigade.work_sec}
+                  weakSec={brigade.weak_activity_sec}
+                  longIdleSec={brigade.long_idle_sec}
+                  goSec={brigade.go_sec}
+                  totalSec={brigade.total_sec}
+                />
+                <StructureLegend />
+                <div className="brigade-stats-grid">
+                  <div className="brigade-stat">
+                    <span>Активность</span>
+                    <strong>{formatPercent(brigade.activity_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Слабая активность</span>
+                    <strong>{formatPercent(brigade.weak_activity_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Длительный простой</span>
+                    <strong>{formatPercent(brigade.long_idle_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Ходьба между зонами</span>
+                    <strong>{formatPercent(brigade.go_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Дней в отчёте</span>
+                    <strong>{brigade.days}</strong>
+                  </div>
+                  <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
+                    <span>Замечены на КПП</span>
+                    <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <>
+            <ShiftDurationPanel
+              brigades={weeklyRows}
+              open={shiftDurationWeeklyOpen}
+              onToggle={() => setShiftDurationWeeklyOpen((current) => !current)}
+              periodLabel="за неделю"
+              emptyMessage="Нет данных о длительности смен за эту неделю."
+            />
+            <TopActivityPanel
+              employees={topWeekly}
+              periodLabel="за неделю"
+              open={topWeeklyOpen}
+              onToggle={() => setTopWeeklyOpen((current) => !current)}
+            />
+          </>
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <AttentionPanel
+            employees={lowActivityWeekly}
+            open={weeklyAttentionOpen}
+            onToggle={() => setWeeklyAttentionOpen((current) => !current)}
+            emptyMessage="Нет сотрудников со средней активностью ниже 30% за неделю."
+            periodLabel="за неделю"
+          />
+        ) : null}
+      </CollapsibleBlock>
+
+      {/* БЛОК 3 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      <CollapsibleBlock
+        kicker="Блок 3 · Зоны"
         title="Местоположение и простои"
         description="Где сотрудники проводили время за день и эпизоды длительного бездействия от 10 минут с привязкой к зоне."
       >
@@ -545,103 +674,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               )}
             </div>
           </div>
-        ) : null}
-      </CollapsibleBlock>
-
-      {/* БЛОК 3 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
-      <CollapsibleBlock
-        kicker="Блок 3 · Еженедельно"
-        title="Еженедельная аналитика"
-        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, слабая активность, длительный простой и ходьба."
-      >
-        <div className="filter-row">
-          <label className="filter-field">
-            <span>Неделя</span>
-            <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
-              {availableWeeks.map((week) => (
-                <option key={week.week_start} value={week.week_start}>
-                  {formatWeekRange(week.week_start, week.week_end)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="filter-caption">
-            <span>Период</span>
-            <strong>{selectedWeekMeta ? formatWeekRange(selectedWeekMeta.week_start, selectedWeekMeta.week_end) : '—'}</strong>
-          </div>
-        </div>
-
-        {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
-        {weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
-
-        {!weeklyLoading && !weeklyError && weeklyRows.length === 0 ? (
-          <div className="empty-state">Нет данных за выбранную неделю.</div>
-        ) : null}
-
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
-          <div className="brigade-grid">
-            {weeklyRows.map((brigade) => (
-              <article className="brigade-card" key={brigade.supervisor_name}>
-                <div className="brigade-card-head">
-                  <div>
-                    <strong>{brigade.supervisor_name}</strong>
-                    <p>≈ {brigade.avg_workers} чел./день · {brigade.unique_employees} уникальных</p>
-                  </div>
-                  <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
-                    {formatPercent(brigade.activity_pct)}
-                  </div>
-                </div>
-                <StructureBar
-                  workSec={brigade.work_sec}
-                  weakSec={brigade.weak_activity_sec}
-                  longIdleSec={brigade.long_idle_sec}
-                  goSec={brigade.go_sec}
-                  totalSec={brigade.total_sec}
-                />
-                <StructureLegend />
-                <div className="brigade-stats-grid">
-                  <div className="brigade-stat">
-                    <span>Активность</span>
-                    <strong>{formatPercent(brigade.activity_pct)}</strong>
-                  </div>
-                  <div className="brigade-stat">
-                    <span>Слабая активность</span>
-                    <strong>{formatPercent(brigade.weak_activity_pct)}</strong>
-                  </div>
-                  <div className="brigade-stat">
-                    <span>Длительный простой</span>
-                    <strong>{formatPercent(brigade.long_idle_pct)}</strong>
-                  </div>
-                  <div className="brigade-stat">
-                    <span>Ходьба между зонами</span>
-                    <strong>{formatPercent(brigade.go_pct)}</strong>
-                  </div>
-                  <div className="brigade-stat">
-                    <span>Дней в отчёте</span>
-                    <strong>{brigade.days}</strong>
-                  </div>
-                  <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
-                    <span>Замечены на КПП</span>
-                    <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : null}
-
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
-          <TopActivityPanel employees={topWeekly} periodLabel="за неделю" />
-        ) : null}
-
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
-          <AttentionPanel
-            employees={lowActivityWeekly}
-            open={weeklyAttentionOpen}
-            onToggle={() => setWeeklyAttentionOpen((current) => !current)}
-            emptyMessage="Нет сотрудников со средней активностью ниже 30% за неделю."
-            periodLabel="за неделю"
-          />
         ) : null}
       </CollapsibleBlock>
 

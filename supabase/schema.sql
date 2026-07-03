@@ -238,7 +238,11 @@ select
     else 0 end as long_idle_pct,
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
-    else 0 end as go_pct
+    else 0 end as go_pct,
+  coalesce(
+    round(avg(on_watch_duration_seconds) filter (where on_watch_duration_seconds > 0)),
+    0
+  )::integer as avg_shift_duration_sec
 from analytics.shift_daily_metrics
 group by report_date, coalesce(supervisor_name, 'Без начальника');
 
@@ -269,7 +273,11 @@ select
     else 0 end as long_idle_pct,
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
-    else 0 end as go_pct
+    else 0 end as go_pct,
+  coalesce(
+    round(avg(on_watch_duration_seconds) filter (where on_watch_duration_seconds > 0)),
+    0
+  )::integer as avg_shift_duration_sec
 from analytics.shift_daily_metrics
 group by 1, 2, 3;
 

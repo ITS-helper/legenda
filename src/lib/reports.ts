@@ -17,6 +17,7 @@ export type BrigadeDailyRow = {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
+  avg_shift_duration_sec: number
 }
 
 export type BrigadeWeeklyRow = {
@@ -38,6 +39,7 @@ export type BrigadeWeeklyRow = {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
+  avg_shift_duration_sec: number
 }
 
 export type ZoneDailyRow = {
