@@ -373,9 +373,9 @@ function formatShiftHeadcount(actual: number) {
 
 function metricCell(label: string, value: string, alert = false, width = '20%') {
   return `<td style="width:${width};vertical-align:top;padding:0;">
-    <div style="padding:14px 16px 48px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:104px;box-sizing:border-box;position:relative;">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};line-height:1.35;">${label}</div>
-      <div style="position:absolute;left:14px;right:14px;bottom:16px;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
+    <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};height:110px;box-sizing:border-box;position:relative;overflow:hidden;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};line-height:1.35;height:42px;overflow:hidden;">${label}</div>
+      <div style="position:absolute;left:14px;right:14px;bottom:14px;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
     </div>
   </td>`
 }
@@ -590,7 +590,6 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       (row) => `<tr>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.avg_workers}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.unique_employees}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
@@ -604,7 +603,6 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
     <thead><tr style="background:${COLORS.surface2};color:${COLORS.textMuted};text-align:left;">
       <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Чел./день</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Уникальных</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Слабая активность</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Длительный простой</th>
@@ -615,17 +613,11 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
   </table>`
 }
 
-type BrigadeDynamicsPoint = {
-  report_date: string
-  activity_pct: number
-}
-
 type BrigadeDynamicsCard = {
   supervisor_name: string
   today_pct: number | null
   prior_pct: number | null
   delta: number | null
-  sparkline: BrigadeDynamicsPoint[]
 }
 
 function deltaColor(delta: number | null) {
@@ -633,55 +625,21 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? COLORS.work : COLORS.alert
 }
 
-function buildSparklineSvg(points: BrigadeDynamicsPoint[]) {
-  if (points.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных</div>`
-  }
-
-  const width = 168
-  const height = 44
-  const padding = 4
-  const values = points.map((point) => point.activity_pct)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = max - min || 1
-  const coords = values.map((value, index) => {
-    const x = padding + (index / (values.length - 1)) * (width - padding * 2)
-    const y = height - padding - ((value - min) / range) * (height - padding * 2)
-    return { x, y }
-  })
-  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
-  const last = coords[coords.length - 1]
-
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-    <polyline points="${polyline}" fill="none" stroke="${COLORS.brand}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="${last.x}" cy="${last.y}" r="3.5" fill="${COLORS.brand}" />
-  </svg>`
-}
-
 function dynamicsCardHtml(
   card: BrigadeDynamicsCard,
-  options: { periodLabel: string; comparePrefix: string; emptyCompare: string; sparklineTitle: string },
+  options: { periodLabel: string; comparePrefix: string; emptyCompare: string },
 ) {
   const compareText =
     card.prior_pct != null
       ? `${options.comparePrefix} (${pct(card.prior_pct)})`
       : options.emptyCompare
 
-  const sparklineLabels =
-    card.sparkline.length > 0
-      ? `<div style="display:flex;justify-content:space-between;color:${COLORS.textMuted};font-size:11px;margin-top:4px;">
-          <span>${ruShort(card.sparkline[0].report_date)}</span>
-          <span>${ruShort(card.sparkline[card.sparkline.length - 1].report_date)}</span>
-        </div>`
-      : ''
-
   return `<div style="padding:20px;border-radius:20px;border:1px solid ${COLORS.border};background:${COLORS.surface};">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px;">
       <strong style="font-size:18px;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</strong>
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">Активность</span>
     </div>
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};margin-bottom:16px;">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};">
       <div>
         <span style="display:block;color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</span>
         <strong style="font-size:32px;line-height:1;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</strong>
@@ -690,11 +648,6 @@ function dynamicsCardHtml(
         <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatDeltaPercent(card.delta)}</div>
         <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
       </div>
-    </div>
-    <div>
-      <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
-      ${buildSparklineSvg(card.sparkline)}
-      ${sparklineLabels}
     </div>
   </div>`
 }
@@ -705,7 +658,6 @@ function activityDynamicsBlock(
     periodLabel: string
     comparePrefix: string
     emptyCompare: string
-    sparklineTitle: string
   },
 ) {
   const cells = cards
@@ -722,15 +674,12 @@ function activityDynamicsBlock(
 }
 
 async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
-  const sparklineStart = addDaysIso(referenceDate, -6)
   const priorDate = addDaysIso(referenceDate, -1)
 
   const { data, error } = await supabase!
     .from('brigade_daily_metrics')
     .select('report_date, supervisor_name, activity_pct')
-    .gte('report_date', sparklineStart)
-    .lte('report_date', referenceDate)
-    .order('report_date', { ascending: true })
+    .in('report_date', [referenceDate, priorDate])
   if (error) throw error
 
   const dailyRows = (data ?? []) as Array<{
@@ -751,24 +700,17 @@ async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminC
       today_pct: todayPct,
       prior_pct: priorPct,
       delta: todayPct != null && priorPct != null ? todayPct - priorPct : null,
-      sparkline: brigadeDaily.map((row) => ({
-        report_date: row.report_date,
-        activity_pct: row.activity_pct,
-      })),
     } satisfies BrigadeDynamicsCard
   })
 }
 
 async function loadBrigadeWeeklyActivityDynamics(supabase: ReturnType<typeof getAdminClient>, weekStart: string) {
-  const sparklineStart = addDaysIso(weekStart, -42)
   const priorWeekStart = addDaysIso(weekStart, -7)
 
   const { data, error } = await supabase!
     .from('brigade_weekly_metrics')
     .select('week_start, supervisor_name, activity_pct')
-    .gte('week_start', sparklineStart)
-    .lte('week_start', weekStart)
-    .order('week_start', { ascending: true })
+    .in('week_start', [weekStart, priorWeekStart])
   if (error) throw error
 
   const weeklyRows = (data ?? []) as Array<{
@@ -789,10 +731,6 @@ async function loadBrigadeWeeklyActivityDynamics(supabase: ReturnType<typeof get
       today_pct: weekPct,
       prior_pct: priorPct,
       delta: weekPct != null && priorPct != null ? weekPct - priorPct : null,
-      sparkline: brigadeWeekly.map((row) => ({
-        report_date: row.week_start,
-        activity_pct: row.activity_pct,
-      })),
     } satisfies BrigadeDynamicsCard
   })
 }
@@ -869,7 +807,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}</h1>
     </div>
     <div style="padding:8px 24px 24px;">
-      <table style="width:100%;border-collapse:separate;border-spacing:8px;">
+      <table style="width:100%;border-collapse:separate;border-spacing:8px;table-layout:fixed;">
         <tr>
           ${metricCell('Вышло на смену', formatShiftHeadcount(totals.workers), false, '33.33%')}
           ${metricCell('Активность', pct(activity), false, '33.33%')}
@@ -887,7 +825,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         periodLabel: 'За день',
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
-        sparklineTitle: `7 дней до ${ru(date)}`,
       })}
       ${shiftDurationBlock(brigades, 'за день')}
       ${topActivityBlock(topActivity, 'за день')}
@@ -943,7 +880,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}</h1>
     </div>
     <div style="padding:8px 24px 24px;">
-      <table style="width:100%;border-collapse:separate;border-spacing:8px;">
+      <table style="width:100%;border-collapse:separate;border-spacing:8px;table-layout:fixed;">
         <tr>
           ${metricCell('Активность', pct(activity), false, '20%')}
           ${metricCell('Слабая активность', pct(weakActivity), false, '20%')}
@@ -958,7 +895,6 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой неделе',
         emptyCompare: 'нет данных за прошлую неделю',
-        sparklineTitle: `7 недель до ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
       ${shiftDurationBlock(brigades, 'за неделю')}
       ${topActivityBlock(topActivity, 'за неделю')}

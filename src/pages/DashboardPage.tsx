@@ -586,10 +586,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span>Ходьба между зонами</span>
                     <strong>{formatPercent(brigade.go_pct)}</strong>
                   </div>
-                  <div className="brigade-stat">
-                    <span>Дней в отчёте</span>
-                    <strong>{brigade.days}</strong>
-                  </div>
                 </div>
                 <div className="brigade-card-footer">
                   <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
