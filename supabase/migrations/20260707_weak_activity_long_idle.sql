@@ -1,6 +1,11 @@
 -- Слабая активность и длительный простой из отчёта 8 (LongIDLE) вместо общего «простоя».
+-- PostgreSQL не позволяет CREATE OR REPLACE VIEW при смене имён колонок — пересоздаём view.
 
-create or replace view analytics.shift_daily_metrics as
+drop view if exists analytics.brigade_weekly_metrics;
+drop view if exists analytics.brigade_daily_metrics;
+drop view if exists analytics.shift_daily_metrics;
+
+create view analytics.shift_daily_metrics as
 select
   s.report_date,
   s.ww_shift_id,
@@ -47,7 +52,7 @@ group by
   s.late_seconds,
   s.early_return_seconds;
 
-create or replace view analytics.brigade_daily_metrics as
+create view analytics.brigade_daily_metrics as
 select
   report_date,
   coalesce(supervisor_name, 'Без начальника') as supervisor_name,
@@ -75,7 +80,7 @@ select
 from analytics.shift_daily_metrics
 group by report_date, coalesce(supervisor_name, 'Без начальника');
 
-create or replace view analytics.brigade_weekly_metrics as
+create view analytics.brigade_weekly_metrics as
 select
   (date_trunc('week', report_date))::date as week_start,
   ((date_trunc('week', report_date))::date + 6) as week_end,
@@ -105,3 +110,7 @@ select
     else 0 end as go_pct
 from analytics.shift_daily_metrics
 group by 1, 2, 3;
+
+grant select on analytics.shift_daily_metrics to anon, authenticated, service_role;
+grant select on analytics.brigade_daily_metrics to anon, authenticated, service_role;
+grant select on analytics.brigade_weekly_metrics to anon, authenticated, service_role;
