@@ -299,7 +299,7 @@ function wrapEmailHtml(innerHtml: string) {
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Legenda Analytics</title>
+<title>Work Watch Analytics</title>
 </head>
 <body style="margin:0;padding:0;background:#eef1f6;">
 ${innerHtml}
@@ -328,7 +328,7 @@ const COLORS = {
 
 const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};padding:24px;color:${COLORS.text};">
 <div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
-const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
+const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Work Watch Analytics</div></div></div>`
 
 const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   Джалол: 20,
