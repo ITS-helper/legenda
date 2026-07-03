@@ -26,6 +26,7 @@ bd dolt push          # Push beads data to remote
 ## Project Rule
 
 - Пользовательский интерфейс сайта, подписи, фильтры, названия метрик, пустые состояния и служебные тексты по умолчанию делать на русском языке, если пользователь явно не попросил другой язык.
+- **Архитектура проекта — [`docs/project-architecture.md`](docs/project-architecture.md).** Стек, импорт, view, блоки дашборда, edge functions, откуда что берётся.
 - **Определения метрик — единый источник правды: [`docs/metrics-reference.md`](docs/metrics-reference.md).** Любые подписи/описания метрик на сайте, в письмах и в коде должны соответствовать этому документу. Поля `sleep`, `wear`, `working_hours`, `work_code`, `chosen_metka`, `chosen_mapped_metka` по документу не используются — не выводить их как метрики.
 
 ## Non-Interactive Shell Commands

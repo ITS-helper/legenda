@@ -2,12 +2,12 @@
 
 Фронтенд дашборда собирается Vite и публикуется на GitHub Pages. Данные аналитики и опубликованные настройки интерфейса хранятся в Supabase.
 
-> **Определения метрик — единый источник правды:** [docs/metrics-reference.md](docs/metrics-reference.md).
-> Все подписи метрик на сайте, в письмах и в коде должны соответствовать этому документу.
+> **Архитектура проекта:** [docs/project-architecture.md](docs/project-architecture.md) — стек, потоки данных, блоки дашборда, view, edge functions.  
+> **Определения метрик:** [docs/metrics-reference.md](docs/metrics-reference.md) — единый источник правды для подписей на сайте и в письмах.
 
 ## Что есть сейчас
 
-- `#/` — дашборд из трёх сворачиваемых блоков: ежедневная аналитика, еженедельная аналитика, детализация по сотрудникам
+- `#/` — дашборд из шести сворачиваемых блоков: ежедневная и еженедельная аналитика, динамика, зоны и простои, объёмы (ручной ввод), детализация по сотрудникам
 - `#/settings` — настройки фронта, импорт отчётов и управление получателями рассылки
 - Рассылка отчётов заказчику на почту (ежедневно/еженедельно) — см. [docs/email-reports.md](docs/email-reports.md)
 - Справочник метрик (4 отчёта Workwatch) — [docs/metrics-reference.md](docs/metrics-reference.md)
@@ -18,6 +18,8 @@
 - `supabase/migrations/20260703_dashboard_and_email.sql` — КПП, метрики по бригадам (день/неделя), получатели и лог рассылки
 - `supabase/functions/site-settings/index.ts` — edge function для защищенной публикации настроек
 - `supabase/functions/send-report/index.ts` — edge function рассылки отчётов (SMTP)
+- `supabase/functions/volume-entries/index.ts` — ручной ввод объёмов за день
+- `supabase/migrations/20260712_volume_entries.sql`, `20260713_volume_entries_rls.sql` — таблица объёмов и RLS
 
 ## Переменные окружения
 
