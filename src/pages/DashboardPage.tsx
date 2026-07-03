@@ -304,7 +304,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="metric-note">перемещения между зонами от общего времени</p>
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
-                <span className="metric-label">Были на КПП</span>
+                <span className="metric-label">Замечены на КПП</span>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
                 <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого'}</p>
               </article>
@@ -548,7 +548,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <strong>{brigade.days}</strong>
                   </div>
                   <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
-                    <span>Смены на КПП</span>
+                    <span>Замечены на КПП</span>
                     <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
                   </div>
                 </div>

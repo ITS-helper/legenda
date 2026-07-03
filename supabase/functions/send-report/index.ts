@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts'
+import nodemailer from 'npm:nodemailer@6.9.16'
 
 type ReportType = 'daily' | 'weekly'
 
@@ -157,13 +157,6 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
 }
 
-function encodeMimeSubject(subject: string) {
-  const bytes = new TextEncoder().encode(subject)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return `=?UTF-8?B?${btoa(binary)}?=`
-}
-
 function wrapEmailHtml(innerHtml: string) {
   return `<!DOCTYPE html>
 <html lang="ru">
@@ -196,7 +189,7 @@ const COLORS = {
 
 const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};padding:24px;color:${COLORS.text};">
 <div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
-const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.textH};color:#9eb6ae;font-size:12px;">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
+const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
 
 function metricCell(label: string, value: string, alert = false) {
   return `<td style="width:20%;vertical-align:top;">
@@ -257,7 +250,7 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Простой</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Смены на КПП</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Замечены на КПП</th>
     </tr></thead>
     <tbody>${body}</tbody>
   </table>`
@@ -335,7 +328,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
           ${metricCell('Ходьба между зонами', pct(go))}
-          ${metricCell('Были на КПП', String(totals.kpp_workers), totals.kpp_workers > 0)}
+          ${metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0)}
         </tr>
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
@@ -384,7 +377,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
           ${metricCell('Ходьба между зонами', pct(go))}
-          ${metricCell('Смены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0)}
+          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0)}
         </tr>
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
@@ -439,29 +432,26 @@ async function sendEmails(subject: string, html: string, recipients: string[]) {
     throw new Error('SMTP настройки не заданы (SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM)')
   }
 
-  const client = new SMTPClient({
-    connection: {
-      hostname,
-      port,
-      tls: useTls,
-      auth: { username, password },
-    },
+  const transporter = nodemailer.createTransport({
+    host: hostname,
+    port,
+    secure: useTls && port !== 587,
+    auth: { user: username, pass: password },
   })
 
+  const fullHtml = wrapEmailHtml(html)
+
   try {
-    const fullHtml = wrapEmailHtml(html)
-    const mimeSubject = encodeMimeSubject(subject)
     for (const to of recipients) {
-      await client.send({
+      await transporter.sendMail({
         from,
         to,
-        subject: mimeSubject,
+        subject,
         html: fullHtml,
-        content: 'auto',
       })
     }
   } finally {
-    await client.close()
+    transporter.close()
   }
 }
 
