@@ -158,6 +158,16 @@ function addDaysIso(dateIso: string, days: number) {
   return date.toISOString().slice(0, 10)
 }
 
+function listDatesInclusive(startIso: string, endIso: string) {
+  const dates: string[] = []
+  let current = startIso
+  while (current <= endIso) {
+    dates.push(current)
+    current = addDaysIso(current, 1)
+  }
+  return dates
+}
+
 const KPP_LUNCH_START_MIN = 13 * 60
 const KPP_LUNCH_END_MIN = 14 * 60
 
@@ -768,33 +778,59 @@ async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminC
   })
 }
 
-async function loadBrigadeWeeklyActivityDynamics(supabase: ReturnType<typeof getAdminClient>, weekStart: string) {
+async function loadBrigadeWeeklyActivityDynamics(
+  supabase: ReturnType<typeof getAdminClient>,
+  weekStart: string,
+  weekEnd: string,
+) {
   const priorWeekStart = addDaysIso(weekStart, -7)
+  const weekDates = listDatesInclusive(weekStart, weekEnd)
 
-  const { data, error } = await supabase!
+  const { data: weeklyData, error: weeklyError } = await supabase!
     .from('brigade_weekly_metrics')
     .select('week_start, supervisor_name, activity_pct')
     .in('week_start', [weekStart, priorWeekStart])
-  if (error) throw error
+  if (weeklyError) throw weeklyError
 
-  const weeklyRows = (data ?? []) as Array<{
+  const { data: dailyData, error: dailyError } = await supabase!
+    .from('brigade_daily_metrics')
+    .select('report_date, supervisor_name, activity_pct')
+    .gte('report_date', weekStart)
+    .lte('report_date', weekEnd)
+    .order('report_date', { ascending: true })
+  if (dailyError) throw dailyError
+
+  const weeklyRows = (weeklyData ?? []) as Array<{
     week_start: string
+    supervisor_name: string
+    activity_pct: number
+  }>
+
+  const dailyRows = (dailyData ?? []) as Array<{
+    report_date: string
     supervisor_name: string
     activity_pct: number
   }>
 
   return TRACKED_BRIGADES.map((brigadeName) => {
     const brigadeWeekly = weeklyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
+    const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const weekRow = brigadeWeekly.find((row) => row.week_start === weekStart) ?? null
     const priorRow = brigadeWeekly.find((row) => row.week_start === priorWeekStart) ?? null
     const weekPct = weekRow?.activity_pct ?? null
     const priorPct = priorRow?.activity_pct ?? null
+
+    const dailyByDate = new Map(brigadeDaily.map((row) => [row.report_date, row.activity_pct]))
 
     return {
       supervisor_name: brigadeName,
       today_pct: weekPct,
       prior_pct: priorPct,
       delta: weekPct != null && priorPct != null ? weekPct - priorPct : null,
+      sparkline: weekDates.map((date) => ({
+        report_date: date,
+        activity_pct: dailyByDate.get(date) ?? 0,
+      })),
     } satisfies BrigadeDynamicsCard
   })
 }
@@ -920,7 +956,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   if (shiftError) throw shiftError
   const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
-  const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart)
+  const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd)
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -960,6 +996,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой неделе',
         emptyCompare: 'нет данных за прошлую неделю',
+        sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
       ${shiftDurationBlock(brigades, 'за неделю')}
       ${topActivityBlock(topActivity, 'за неделю')}
