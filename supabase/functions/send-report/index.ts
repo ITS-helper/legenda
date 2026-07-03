@@ -631,30 +631,31 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? COLORS.work : COLORS.alert
 }
 
-function buildSparklineSvg(points: BrigadeDynamicsPoint[]) {
+const SPARKLINE_BAR_SOFT = 'rgba(0, 78, 207, 0.35)'
+
+function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
   if (points.length < 2) {
     return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за 7 дней</div>`
   }
 
-  const width = 168
-  const height = 44
-  const padding = 4
+  const chartHeight = 44
+  const barWidth = Math.max(10, Math.min(16, Math.floor(168 / points.length) - 2))
   const values = points.map((point) => point.activity_pct)
   const min = Math.min(...values)
   const max = Math.max(...values)
   const range = max - min || 1
-  const coords = values.map((value, index) => {
-    const x = padding + (index / (values.length - 1)) * (width - padding * 2)
-    const y = height - padding - ((value - min) / range) * (height - padding * 2)
-    return { x, y }
-  })
-  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
-  const last = coords[coords.length - 1]
 
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-    <polyline points="${polyline}" fill="none" stroke="${COLORS.brand}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="${last.x}" cy="${last.y}" r="3.5" fill="${COLORS.brand}" />
-  </svg>`
+  const bars = values
+    .map((value, index) => {
+      const barHeight = Math.max(6, Math.round(((value - min) / range) * (chartHeight - 10)) + 6)
+      const isLast = index === values.length - 1
+      return `<td valign="bottom" style="padding:0 2px;height:${chartHeight}px;">
+        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};border-radius:4px 4px 0 0;font-size:0;line-height:0;">&nbsp;</div>
+      </td>`
+    })
+    .join('')
+
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;"><tr>${bars}</tr></table>`
 }
 
 function dynamicsCardHtml(
@@ -669,15 +670,17 @@ function dynamicsCardHtml(
   const sparkline = card.sparkline ?? []
   const sparklineLabels =
     sparkline.length >= 2
-      ? `<div style="display:flex;justify-content:space-between;color:${COLORS.textMuted};font-size:11px;margin-top:4px;">
-        <span>${ruShort(sparkline[0].report_date)}</span>
-        <span>${ruShort(sparkline[sparkline.length - 1].report_date)}</span>
-      </div>`
+      ? `<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" style="margin-top:4px;">
+        <tr>
+          <td align="left" style="font-size:11px;color:${COLORS.textMuted};">${ruShort(sparkline[0].report_date)}</td>
+          <td align="right" style="font-size:11px;color:${COLORS.textMuted};">${ruShort(sparkline[sparkline.length - 1].report_date)}</td>
+        </tr>
+      </table>`
       : ''
   const sparklineSection = options.sparklineTitle
     ? `<div>
       <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
-      ${buildSparklineSvg(sparkline)}
+      ${buildSparklineEmail(sparkline)}
       ${sparklineLabels}
     </div>`
     : ''
