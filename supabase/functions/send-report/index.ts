@@ -191,11 +191,17 @@ const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,san
 <div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
 const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
 
+const SHIFT_TARGET_WORKERS = 50
+
+function formatShiftHeadcount(actual: number) {
+  return `${actual} / ${SHIFT_TARGET_WORKERS}`
+}
+
 function metricCell(label: string, value: string, alert = false) {
   return `<td style="width:20%;vertical-align:top;">
-    <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:72px;">
+    <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:88px;display:flex;flex-direction:column;">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${label}</div>
-      <div style="font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};margin-top:6px;line-height:1.1;">${value}</div>
+      <div style="margin-top:auto;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
     </div>
   </td>`
 }
@@ -324,7 +330,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
     <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
-          ${metricCell('Вышло на смену', String(totals.workers))}
+          ${metricCell('Вышло на смену', formatShiftHeadcount(totals.workers))}
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
           ${metricCell('Ходьба между зонами', pct(go))}

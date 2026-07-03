@@ -96,6 +96,12 @@ export function formatMinutes(totalSeconds: number) {
   return `${minutes} мин`
 }
 
+export const SHIFT_TARGET_WORKERS = 50
+
+export function formatShiftHeadcount(actual: number) {
+  return `${actual} / ${SHIFT_TARGET_WORKERS}`
+}
+
 export function formatPercent(value: number) {
   return `${Math.round(value)}%`
 }

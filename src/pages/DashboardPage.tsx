@@ -6,6 +6,7 @@ import {
   formatMinutes,
   formatPercent,
   formatSeconds,
+  formatShiftHeadcount,
   formatWeekRange,
   loadAvailableDates,
   loadAvailableWeeks,
@@ -285,28 +286,28 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             <div className="metrics-grid">
               <article className="metric-card metric-card-accent">
                 <span className="metric-label">Вышло на смену</span>
-                <strong className="metric-value">{dailyTotals.workers}</strong>
                 <p className="metric-note">человек по всем бригадам</p>
+                <strong className="metric-value">{formatShiftHeadcount(dailyTotals.workers)}</strong>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Активность</span>
-                <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
                 <p className="metric-note">доля активной работы от общего времени</p>
+                <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Простой</span>
-                <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
                 <p className="metric-note">бездействие, включая слабую активность</p>
+                <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Ходьба между зонами</span>
-                <strong className="metric-value">{formatPercent(dailyGo)}</strong>
                 <p className="metric-note">перемещения между зонами от общего времени</p>
+                <strong className="metric-value">{formatPercent(dailyGo)}</strong>
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Замечены на КПП</span>
-                <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
                 <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого'}</p>
+                <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
               </article>
             </div>
 
