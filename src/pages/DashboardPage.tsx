@@ -298,6 +298,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   return (
     <>
+      <p className="dashboard-intro">
+        Дашборд разбит на четыре блока: ежедневная сводка, еженедельная аналитика, местоположение и простои и детализация по сотрудникам.
+      </p>
+
       {bootstrapError ? (
         <section className="empty-state error-state">Ошибка загрузки: {bootstrapError}</section>
       ) : null}

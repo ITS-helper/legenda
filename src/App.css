@@ -97,6 +97,14 @@
   gap: 28px;
 }
 
+.dashboard-intro {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 980px;
+}
+
 .eyebrow {
   margin: 0 0 16px;
   color: var(--brand);
