@@ -423,6 +423,15 @@ execute function analytics.touch_volume_entries();
 grant select on analytics.volume_entries to anon, authenticated, service_role;
 grant select, insert, update, delete on analytics.volume_entries to service_role;
 
+alter table analytics.volume_entries enable row level security;
+
+drop policy if exists volume_entries_public_read on analytics.volume_entries;
+create policy volume_entries_public_read
+  on analytics.volume_entries
+  for select
+  to anon, authenticated
+  using (true);
+
 grant usage on schema analytics to anon, authenticated, service_role;
 
 grant select, insert, update, delete on all tables in schema analytics to service_role;

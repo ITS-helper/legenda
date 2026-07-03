@@ -145,10 +145,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
     async function bootstrap() {
       try {
+        const passwordValue = password.trim()
         const [dates, weeks, savedVolumeDates] = await Promise.all([
           loadAvailableDates(),
           loadAvailableWeeks(),
-          loadVolumeDates().catch(() => [] as string[]),
+          passwordValue ? loadVolumeDates(passwordValue).catch(() => [] as string[]) : Promise.resolve([] as string[]),
         ])
         if (cancelled) return
         setAvailableDates(dates)
@@ -169,10 +170,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [password])
 
   useEffect(() => {
-    if (!selectedDate) return
+    if (!selectedDate || !password.trim()) return
     let cancelled = false
 
     async function loadDay() {
@@ -185,7 +186,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           loadShiftRows(selectedDate),
           loadZoneDaily(selectedDate),
           loadIdleEpisodes(selectedDate),
-          loadVolumeEntries(selectedDate).catch(() => [] as VolumeEntry[]),
+          loadVolumeEntries(password, selectedDate).catch(() => [] as VolumeEntry[]),
         ])
         if (cancelled) return
         setDailyRows(brigades)
@@ -205,15 +206,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate])
+  }, [selectedDate, password])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
-    if (!normalized) return
+    if (!normalized || !password.trim()) return
     try {
-      const entries = await loadVolumeEntries(normalized)
+      const entries = await loadVolumeEntries(password, normalized)
       if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries(entries)
-      const dates = await loadVolumeDates()
+      const dates = await loadVolumeDates(password)
       setVolumeDates(dates)
     } catch {
       if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries([])

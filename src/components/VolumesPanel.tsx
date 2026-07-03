@@ -36,7 +36,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
       setSaveStatus(null)
       setSaveError(false)
       try {
-        const entries = await loadVolumeEntries(reportDate)
+        const entries = await loadVolumeEntries(password, reportDate)
         if (cancelled) return
         setDrafts(draftsFromEntries(entries))
         setDirty(false)
@@ -53,7 +53,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
     return () => {
       cancelled = true
     }
-  }, [reportDate])
+  }, [reportDate, password])
 
   function updateDraft(index: number, patch: Partial<VolumeEntryDraft>) {
     setDrafts((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))

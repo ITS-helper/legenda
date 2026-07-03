@@ -68,6 +68,11 @@ function normalizeEntries(entries: VolumeEntryInput[]) {
     .filter((entry) => entry.value_text.length > 0)
 }
 
+function normalizeReportDate(value: string | null) {
+  if (!value) return ''
+  return value.trim().slice(0, 10)
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -76,6 +81,48 @@ Deno.serve(async (request) => {
   const supabase = getAdminClient()
   if (!supabase) {
     return jsonResponse({ error: 'Supabase service credentials are missing' }, 500)
+  }
+
+  if (request.method === 'GET') {
+    const auth = isAuthorized(request)
+    if (!auth.ok) {
+      return auth.response
+    }
+
+    const reportDate = normalizeReportDate(new URL(request.url).searchParams.get('date'))
+
+    if (reportDate) {
+      if (!isIsoDate(reportDate)) {
+        return jsonResponse({ error: 'Некорректная дата' }, 400)
+      }
+
+      const { data, error } = await supabase
+        .schema('analytics')
+        .from('volume_entries')
+        .select('id, report_date, label, value_text, note, sort_order, updated_at')
+        .eq('report_date', reportDate)
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true })
+
+      if (error) {
+        return jsonResponse({ error: error.message }, 500)
+      }
+
+      return jsonResponse({ report_date: reportDate, entries: data ?? [] })
+    }
+
+    const { data, error } = await supabase
+      .schema('analytics')
+      .from('volume_entries')
+      .select('report_date')
+      .order('report_date', { ascending: false })
+
+    if (error) {
+      return jsonResponse({ error: error.message }, 500)
+    }
+
+    const dates = [...new Set((data ?? []).map((row) => normalizeReportDate(String(row.report_date))))].filter(Boolean)
+    return jsonResponse({ dates })
   }
 
   if (request.method === 'PUT') {

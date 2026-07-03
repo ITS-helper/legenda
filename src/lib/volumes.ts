@@ -1,5 +1,4 @@
 import { getEdgeFunctionHeaders, getEdgeFunctionUrl, readEdgeFunctionJson } from './edgeFunctions'
-import { supabase } from './supabase'
 
 export type VolumeEntry = {
   id: number
@@ -21,6 +20,15 @@ export type VolumeEntryDraft = {
 type SaveVolumeResponse = {
   report_date?: string
   entries?: VolumeEntry[]
+}
+
+type LoadVolumeResponse = {
+  report_date?: string
+  entries?: VolumeEntry[]
+}
+
+type LoadVolumeDatesResponse = {
+  dates?: string[]
 }
 
 export function formatVolumeEntryCount(count: number) {
@@ -55,34 +63,52 @@ export function formatVolumeCardSummary(entries: VolumeEntry[]) {
   return entries.length > 2 ? `${preview} …` : preview
 }
 
-export async function loadVolumeDates() {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('volume_entries')
-    .select('report_date')
-    .order('report_date', { ascending: false })
-
-  if (error) throw error
-  return [...new Set((data ?? []).map((row) => normalizeReportDate(row.report_date as string)))]
+function mapVolumeEntry(row: VolumeEntry): VolumeEntry {
+  return {
+    ...row,
+    report_date: normalizeReportDate(row.report_date),
+  }
 }
 
-export async function loadVolumeEntries(reportDate: string) {
+function volumeEntriesUrl(reportDate?: string) {
+  const url = new URL(getEdgeFunctionUrl('volume-entries'))
+  const date = normalizeReportDate(reportDate)
+  if (date) {
+    url.searchParams.set('date', date)
+  }
+  return url.toString()
+}
+
+async function fetchVolumeApi<T>(password: string, reportDate?: string) {
+  const trimmedPassword = password.trim()
+  if (!trimmedPassword) {
+    throw new Error('Сессия истекла. Войдите снова.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch(volumeEntriesUrl(reportDate), {
+      method: 'GET',
+      headers: getEdgeFunctionHeaders(trimmedPassword),
+    })
+  } catch {
+    throw new Error('Не удалось связаться с сервером. Обновите страницу и попробуйте снова.')
+  }
+
+  return readEdgeFunctionJson<T>(response)
+}
+
+export async function loadVolumeDates(password: string) {
+  const payload = await fetchVolumeApi<LoadVolumeDatesResponse>(password)
+  return (payload?.dates ?? []).map(normalizeReportDate).filter(Boolean)
+}
+
+export async function loadVolumeEntries(password: string, reportDate: string) {
   const date = normalizeReportDate(reportDate)
   if (!date) return []
 
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('volume_entries')
-    .select('id, report_date, label, value_text, note, sort_order, updated_at')
-    .eq('report_date', date)
-    .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-
-  if (error) throw error
-  return (data ?? []).map((row) => ({
-    ...(row as VolumeEntry),
-    report_date: normalizeReportDate(row.report_date as string),
-  }))
+  const payload = await fetchVolumeApi<LoadVolumeResponse>(password, date)
+  return (payload?.entries ?? []).map((row) => mapVolumeEntry(row as VolumeEntry))
 }
 
 export async function saveVolumeEntries(password: string, reportDate: string, entries: VolumeEntryDraft[]) {
@@ -106,7 +132,7 @@ export async function saveVolumeEntries(password: string, reportDate: string, en
   }
 
   const payload = await readEdgeFunctionJson<SaveVolumeResponse>(response)
-  return payload?.entries ?? []
+  return (payload?.entries ?? []).map((row) => mapVolumeEntry(row as VolumeEntry))
 }
 
 export function draftsFromEntries(entries: VolumeEntry[]): VolumeEntryDraft[] {
