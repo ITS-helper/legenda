@@ -88,6 +88,63 @@ export type KppEmployee = {
   full_name: string
   supervisor_name: string
   kpp_sec: number
+  kpp_time: string
+}
+
+const KPP_LUNCH_START_MIN = 13 * 60
+const KPP_LUNCH_END_MIN = 14 * 60
+
+function getMoscowMinutesFromIso(iso: string) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(iso))
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
+  return hour * 60 + minute
+}
+
+export function isKppMetricMinuteAt(eventAt: string) {
+  const minutes = getMoscowMinutesFromIso(eventAt)
+  return !(minutes >= KPP_LUNCH_START_MIN && minutes < KPP_LUNCH_END_MIN)
+}
+
+export function formatMoscowTime(iso: string) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso))
+}
+
+export function buildKppTimeLabel(eventTimes: string[]) {
+  const filtered = [...eventTimes]
+    .filter(isKppMetricMinuteAt)
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
+
+  if (filtered.length === 0) return '—'
+
+  const ranges: Array<{ start: string; end: string }> = []
+  for (const iso of filtered) {
+    const timestamp = new Date(iso).getTime()
+    const last = ranges[ranges.length - 1]
+    if (last && timestamp - new Date(last.end).getTime() <= 90_000) {
+      last.end = iso
+    } else {
+      ranges.push({ start: iso, end: iso })
+    }
+  }
+
+  return ranges
+    .map((range) => {
+      const start = formatMoscowTime(range.start)
+      const end = formatMoscowTime(range.end)
+      return start === end ? start : `${start}–${end}`
+    })
+    .join(', ')
 }
 
 const NO_SUPERVISOR = 'Без начальника'
@@ -407,12 +464,38 @@ export async function loadKppEmployees(reportDate: string) {
 
   if (error) throw error
 
-  return (data ?? []).map((row) => ({
+  const employees = (data ?? []).map((row) => ({
     ww_shift_id: Number(row.ww_shift_id),
     employee_number: String(row.employee_number),
     full_name: String(row.full_name),
     supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
     kpp_sec: Number(row.kpp_sec_total),
+  }))
+
+  if (employees.length === 0) return [] satisfies KppEmployee[]
+
+  const shiftIds = employees.map((employee) => employee.ww_shift_id)
+  const { data: minuteData, error: minuteError } = await supabase
+    .schema('analytics')
+    .from('ble_minute_facts')
+    .select('ww_shift_id, event_at')
+    .eq('report_date', reportDate)
+    .eq('zona', '13')
+    .in('ww_shift_id', shiftIds)
+
+  if (minuteError) throw minuteError
+
+  const minutesByShift = new Map<number, string[]>()
+  for (const row of minuteData ?? []) {
+    const shiftId = Number(row.ww_shift_id)
+    const events = minutesByShift.get(shiftId) ?? []
+    events.push(String(row.event_at))
+    minutesByShift.set(shiftId, events)
+  }
+
+  return employees.map((employee) => ({
+    ...employee,
+    kpp_time: buildKppTimeLabel(minutesByShift.get(employee.ww_shift_id) ?? []),
   })) satisfies KppEmployee[]
 }
 

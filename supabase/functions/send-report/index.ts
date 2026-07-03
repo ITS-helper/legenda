@@ -54,6 +54,7 @@ type KppRow = {
   employee_number: string
   supervisor_name: string | null
   kpp_sec_total: number
+  kpp_time: string
 }
 
 type ShiftMetricRow = {
@@ -159,6 +160,100 @@ function addDaysIso(dateIso: string, days: number) {
 
 function formatMinutes(totalSeconds: number) {
   return `${Math.round(Math.max(0, totalSeconds) / 60)} мин`
+}
+
+const KPP_LUNCH_START_MIN = 13 * 60
+const KPP_LUNCH_END_MIN = 14 * 60
+
+function getMoscowMinutesFromIso(iso: string) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(iso))
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
+  return hour * 60 + minute
+}
+
+function isKppMetricMinuteAt(eventAt: string) {
+  const minutes = getMoscowMinutesFromIso(eventAt)
+  return !(minutes >= KPP_LUNCH_START_MIN && minutes < KPP_LUNCH_END_MIN)
+}
+
+function formatMoscowTime(iso: string) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso))
+}
+
+function buildKppTimeLabel(eventTimes: string[]) {
+  const filtered = [...eventTimes]
+    .filter(isKppMetricMinuteAt)
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
+
+  if (filtered.length === 0) return '—'
+
+  const ranges: Array<{ start: string; end: string }> = []
+  for (const iso of filtered) {
+    const timestamp = new Date(iso).getTime()
+    const last = ranges[ranges.length - 1]
+    if (last && timestamp - new Date(last.end).getTime() <= 90_000) {
+      last.end = iso
+    } else {
+      ranges.push({ start: iso, end: iso })
+    }
+  }
+
+  return ranges
+    .map((range) => {
+      const start = formatMoscowTime(range.start)
+      const end = formatMoscowTime(range.end)
+      return start === end ? start : `${start}–${end}`
+    })
+    .join(', ')
+}
+
+async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: string) {
+  const { data: kppData, error: kppError } = await supabase!
+    .from('shift_daily_metrics')
+    .select('ww_shift_id, full_name, employee_number, supervisor_name, kpp_sec_total')
+    .eq('report_date', date)
+    .gt('kpp_sec_total', 0)
+    .order('kpp_sec_total', { ascending: false })
+  if (kppError) throw kppError
+
+  const rows = (kppData ?? []) as Array<KppRow & { ww_shift_id: number }>
+  if (rows.length === 0) return [] as KppRow[]
+
+  const shiftIds = rows.map((row) => row.ww_shift_id)
+  const { data: minuteData, error: minuteError } = await supabase!
+    .from('ble_minute_facts')
+    .select('ww_shift_id, event_at')
+    .eq('report_date', date)
+    .eq('zona', '13')
+    .in('ww_shift_id', shiftIds)
+  if (minuteError) throw minuteError
+
+  const minutesByShift = new Map<number, string[]>()
+  for (const row of minuteData ?? []) {
+    const shiftId = Number(row.ww_shift_id)
+    const events = minutesByShift.get(shiftId) ?? []
+    events.push(String(row.event_at))
+    minutesByShift.set(shiftId, events)
+  }
+
+  return rows.map((row) => ({
+    full_name: row.full_name,
+    employee_number: row.employee_number,
+    supervisor_name: row.supervisor_name,
+    kpp_sec_total: row.kpp_sec_total,
+    kpp_time: buildKppTimeLabel(minutesByShift.get(row.ww_shift_id) ?? []),
+  }))
 }
 
 function formatShiftDuration(totalSeconds: number) {
@@ -506,7 +601,10 @@ function kppBlock(rows: KppRow[]) {
         <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
         <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
       </div>
-      <div style="font-weight:700;color:${COLORS.alert};white-space:nowrap;">${formatMinutes(row.kpp_sec_total)}</div>
+      <div style="text-align:right;white-space:nowrap;">
+        <div style="font-size:13px;font-weight:600;color:${COLORS.textH};">${escapeHtml(row.kpp_time)}</div>
+        <div style="font-weight:700;color:${COLORS.alert};margin-top:4px;">${formatMinutes(row.kpp_sec_total)}</div>
+      </div>
     </div>`,
     )
     .join('')
@@ -529,14 +627,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   if (brigadesError) throw brigadesError
   const brigades = (brigadesData ?? []) as BrigadeDailyRow[]
 
-  const { data: kppData, error: kppError } = await supabase!
-    .from('shift_daily_metrics')
-    .select('full_name, employee_number, supervisor_name, kpp_sec_total')
-    .eq('report_date', date)
-    .gt('kpp_sec_total', 0)
-    .order('kpp_sec_total', { ascending: false })
-  if (kppError) throw kppError
-  const kpp = (kppData ?? []) as KppRow[]
+  const kpp = await loadKppRows(supabase, date)
 
   const { data: shiftData, error: shiftError } = await supabase!
     .from('shift_daily_metrics')

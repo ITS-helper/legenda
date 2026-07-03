@@ -503,7 +503,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                             #{employee.employee_number} · {employee.supervisor_name}
                           </span>
                         </div>
-                        <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
+                        <div className="kpp-metrics">
+                          <div className="kpp-time-range">{employee.kpp_time}</div>
+                          <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
