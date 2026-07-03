@@ -489,10 +489,9 @@ export async function loadKppEmployees(reportDate: string) {
   const shiftIds = employees.map((employee) => employee.ww_shift_id)
   const { data: minuteData, error: minuteError } = await supabase
     .schema('analytics')
-    .from('ble_minute_facts')
+    .from('kpp_minutes_daily')
     .select('ww_shift_id, event_at')
     .eq('report_date', reportDate)
-    .eq('zona', '13')
     .in('ww_shift_id', shiftIds)
     .limit(10_000)
 
