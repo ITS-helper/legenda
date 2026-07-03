@@ -338,7 +338,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className="metric-card">
                 <span className="metric-label">Длительный простой</span>
-                <p className="metric-note">бездействие от 5 минут, от общего времени</p>
+                <p className="metric-note">бездействие от 10 минут, от общего времени</p>
                 <strong className="metric-value">{formatPercent(dailyLongIdle)}</strong>
               </article>
               <article className="metric-card">
@@ -455,7 +455,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 2 · Зоны"
         title="Местоположение и простои"
-        description="Где сотрудники проводили время за день и эпизоды длительного бездействия от 5 минут с привязкой к зоне."
+        description="Где сотрудники проводили время за день и эпизоды длительного бездействия от 10 минут с привязкой к зоне."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -514,7 +514,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <div>
                   <p className="panel-kicker">Простои</p>
                   <h3>Длительные простои</h3>
-                  <p className="panel-description">Эпизоды бездействия от 5 минут с привязкой к зоне.</p>
+                  <p className="panel-description">Эпизоды бездействия от 10 минут с привязкой к зоне.</p>
                 </div>
                 {idleEpisodes.length > 0 ? (
                   <div className="zone-summary">

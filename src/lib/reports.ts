@@ -219,6 +219,9 @@ export type AttentionEmployee = {
 
 export const LOW_ACTIVITY_THRESHOLD = 30
 
+/** Порог длительного простоя в отчёте 10 (минуты). */
+export const LONG_IDLE_THRESHOLD_MIN = 10
+
 export function getShiftProductivity(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
   return ratio(row.work_sec_total, row.total_sec_total)
 }
@@ -395,6 +398,7 @@ export async function loadIdleEpisodes(reportDate: string) {
     .from('idle_episodes_daily')
     .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
     .eq('report_date', reportDate)
+    .gte('duration_min', LONG_IDLE_THRESHOLD_MIN)
     .order('duration_min', { ascending: false })
 
   if (error) throw error
