@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { defaultUiText, type UiText } from './content/uiText'
 import { loadPublishedUiText } from './lib/siteSettings'
 import { DashboardPage } from './pages/DashboardPage'
+import { LoginPage } from './pages/LoginPage'
 import { SettingsPage } from './pages/SettingsPage'
 import './App.css'
 
@@ -11,7 +13,8 @@ function getRouteFromHash(hash: string): AppRoute {
   return hash === '#/settings' ? 'settings' : 'dashboard'
 }
 
-function App() {
+function AppContent() {
+  const { isAuthenticated, isBootstrapping, login, logout } = useAuth()
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash))
   const [uiText, setUiText] = useState<UiText>(defaultUiText)
   const [uiTextLoading, setUiTextLoading] = useState(true)
@@ -29,6 +32,11 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setUiTextLoading(false)
+      return
+    }
+
     let cancelled = false
 
     async function bootstrapUiText() {
@@ -56,7 +64,15 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isAuthenticated])
+
+  if (isBootstrapping) {
+    return <main className="login-shell"><section className="empty-state">Проверяем сессию...</section></main>
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={login} />
+  }
 
   return (
     <main className="app-shell">
@@ -71,6 +87,9 @@ function App() {
           <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
             Настройки
           </a>
+          <button type="button" className="topbar-link topbar-logout" onClick={logout}>
+            Выйти
+          </button>
         </nav>
       </header>
 
@@ -85,6 +104,14 @@ function App() {
 
       {route === 'dashboard' && !uiTextLoading ? <DashboardPage uiText={uiText} /> : null}
     </main>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
 

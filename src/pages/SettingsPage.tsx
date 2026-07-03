@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 import {
   formatWeekRange,
   loadAvailableDates,
@@ -18,7 +19,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export function SettingsPage() {
-  const [password, setPassword] = useState('')
+  const { password } = useAuth()
   const [busyAction, setBusyAction] = useState<
     'load-recipients' | 'save-recipients' | 'send-daily' | 'send-weekly' | 'preview-daily' | 'preview-weekly' | null
   >(null)
@@ -59,7 +60,7 @@ export function SettingsPage() {
   function requirePassword() {
     const value = password.trim()
     if (!value) {
-      throw new Error('Нужен пароль админки')
+      throw new Error('Сессия истекла. Войдите снова.')
     }
     return value
   }
@@ -157,21 +158,11 @@ export function SettingsPage() {
         <div>
           <p className="panel-kicker">Настройки</p>
           <h2>Рассылка отчётов</h2>
-          <p>Управление получателями и ручная отправка ежедневных и еженедельных отчётов. Пароль — тот же, что в GitHub Secrets → SETTINGS_ADMIN_PASSWORD.</p>
+          <p>Управление получателями и ручная отправка ежедневных и еженедельных отчётов.</p>
         </div>
       </div>
 
       <div className="settings-layout">
-        <label className="settings-password-field">
-          <span>Пароль админки</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Нужен для загрузки списка, сохранения и отправки"
-          />
-        </label>
-
         <section className="settings-upload-card">
           <div className="settings-upload-head">
             <div>

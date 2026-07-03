@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-settings-password',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
 }
 
 const PUBLISHED_KEY = 'front_ui_text'
@@ -40,7 +41,7 @@ function isAuthorized(request: Request) {
   }
 
   if (!requestPassword || requestPassword !== expectedPassword) {
-    return { ok: false, response: jsonResponse({ error: 'Invalid settings password' }, 401) }
+    return { ok: false, response: jsonResponse({ error: 'Неверный пароль админки' }, 401) }
   }
 
   return { ok: true as const }
@@ -60,6 +61,15 @@ function getAdminClient() {
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
+  }
+
+  const url = new URL(request.url)
+  if (url.searchParams.get('action') === 'verify' && request.method === 'GET') {
+    const auth = isAuthorized(request)
+    if (!auth.ok) {
+      return auth.response
+    }
+    return jsonResponse({ ok: true })
   }
 
   const scope = getScope(request)
