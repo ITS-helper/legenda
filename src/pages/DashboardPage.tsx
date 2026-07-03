@@ -298,14 +298,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   return (
     <>
-      <section className="hero-block dashboard-hero reveal-block">
-        <p className="eyebrow">{uiText.brand}</p>
-        <h1>Аналитика смен</h1>
-        <p className="hero-copy">
-          Дашборд разбит на четыре блока: ежедневная сводка, еженедельная аналитика, местоположение и простои и детализация по сотрудникам.
-        </p>
-      </section>
-
       {bootstrapError ? (
         <section className="empty-state error-state">Ошибка загрузки: {bootstrapError}</section>
       ) : null}
