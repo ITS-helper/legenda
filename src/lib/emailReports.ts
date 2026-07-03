@@ -53,11 +53,16 @@ export async function loadRecipients(password: string) {
 }
 
 export async function saveRecipients(password: string, recipients: EmailRecipient[]) {
-  const response = await fetch(withResource(getEdgeFunctionUrl('send-report'), 'recipients'), {
-    method: 'PUT',
-    headers: getEdgeFunctionHeaders(password, true),
-    body: JSON.stringify({ recipients }),
-  })
+  let response: Response
+  try {
+    response = await fetch(withResource(getEdgeFunctionUrl('send-report'), 'recipients'), {
+      method: 'PUT',
+      headers: getEdgeFunctionHeaders(password, true),
+      body: JSON.stringify({ recipients }),
+    })
+  } catch {
+    throw new Error('Не удалось связаться с сервером (сеть или CORS). Обновите страницу и попробуйте снова.')
+  }
 
   const payload = await readEdgeFunctionJson<RecipientsResponse>(response)
   return payload?.recipients ?? []

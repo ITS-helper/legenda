@@ -53,6 +53,7 @@ type KppRow = {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-settings-password',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -191,7 +192,26 @@ const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,san
 <div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
 const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
 
+const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
+  Джалол: 20,
+  'ЛИ СОН ХАК': 22,
+}
+
 const SHIFT_TARGET_WORKERS = 50
+
+function getBrigadeShiftTarget(supervisorName: string) {
+  const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(
+    ([name]) =>
+      name.localeCompare(supervisorName, 'ru', { sensitivity: 'accent' }) === 0 ||
+      name.toUpperCase() === supervisorName.toUpperCase(),
+  )
+  return match?.[1] ?? null
+}
+
+function formatBrigadeShiftHeadcount(supervisorName: string, actual: number) {
+  const target = getBrigadeShiftTarget(supervisorName)
+  return target == null ? String(actual) : `${actual} / ${target}`
+}
 
 function formatShiftHeadcount(actual: number) {
   return `${actual} / ${SHIFT_TARGET_WORKERS}`
@@ -211,7 +231,7 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
     .map(
       (row) => `<tr>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.workers}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${formatBrigadeShiftHeadcount(row.supervisor_name, row.workers)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.idle_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>

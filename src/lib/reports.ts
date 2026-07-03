@@ -96,7 +96,26 @@ export function formatMinutes(totalSeconds: number) {
   return `${minutes} мин`
 }
 
+const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
+  Джалол: 20,
+  'ЛИ СОН ХАК': 22,
+}
+
 export const SHIFT_TARGET_WORKERS = 50
+
+function getBrigadeShiftTarget(supervisorName: string) {
+  const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(
+    ([name]) =>
+      name.localeCompare(supervisorName, 'ru', { sensitivity: 'accent' }) === 0 ||
+      name.toUpperCase() === supervisorName.toUpperCase(),
+  )
+  return match?.[1] ?? null
+}
+
+export function formatBrigadeShiftHeadcount(supervisorName: string, actual: number) {
+  const target = getBrigadeShiftTarget(supervisorName)
+  return target == null ? String(actual) : `${actual} / ${target}`
+}
 
 export function formatShiftHeadcount(actual: number) {
   return `${actual} / ${SHIFT_TARGET_WORKERS}`

@@ -7,6 +7,7 @@ import {
   formatPercent,
   formatSeconds,
   formatShiftHeadcount,
+  formatBrigadeShiftHeadcount,
   formatWeekRange,
   loadAvailableDates,
   loadAvailableWeeks,
@@ -317,7 +318,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   <div className="brigade-card-head">
                     <div>
                       <strong>{brigade.supervisor_name}</strong>
-                      <p>{brigade.workers} человек на смене</p>
+                      <p>{formatBrigadeShiftHeadcount(brigade.supervisor_name, brigade.workers)} на смене</p>
                     </div>
                     <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
                       {formatPercent(brigade.activity_pct)}
