@@ -157,14 +157,53 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
 }
 
-const EMAIL_WRAP_START = `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f5;padding:24px;color:#1c2b26;">
-<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8e4;">`
-const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:#0d211c;color:#9eb6ae;font-size:12px;">Legenda Analytics — автоматический отчёт</div></div></div>`
+function encodeMimeSubject(subject: string) {
+  const bytes = new TextEncoder().encode(subject)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return `=?UTF-8?B?${btoa(binary)}?=`
+}
+
+function wrapEmailHtml(innerHtml: string) {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Legenda Analytics</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f6;">
+${innerHtml}
+</body>
+</html>`
+}
+
+const COLORS = {
+  page: '#eef1f6',
+  surface: '#ffffff',
+  surface2: '#f5f7fb',
+  text: '#33404f',
+  textH: '#0f1b2d',
+  textMuted: '#6b7a8d',
+  kicker: '#8a97a8',
+  brand: '#004ecf',
+  brandSoft: 'rgba(0, 78, 207, 0.08)',
+  border: 'rgba(15, 27, 45, 0.1)',
+  alert: '#d1495b',
+  alertSoft: 'rgba(209, 73, 91, 0.1)',
+  alertBorder: 'rgba(209, 73, 91, 0.45)',
+}
+
+const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};padding:24px;color:${COLORS.text};">
+<div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
+const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.textH};color:#9eb6ae;font-size:12px;">Legenda Analytics &#8212; &#1072;&#1074;&#1090;&#1086;&#1084;&#1072;&#1090;&#1080;&#1095;&#1077;&#1089;&#1082;&#1080;&#1081; &#1086;&#1090;&#1095;&#1105;&#1090;</div></div></div>`
 
 function metricCell(label: string, value: string, alert = false) {
-  return `<td style="padding:12px 14px;border:1px solid #e2e8e4;border-radius:12px;">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#7a8f88;">${label}</div>
-    <div style="font-size:20px;font-weight:700;color:${alert ? '#c0392b' : '#12332a'};margin-top:4px;">${value}</div>
+  return `<td style="width:20%;vertical-align:top;">
+    <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:72px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${label}</div>
+      <div style="font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};margin-top:6px;line-height:1.1;">${value}</div>
+    </div>
   </td>`
 }
 
@@ -172,24 +211,24 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
   const body = rows
     .map(
       (row) => `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;font-weight:600;">${escapeHtml(row.supervisor_name)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${row.workers}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.idle_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.go_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;color:${row.kpp_workers > 0 ? '#c0392b' : '#12332a'};">${row.kpp_workers > 0 ? `${row.kpp_workers} (${formatMinutes(row.kpp_sec)})` : '—'}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.workers}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_workers > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_workers > 0 ? `${row.kpp_workers} (${formatMinutes(row.kpp_sec)})` : '—'}</td>
     </tr>`,
     )
     .join('')
 
-  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px;">
-    <thead><tr style="background:#f0f5f2;color:#3f554d;text-align:left;">
-      <th style="padding:10px 12px;">Бригада</th>
-      <th style="padding:10px 12px;text-align:center;">Вышло</th>
-      <th style="padding:10px 12px;text-align:center;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;">Простой</th>
-      <th style="padding:10px 12px;text-align:center;">Ходьба</th>
-      <th style="padding:10px 12px;text-align:center;">КПП</th>
+  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px;">
+    <thead><tr style="background:${COLORS.surface2};color:${COLORS.textMuted};text-align:left;">
+      <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Вышло</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">На КПП</th>
     </tr></thead>
     <tbody>${body}</tbody>
   </table>`
@@ -199,26 +238,26 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
   const body = rows
     .map(
       (row) => `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;font-weight:600;">${escapeHtml(row.supervisor_name)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${row.avg_workers}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${row.unique_employees}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.idle_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;">${pct(row.go_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #eef2f0;text-align:center;color:${row.kpp_shifts > 0 ? '#c0392b' : '#12332a'};">${row.kpp_shifts > 0 ? row.kpp_shifts : '—'}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.avg_workers}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.unique_employees}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_shifts > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_shifts > 0 ? row.kpp_shifts : '—'}</td>
     </tr>`,
     )
     .join('')
 
-  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px;">
-    <thead><tr style="background:#f0f5f2;color:#3f554d;text-align:left;">
-      <th style="padding:10px 12px;">Бригада</th>
-      <th style="padding:10px 12px;text-align:center;">Чел./день</th>
-      <th style="padding:10px 12px;text-align:center;">Уникальных</th>
-      <th style="padding:10px 12px;text-align:center;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;">Простой</th>
-      <th style="padding:10px 12px;text-align:center;">Ходьба</th>
-      <th style="padding:10px 12px;text-align:center;">Смены КПП</th>
+  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px;">
+    <thead><tr style="background:${COLORS.surface2};color:${COLORS.textMuted};text-align:left;">
+      <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Чел./день</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Уникальных</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Смены на КПП</th>
     </tr></thead>
     <tbody>${body}</tbody>
   </table>`
@@ -226,23 +265,28 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
 
 function kppBlock(rows: KppRow[]) {
   if (rows.length === 0) {
-    return `<div style="margin-top:16px;padding:14px 16px;background:#eefaf3;border-radius:12px;color:#2f6b52;">На КПП (зона 13) никто не фиксировался.</div>`
+    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">На КПП никого не фиксировалось.</div>`
   }
 
   const items = rows
     .map(
-      (row) => `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #f6d9d5;">${escapeHtml(row.full_name)} <span style="color:#8a9a94;">#${escapeHtml(row.employee_number)}</span></td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f6d9d5;">${escapeHtml(row.supervisor_name ?? 'Без начальника')}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f6d9d5;text-align:right;font-weight:700;color:#c0392b;">${formatMinutes(row.kpp_sec_total)}</td>
-    </tr>`,
+      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
+      <div>
+        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
+        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
+      </div>
+      <div style="font-weight:700;color:${COLORS.alert};white-space:nowrap;">${formatMinutes(row.kpp_sec_total)}</div>
+    </div>`,
     )
     .join('')
 
-  return `<div style="margin-top:16px;padding:16px;background:#fdecea;border-radius:12px;border:1px solid #f3c4bd;">
-    <div style="font-weight:700;color:#c0392b;margin-bottom:8px;">⚠ На КПП зафиксированы сотрудники (${rows.length})</div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">${items}</table>
-  </div>`
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.alertBorder};border-radius:20px;background:${COLORS.alertSoft};overflow:hidden;">
+    <summary style="padding:16px 20px;font-weight:700;color:${COLORS.alert};cursor:pointer;list-style:none;">
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Контроль КПП</span>
+      Сотрудники в зоне КПП (${rows.length})
+    </summary>
+    <div style="padding:0 16px 16px;">${items}</div>
+  </details>`
 }
 
 async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date: string) {
@@ -281,20 +325,20 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
 
   const html = `${EMAIL_WRAP_START}
     <div style="padding:24px 24px 8px;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#7fbca0;">Ежедневный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:#12332a;">Смена за ${ru(date)}</h1>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Ежедневный отчёт</div>
+      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}</h1>
     </div>
-    <div style="padding:8px 24px;">
+    <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
           ${metricCell('Вышло на смену', String(totals.workers))}
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
-          ${metricCell('Ходьба', pct(go))}
+          ${metricCell('Ходьба между зонами', pct(go))}
           ${metricCell('Были на КПП', String(totals.kpp_workers), totals.kpp_workers > 0)}
         </tr>
       </table>
-      <h3 style="margin:20px 0 0;color:#12332a;">По бригадам</h3>
+      <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
       ${brigadeTableDaily(brigades)}
       ${kppBlock(kpp)}
     </div>
@@ -331,19 +375,19 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
 
   const html = `${EMAIL_WRAP_START}
     <div style="padding:24px 24px 8px;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#7fbca0;">Еженедельный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:#12332a;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}</h1>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Еженедельный отчёт</div>
+      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}</h1>
     </div>
-    <div style="padding:8px 24px;">
+    <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
           ${metricCell('Активность', pct(activity))}
           ${metricCell('Простой', pct(idle))}
-          ${metricCell('Ходьба', pct(go))}
+          ${metricCell('Ходьба между зонами', pct(go))}
           ${metricCell('Смены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0)}
         </tr>
       </table>
-      <h3 style="margin:20px 0 0;color:#12332a;">По бригадам за неделю</h3>
+      <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
       ${brigadeTableWeekly(brigades)}
     </div>
   ${EMAIL_WRAP_END}`
@@ -405,8 +449,16 @@ async function sendEmails(subject: string, html: string, recipients: string[]) {
   })
 
   try {
+    const fullHtml = wrapEmailHtml(html)
+    const mimeSubject = encodeMimeSubject(subject)
     for (const to of recipients) {
-      await client.send({ from, to, subject, html, content: 'text/html' })
+      await client.send({
+        from,
+        to,
+        subject: mimeSubject,
+        html: fullHtml,
+        content: 'auto',
+      })
     }
   } finally {
     await client.close()
@@ -469,7 +521,7 @@ Deno.serve(async (request) => {
         reportType: type,
         periodKey: report.periodKey,
         recipients: [],
-        previewHtml: report.html,
+        previewHtml: wrapEmailHtml(report.html),
       })
     }
 

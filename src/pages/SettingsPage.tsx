@@ -27,6 +27,7 @@ export function SettingsPage() {
   const [recipientsError, setRecipientsError] = useState(false)
   const [sendStatus, setSendStatus] = useState<string | null>(null)
   const [sendError, setSendError] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
 
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
@@ -108,6 +109,7 @@ export function SettingsPage() {
       setBusyAction(busyKey)
       setSendError(false)
       setSendStatus(null)
+      if (!preview) setPreviewHtml(null)
 
       const result = await sendReport({
         type,
@@ -118,15 +120,8 @@ export function SettingsPage() {
       })
 
       if (preview && result.previewHtml) {
-        const previewWindow = window.open('', '_blank')
-        if (previewWindow) {
-          previewWindow.document.write(result.previewHtml)
-          previewWindow.document.close()
-          setSendStatus('Предпросмотр открыт в новой вкладке')
-        } else {
-          setSendError(true)
-          setSendStatus('Браузер заблокировал новую вкладку. Разрешите всплывающие окна для сайта.')
-        }
+        setPreviewHtml(result.previewHtml)
+        setSendStatus('Предпросмотр отображён ниже')
       } else {
         setSendStatus(
           result.recipients.length > 0
@@ -336,6 +331,21 @@ export function SettingsPage() {
           <p className={`editor-saved${sendError ? ' settings-status-error' : ''}`}>
             {sendStatus ?? 'Автоматическая рассылка по расписанию продолжает работать через GitHub Actions.'}
           </p>
+
+          {previewHtml ? (
+            <section className="settings-preview-card">
+              <div className="settings-preview-head">
+                <div>
+                  <p className="panel-kicker">Предпросмотр</p>
+                  <h3>Как будет выглядеть письмо</h3>
+                </div>
+                <button type="button" className="editor-action" onClick={() => setPreviewHtml(null)}>
+                  Закрыть
+                </button>
+              </div>
+              <iframe className="settings-preview-frame" title="Предпросмотр письма" srcDoc={previewHtml} />
+            </section>
+          ) : null}
         </section>
       </div>
     </section>

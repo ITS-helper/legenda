@@ -890,6 +890,35 @@
   color: var(--alert);
 }
 
+.settings-preview-card {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.settings-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-preview-head h3 {
+  margin: 4px 0 0;
+}
+
+.settings-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 640px;
+  border: 0;
+  background: var(--page);
+}
+
 .editor-action[disabled],
 .panel-toggle[disabled] {
   opacity: 0.6;
