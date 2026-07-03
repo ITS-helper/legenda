@@ -1431,6 +1431,12 @@
 }
 
 /* ===== Zone panels ===== */
+.zones-idle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
 .zone-panel {
   padding: 18px 20px;
   border-radius: 20px;

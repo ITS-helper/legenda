@@ -242,7 +242,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         <p className="eyebrow">{uiText.brand}</p>
         <h1>Аналитика смен</h1>
         <p className="hero-copy">
-          Дашборд разбит на три блока: ежедневная сводка, еженедельная аналитика и детализация по сотрудникам.
+          Дашборд разбит на четыре блока: ежедневная сводка, местоположение и простои, еженедельная аналитика и детализация по сотрудникам.
         </p>
       </section>
 
@@ -384,7 +384,38 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 )
               ) : null}
             </div>
+          </>
+        ) : null}
+      </CollapsibleBlock>
 
+      {/* БЛОК 2 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      <CollapsibleBlock
+        kicker="Блок 2 · Зоны"
+        title="Местоположение и простои"
+        description="Где сотрудники проводили время за день и эпизоды длительного бездействия от 5 минут с привязкой к зоне."
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Дата</span>
+            <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
+              {availableDates.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Выбранный день</span>
+            <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>
+          </div>
+        </div>
+
+        {dailyLoading ? <div className="empty-state">Загружаем данные по зонам и простоям...</div> : null}
+        {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
+
+        {!dailyLoading && !dailyError && selectedDate ? (
+          <div className="zones-idle-grid">
             <div className="zone-panel">
               <div className="panel-head">
                 <div>
@@ -450,13 +481,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="kpp-empty">Данные о длительных простоях за этот день не загружены или простоев нет.</p>
               )}
             </div>
-          </>
+          </div>
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 2 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
+      {/* БЛОК 3 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
       <CollapsibleBlock
-        kicker="Блок 2 · Еженедельно"
+        kicker="Блок 3 · Еженедельно"
         title="Еженедельная аналитика"
         description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, простой и ходьба."
       >
@@ -527,9 +558,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 3 — ДЕТАЛИЗАЦИЯ */}
+      {/* БЛОК 4 — ДЕТАЛИЗАЦИЯ */}
       <CollapsibleBlock
-        kicker="Блок 3 · Детализация"
+        kicker="Блок 4 · Детализация"
         title="Расшифровка по сотрудникам"
         description="Полная таблица смен за выбранный день (работа / простой / всего / активность / КПП) и топ по активности."
         defaultOpen={false}
