@@ -496,7 +496,7 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
   return `<details style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Топ 3 по активности</span>
-      ${periodLabel} (${rows.length})
+      ${periodLabel}
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
@@ -523,7 +523,7 @@ function shiftDurationBlock(
   return `<details style="margin-top:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Длительность смены</span>
-      Среднее время смены ${periodLabel} (${withData.length})
+      Среднее время смены ${periodLabel}
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
@@ -549,7 +549,7 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string) {
   return `<details style="margin-top:16px;border:1px solid ${COLORS.alertBorder};border-radius:20px;background:${COLORS.alertSoft};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.alert};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Требуют внимания</span>
-      Активность ниже 30% ${periodLabel} (${rows.length})
+      Активность ниже 30% ${periodLabel}
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
@@ -819,7 +819,7 @@ function kppBlock(rows: KppRow[]) {
   return `<details style="margin-top:16px;border:1px solid ${COLORS.alertBorder};border-radius:20px;background:${COLORS.alertSoft};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.alert};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Контроль КПП</span>
-      Сотрудники в зоне КПП (${rows.length})
+      Сотрудники в зоне КПП
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
