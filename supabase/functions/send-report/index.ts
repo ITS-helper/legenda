@@ -50,6 +50,23 @@ type KppRow = {
   kpp_sec_total: number
 }
 
+type ShiftMetricRow = {
+  employee_number: string
+  full_name: string
+  supervisor_name: string | null
+  work_sec_total: number
+  total_sec_total: number
+}
+
+type AttentionRow = {
+  full_name: string
+  employee_number: string
+  supervisor_name: string | null
+  activity_pct: number
+}
+
+const LOW_ACTIVITY_THRESHOLD = 30
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-settings-password',
@@ -217,13 +234,86 @@ function formatShiftHeadcount(actual: number) {
   return `${actual} / ${SHIFT_TARGET_WORKERS}`
 }
 
-function metricCell(label: string, value: string, alert = false) {
-  return `<td style="width:20%;vertical-align:top;">
-    <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:88px;display:flex;flex-direction:column;">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${label}</div>
-      <div style="margin-top:auto;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
+function metricCell(label: string, value: string, alert = false, width = '20%') {
+  return `<td style="width:${width};vertical-align:top;padding:0;">
+    <div style="padding:14px 16px 48px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};min-height:104px;box-sizing:border-box;position:relative;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};line-height:1.35;">${label}</div>
+      <div style="position:absolute;left:14px;right:14px;bottom:16px;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
     </div>
   </td>`
+}
+
+function shiftActivityPct(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
+  return row.total_sec_total > 0 ? (row.work_sec_total / row.total_sec_total) * 100 : 0
+}
+
+function filterLowActivityDaily(rows: ShiftMetricRow[]) {
+  return rows
+    .filter((row) => row.total_sec_total > 0 && shiftActivityPct(row) < LOW_ACTIVITY_THRESHOLD)
+    .map((row) => ({
+      full_name: row.full_name,
+      employee_number: row.employee_number,
+      supervisor_name: row.supervisor_name,
+      activity_pct: shiftActivityPct(row),
+    }))
+    .sort((left, right) => left.activity_pct - right.activity_pct)
+}
+
+function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+  const totals = new Map<
+    string,
+    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string | null }
+  >()
+
+  for (const row of rows) {
+    const current = totals.get(row.employee_number) ?? {
+      work_sec: 0,
+      total_sec: 0,
+      full_name: row.full_name,
+      supervisor_name: row.supervisor_name,
+    }
+    current.work_sec += row.work_sec_total
+    current.total_sec += row.total_sec_total
+    totals.set(row.employee_number, current)
+  }
+
+  return [...totals.entries()]
+    .map(([employee_number, row]) => ({
+      employee_number,
+      full_name: row.full_name,
+      supervisor_name: row.supervisor_name,
+      activity_pct: row.total_sec > 0 ? (row.work_sec / row.total_sec) * 100 : 0,
+      total_sec: row.total_sec,
+    }))
+    .filter((row) => row.total_sec > 0 && row.activity_pct < LOW_ACTIVITY_THRESHOLD)
+    .map(({ total_sec: _total, ...row }) => row)
+    .sort((left, right) => left.activity_pct - right.activity_pct)
+}
+
+function attentionBlock(rows: AttentionRow[], periodLabel: string) {
+  if (rows.length === 0) {
+    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Сотрудников с активностью ниже 30% ${periodLabel} нет.</div>`
+  }
+
+  const items = rows
+    .map(
+      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
+      <div>
+        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
+        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
+      </div>
+      <div style="font-weight:700;color:${COLORS.alert};white-space:nowrap;">${pct(row.activity_pct)}</div>
+    </div>`,
+    )
+    .join('')
+
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.alertBorder};border-radius:20px;background:${COLORS.alertSoft};overflow:hidden;">
+    <summary style="padding:16px 20px;font-weight:700;color:${COLORS.alert};cursor:pointer;list-style:none;">
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Требуют внимания</span>
+      Активность ниже 30% ${periodLabel} (${rows.length})
+    </summary>
+    <div style="padding:0 16px 16px;">${items}</div>
+  </details>`
 }
 
 function brigadeTableDaily(rows: BrigadeDailyRow[]) {
@@ -326,6 +416,13 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   if (kppError) throw kppError
   const kpp = (kppData ?? []) as KppRow[]
 
+  const { data: shiftData, error: shiftError } = await supabase!
+    .from('shift_daily_metrics')
+    .select('full_name, employee_number, supervisor_name, work_sec_total, total_sec_total')
+    .eq('report_date', date)
+  if (shiftError) throw shiftError
+  const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
+
   const totals = brigades.reduce(
     (acc, row) => {
       acc.workers += row.workers
@@ -360,6 +457,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
       ${brigadeTableDaily(brigades)}
       ${kppBlock(kpp)}
+      ${attentionBlock(attention, 'за день')}
     </div>
   ${EMAIL_WRAP_END}`
 
@@ -376,6 +474,14 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   if (error) throw error
   const brigades = (data ?? []) as BrigadeWeeklyRow[]
   const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
+
+  const { data: shiftData, error: shiftError } = await supabase!
+    .from('shift_daily_metrics')
+    .select('full_name, employee_number, supervisor_name, work_sec_total, total_sec_total')
+    .gte('report_date', weekStart)
+    .lte('report_date', weekEnd)
+  if (shiftError) throw shiftError
+  const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -400,14 +506,15 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
-          ${metricCell('Активность', pct(activity))}
-          ${metricCell('Простой', pct(idle))}
-          ${metricCell('Ходьба между зонами', pct(go))}
-          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0)}
+          ${metricCell('Активность', pct(activity), false, '25%')}
+          ${metricCell('Простой', pct(idle), false, '25%')}
+          ${metricCell('Ходьба между зонами', pct(go), false, '25%')}
+          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '25%')}
         </tr>
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
       ${brigadeTableWeekly(brigades)}
+      ${attentionBlock(attention, 'за неделю')}
     </div>
   ${EMAIL_WRAP_END}`
 

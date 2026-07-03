@@ -204,6 +204,77 @@ export async function loadBrigadeWeekly(weekStart: string) {
   return (data ?? []) as BrigadeWeeklyRow[]
 }
 
+export type AttentionEmployee = {
+  employee_number: string
+  full_name: string
+  supervisor_name: string
+  activity_pct: number
+}
+
+export const LOW_ACTIVITY_THRESHOLD = 30
+
+export function getShiftProductivity(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
+  return ratio(row.work_sec_total, row.total_sec_total)
+}
+
+export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
+  return rows
+    .filter((row) => row.total_sec_total > 0 && getShiftProductivity(row) < LOW_ACTIVITY_THRESHOLD)
+    .map(
+      (row) =>
+        ({
+          employee_number: row.employee_number,
+          full_name: row.full_name,
+          supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+          activity_pct: getShiftProductivity(row),
+        }) satisfies AttentionEmployee,
+    )
+    .sort((left, right) => left.activity_pct - right.activity_pct)
+}
+
+export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('shift_daily_metrics')
+    .select('*')
+    .gte('report_date', weekStart)
+    .lte('report_date', weekEnd)
+
+  if (error) throw error
+  return (data ?? []) as ShiftMetricRow[]
+}
+
+export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+  const totals = new Map<
+    string,
+    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string }
+  >()
+
+  for (const row of rows) {
+    const current = totals.get(row.employee_number) ?? {
+      work_sec: 0,
+      total_sec: 0,
+      full_name: row.full_name,
+      supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+    }
+    current.work_sec += row.work_sec_total
+    current.total_sec += row.total_sec_total
+    totals.set(row.employee_number, current)
+  }
+
+  return [...totals.entries()]
+    .map(([employee_number, row]) => ({
+      employee_number,
+      full_name: row.full_name,
+      supervisor_name: row.supervisor_name,
+      activity_pct: ratio(row.work_sec, row.total_sec),
+      total_sec: row.total_sec,
+    }))
+    .filter((row) => row.total_sec > 0 && row.activity_pct < LOW_ACTIVITY_THRESHOLD)
+    .map(({ total_sec: _total, ...row }) => row)
+    .sort((left, right) => left.activity_pct - right.activity_pct)
+}
+
 export async function loadShiftRows(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')

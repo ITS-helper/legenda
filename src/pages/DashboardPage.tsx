@@ -1,7 +1,10 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
+import { AttentionPanel } from '../components/AttentionPanel'
 import {
+  aggregateLowActivityWeekly,
+  filterLowActivityDaily,
   formatFullDate,
   formatMinutes,
   formatPercent,
@@ -16,6 +19,7 @@ import {
   loadIdleEpisodes,
   loadKppEmployees,
   loadShiftRows,
+  loadShiftRowsForRange,
   loadZoneDaily,
   ratio,
   sumDaily,
@@ -72,6 +76,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
   const [idleEpisodes, setIdleEpisodes] = useState<IdleEpisode[]>([])
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
+  const [weeklyShiftRows, setWeeklyShiftRows] = useState<ShiftMetricRow[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [dailyLoading, setDailyLoading] = useState(true)
@@ -82,6 +87,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [kppOpen, setKppOpen] = useState(false)
+  const [attentionOpen, setAttentionOpen] = useState(false)
+  const [weeklyAttentionOpen, setWeeklyAttentionOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -148,8 +155,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setWeeklyError(null)
       try {
         const brigades = await loadBrigadeWeekly(selectedWeek)
+        const weekMeta = availableWeeks.find((week) => week.week_start === selectedWeek)
+        const shifts = weekMeta
+          ? await loadShiftRowsForRange(weekMeta.week_start, weekMeta.week_end)
+          : []
         if (cancelled) return
         setWeeklyRows(brigades)
+        setWeeklyShiftRows(shifts)
       } catch (error) {
         if (!cancelled) setWeeklyError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -161,7 +173,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedWeek])
+  }, [selectedWeek, availableWeeks])
+
+  const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
+  const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
 
   const dailyTotals = useMemo(() => sumDaily(dailyRows), [dailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
@@ -386,6 +401,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 )
               ) : null}
             </div>
+
+            <AttentionPanel
+              employees={lowActivityDaily}
+              open={attentionOpen}
+              onToggle={() => setAttentionOpen((current) => !current)}
+              emptyMessage="Нет сотрудников с активностью ниже 30% за этот день."
+              periodLabel="за день"
+            />
           </>
         ) : null}
       </CollapsibleBlock>
@@ -557,6 +580,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
             ))}
           </div>
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <AttentionPanel
+            employees={lowActivityWeekly}
+            open={weeklyAttentionOpen}
+            onToggle={() => setWeeklyAttentionOpen((current) => !current)}
+            emptyMessage="Нет сотрудников со средней активностью ниже 30% за неделю."
+            periodLabel="за неделю"
+          />
         ) : null}
       </CollapsibleBlock>
 

@@ -1441,6 +1441,10 @@
   background: var(--alert-soft);
 }
 
+.kpp-panel + .kpp-panel {
+  margin-top: 16px;
+}
+
 .kpp-panel-head {
   display: flex;
   align-items: center;
