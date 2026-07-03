@@ -6,14 +6,16 @@ export type BrigadeDailyRow = {
   supervisor_name: string
   workers: number
   work_sec: number
-  idle_sec: number
+  weak_activity_sec: number
+  long_idle_sec: number
   go_sec: number
   total_sec: number
   pv_sec: number
   kpp_sec: number
   kpp_workers: number
   activity_pct: number
-  idle_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
   go_pct: number
 }
 
@@ -25,14 +27,16 @@ export type BrigadeWeeklyRow = {
   unique_employees: number
   avg_workers: number
   work_sec: number
-  idle_sec: number
+  weak_activity_sec: number
+  long_idle_sec: number
   go_sec: number
   total_sec: number
   pv_sec: number
   kpp_sec: number
   kpp_shifts: number
   activity_pct: number
-  idle_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
   go_pct: number
 }
 
@@ -66,6 +70,8 @@ export type ShiftMetricRow = {
   late_seconds: number | null
   early_return_seconds: number | null
   idle_sec_total: number
+  weak_activity_sec_total: number
+  long_idle_sec_total: number
   go_sec_total: number
   work_sec_total: number
   total_sec_total: number
@@ -244,7 +250,7 @@ export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) 
   return (data ?? []) as ShiftMetricRow[]
 }
 
-export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+function aggregateShiftActivity(rows: ShiftMetricRow[]) {
   const totals = new Map<
     string,
     { work_sec: number; total_sec: number; full_name: string; supervisor_name: string }
@@ -262,14 +268,41 @@ export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
     totals.set(row.employee_number, current)
   }
 
-  return [...totals.entries()]
-    .map(([employee_number, row]) => ({
-      employee_number,
-      full_name: row.full_name,
-      supervisor_name: row.supervisor_name,
-      activity_pct: ratio(row.work_sec, row.total_sec),
-      total_sec: row.total_sec,
-    }))
+  return [...totals.entries()].map(([employee_number, row]) => ({
+    employee_number,
+    full_name: row.full_name,
+    supervisor_name: row.supervisor_name,
+    activity_pct: ratio(row.work_sec, row.total_sec),
+    total_sec: row.total_sec,
+  }))
+}
+
+export function topActivityDaily(rows: ShiftMetricRow[], limit = 3) {
+  return rows
+    .filter((row) => row.total_sec_total > 0)
+    .map(
+      (row) =>
+        ({
+          employee_number: row.employee_number,
+          full_name: row.full_name,
+          supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+          activity_pct: getShiftProductivity(row),
+        }) satisfies AttentionEmployee,
+    )
+    .sort((left, right) => right.activity_pct - left.activity_pct)
+    .slice(0, limit)
+}
+
+export function topActivityWeekly(rows: ShiftMetricRow[], limit = 3) {
+  return aggregateShiftActivity(rows)
+    .filter((row) => row.total_sec > 0)
+    .sort((left, right) => right.activity_pct - left.activity_pct)
+    .slice(0, limit)
+    .map(({ total_sec: _total, ...row }) => row)
+}
+
+export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+  return aggregateShiftActivity(rows)
     .filter((row) => row.total_sec > 0 && row.activity_pct < LOW_ACTIVITY_THRESHOLD)
     .map(({ total_sec: _total, ...row }) => row)
     .sort((left, right) => left.activity_pct - right.activity_pct)
@@ -311,14 +344,15 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
     (acc, row) => {
       acc.workers += row.workers
       acc.work_sec += row.work_sec
-      acc.idle_sec += row.idle_sec
+      acc.weak_activity_sec += row.weak_activity_sec
+      acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_sec += row.kpp_sec
       acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_sec: 0, kpp_workers: 0 },
+    { workers: 0, work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_sec: 0, kpp_workers: 0 },
   )
 }
 

@@ -2,6 +2,7 @@
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { AttentionPanel } from '../components/AttentionPanel'
+import { TopActivityPanel } from '../components/TopActivityPanel'
 import {
   aggregateLowActivityWeekly,
   filterLowActivityDaily,
@@ -23,6 +24,8 @@ import {
   loadZoneDaily,
   ratio,
   sumDaily,
+  topActivityDaily,
+  topActivityWeekly,
   type BrigadeDailyRow,
   type BrigadeWeeklyRow,
   type IdleEpisode,
@@ -32,7 +35,7 @@ import {
 } from '../lib/reports'
 import { isAlertZone } from '../lib/zones'
 
-type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
+type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
 
 const NO_SUPERVISOR = 'Без начальника'
@@ -41,14 +44,28 @@ function getRowProductivity(row: ShiftMetricRow) {
   return ratio(row.work_sec_total, row.total_sec_total)
 }
 
-function StructureBar({ workSec, idleSec, goSec, totalSec }: { workSec: number; idleSec: number; goSec: number; totalSec: number }) {
+function StructureBar({
+  workSec,
+  weakSec,
+  longIdleSec,
+  goSec,
+  totalSec,
+}: {
+  workSec: number
+  weakSec: number
+  longIdleSec: number
+  goSec: number
+  totalSec: number
+}) {
   const workWidth = `${ratio(workSec, totalSec)}%`
-  const idleWidth = `${ratio(idleSec, totalSec)}%`
+  const weakWidth = `${ratio(weakSec, totalSec)}%`
+  const longIdleWidth = `${ratio(longIdleSec, totalSec)}%`
   const goWidth = `${ratio(goSec, totalSec)}%`
   return (
     <div className="structure-bar">
-      <div className="structure-segment structure-work" style={{ width: workWidth }} title="Работа" />
-      <div className="structure-segment structure-idle" style={{ width: idleWidth }} title="Простой" />
+      <div className="structure-segment structure-work" style={{ width: workWidth }} title="Активность" />
+      <div className="structure-segment structure-weak" style={{ width: weakWidth }} title="Слабая активность" />
+      <div className="structure-segment structure-long-idle" style={{ width: longIdleWidth }} title="Длительный простой" />
       <div className="structure-segment structure-go" style={{ width: goWidth }} title="Ходьба между зонами" />
     </div>
   )
@@ -57,8 +74,9 @@ function StructureBar({ workSec, idleSec, goSec, totalSec }: { workSec: number; 
 function StructureLegend() {
   return (
     <div className="structure-legend">
-      <span><i className="legend-dot structure-work" /> Работа</span>
-      <span><i className="legend-dot structure-idle" /> Простой</span>
+      <span><i className="legend-dot structure-work" /> Активность</span>
+      <span><i className="legend-dot structure-weak" /> Слабая активность</span>
+      <span><i className="legend-dot structure-long-idle" /> Длительный простой</span>
       <span><i className="legend-dot structure-go" /> Ходьба между зонами</span>
     </div>
   )
@@ -177,10 +195,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
+  const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
+  const topWeekly = useMemo(() => topActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
 
   const dailyTotals = useMemo(() => sumDaily(dailyRows), [dailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
-  const dailyIdle = ratio(dailyTotals.idle_sec, dailyTotals.total_sec)
+  const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
+  const dailyLongIdle = ratio(dailyTotals.long_idle_sec, dailyTotals.total_sec)
   const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
 
   const zoneTotalSec = useMemo(() => zoneRows.reduce((sum, row) => sum + row.sec, 0), [zoneRows])
@@ -271,7 +292,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
-        description="Сколько человек вышло на смену по бригадам, активность, простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
+        description="Сколько человек вышло на смену по бригадам, активность, слабая активность, длительный простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -311,9 +332,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <strong className="metric-value">{formatPercent(dailyActivity)}</strong>
               </article>
               <article className="metric-card">
-                <span className="metric-label">Простой</span>
-                <p className="metric-note">бездействие, включая слабую активность</p>
-                <strong className="metric-value">{formatPercent(dailyIdle)}</strong>
+                <span className="metric-label">Слабая активность</span>
+                <p className="metric-note">микродвижения при работе, от общего времени</p>
+                <strong className="metric-value">{formatPercent(dailyWeakActivity)}</strong>
+              </article>
+              <article className="metric-card">
+                <span className="metric-label">Длительный простой</span>
+                <p className="metric-note">бездействие от 5 минут, от общего времени</p>
+                <strong className="metric-value">{formatPercent(dailyLongIdle)}</strong>
               </article>
               <article className="metric-card">
                 <span className="metric-label">Ходьба между зонами</span>
@@ -339,7 +365,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       {formatPercent(brigade.activity_pct)}
                     </div>
                   </div>
-                  <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} goSec={brigade.go_sec} totalSec={brigade.total_sec} />
+                  <StructureBar
+                    workSec={brigade.work_sec}
+                    weakSec={brigade.weak_activity_sec}
+                    longIdleSec={brigade.long_idle_sec}
+                    goSec={brigade.go_sec}
+                    totalSec={brigade.total_sec}
+                  />
                   <StructureLegend />
                   <div className="brigade-stats-grid">
                     <div className="brigade-stat">
@@ -347,8 +379,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <strong>{formatPercent(brigade.activity_pct)}</strong>
                     </div>
                     <div className="brigade-stat">
-                      <span>Простой</span>
-                      <strong>{formatPercent(brigade.idle_pct)}</strong>
+                      <span>Слабая активность</span>
+                      <strong>{formatPercent(brigade.weak_activity_pct)}</strong>
+                    </div>
+                    <div className="brigade-stat">
+                      <span>Длительный простой</span>
+                      <strong>{formatPercent(brigade.long_idle_pct)}</strong>
                     </div>
                     <div className="brigade-stat">
                       <span>Ходьба между зонами</span>
@@ -362,6 +398,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 </article>
               ))}
             </div>
+
+            <TopActivityPanel employees={topDaily} periodLabel="за день" />
 
             <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
               <div className="kpp-panel-head">
@@ -514,7 +552,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 3 · Еженедельно"
         title="Еженедельная аналитика"
-        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, простой и ходьба."
+        description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, слабая активность, длительный простой и ходьба."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -553,7 +591,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     {formatPercent(brigade.activity_pct)}
                   </div>
                 </div>
-                <StructureBar workSec={brigade.work_sec} idleSec={brigade.idle_sec} goSec={brigade.go_sec} totalSec={brigade.total_sec} />
+                <StructureBar
+                  workSec={brigade.work_sec}
+                  weakSec={brigade.weak_activity_sec}
+                  longIdleSec={brigade.long_idle_sec}
+                  goSec={brigade.go_sec}
+                  totalSec={brigade.total_sec}
+                />
                 <StructureLegend />
                 <div className="brigade-stats-grid">
                   <div className="brigade-stat">
@@ -561,8 +605,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <strong>{formatPercent(brigade.activity_pct)}</strong>
                   </div>
                   <div className="brigade-stat">
-                    <span>Простой</span>
-                    <strong>{formatPercent(brigade.idle_pct)}</strong>
+                    <span>Слабая активность</span>
+                    <strong>{formatPercent(brigade.weak_activity_pct)}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Длительный простой</span>
+                    <strong>{formatPercent(brigade.long_idle_pct)}</strong>
                   </div>
                   <div className="brigade-stat">
                     <span>Ходьба между зонами</span>
@@ -583,6 +631,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
 
         {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+          <TopActivityPanel employees={topWeekly} periodLabel="за неделю" />
+        ) : null}
+
+        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
           <AttentionPanel
             employees={lowActivityWeekly}
             open={weeklyAttentionOpen}
@@ -597,7 +649,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 4 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день (работа / простой / всего / активность / КПП) и топ по активности."
+        description="Полная таблица смен за выбранный день (работа / слабая активность / длительный простой / всего / активность / КПП) и топ по активности."
         defaultOpen={false}
       >
         {dailyLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
@@ -642,7 +694,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('idle_sec_total')}>{sortLabel(uiText.table.idle, 'idle_sec_total')}</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('weak_activity_sec_total')}>Слабая активность</button></th>
+                      <th><button type="button" className="sort-button" onClick={() => toggleSort('long_idle_sec_total')}>Длительный простой</button></th>
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{sortLabel(uiText.table.total, 'total_sec_total')}</button></th>
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{sortLabel(uiText.table.activity, 'productivity')}</button></th>
                       <th><button type="button" className="sort-button" onClick={() => toggleSort('kpp_sec_total')}>{sortLabel('КПП', 'kpp_sec_total')}</button></th>
@@ -659,7 +712,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                         </td>
                         <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
                         <td>{formatSeconds(row.work_sec_total)}</td>
-                        <td>{formatSeconds(row.idle_sec_total)}</td>
+                        <td>{formatSeconds(row.weak_activity_sec_total)}</td>
+                        <td>{formatSeconds(row.long_idle_sec_total)}</td>
                         <td>{formatSeconds(row.total_sec_total)}</td>
                         <td>{formatPercent(getRowProductivity(row))}</td>
                         <td>{row.kpp_sec_total > 0 ? formatMinutes(row.kpp_sec_total) : '—'}</td>

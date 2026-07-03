@@ -15,13 +15,15 @@ type BrigadeDailyRow = {
   supervisor_name: string
   workers: number
   work_sec: number
-  idle_sec: number
+  weak_activity_sec: number
+  long_idle_sec: number
   go_sec: number
   total_sec: number
   kpp_sec: number
   kpp_workers: number
   activity_pct: number
-  idle_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
   go_pct: number
 }
 
@@ -33,13 +35,15 @@ type BrigadeWeeklyRow = {
   unique_employees: number
   avg_workers: number
   work_sec: number
-  idle_sec: number
+  weak_activity_sec: number
+  long_idle_sec: number
   go_sec: number
   total_sec: number
   kpp_sec: number
   kpp_shifts: number
   activity_pct: number
-  idle_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
   go_pct: number
 }
 
@@ -203,6 +207,9 @@ const COLORS = {
   alert: '#d1495b',
   alertSoft: 'rgba(209, 73, 91, 0.1)',
   alertBorder: 'rgba(209, 73, 91, 0.45)',
+  work: '#00d5b4',
+  workSoft: 'rgba(0, 213, 180, 0.1)',
+  workBorder: 'rgba(0, 213, 180, 0.45)',
 }
 
 const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};padding:24px;color:${COLORS.text};">
@@ -290,6 +297,81 @@ function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
 
+function aggregateShiftActivity(rows: ShiftMetricRow[]) {
+  const totals = new Map<
+    string,
+    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string | null }
+  >()
+
+  for (const row of rows) {
+    const current = totals.get(row.employee_number) ?? {
+      work_sec: 0,
+      total_sec: 0,
+      full_name: row.full_name,
+      supervisor_name: row.supervisor_name,
+    }
+    current.work_sec += row.work_sec_total
+    current.total_sec += row.total_sec_total
+    totals.set(row.employee_number, current)
+  }
+
+  return [...totals.entries()].map(([employee_number, row]) => ({
+    employee_number,
+    full_name: row.full_name,
+    supervisor_name: row.supervisor_name,
+    activity_pct: row.total_sec > 0 ? (row.work_sec / row.total_sec) * 100 : 0,
+    total_sec: row.total_sec,
+  }))
+}
+
+function topActivityDaily(rows: ShiftMetricRow[], limit = 3) {
+  return rows
+    .filter((row) => row.total_sec_total > 0)
+    .map((row) => ({
+      full_name: row.full_name,
+      employee_number: row.employee_number,
+      supervisor_name: row.supervisor_name,
+      activity_pct: shiftActivityPct(row),
+    }))
+    .sort((left, right) => right.activity_pct - left.activity_pct)
+    .slice(0, limit)
+}
+
+function topActivityWeekly(rows: ShiftMetricRow[], limit = 3) {
+  return aggregateShiftActivity(rows)
+    .filter((row) => row.total_sec > 0)
+    .sort((left, right) => right.activity_pct - left.activity_pct)
+    .slice(0, limit)
+    .map(({ total_sec: _total, ...row }) => row)
+}
+
+function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
+  if (rows.length === 0) {
+    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Нет данных для топа по активности ${periodLabel}.</div>`
+  }
+
+  const items = rows
+    .map(
+      (row, index) => `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
+      <div style="min-width:28px;height:28px;border-radius:10px;background:${COLORS.workSoft};color:${COLORS.work};font-weight:700;display:grid;place-items:center;">${index + 1}</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
+        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
+      </div>
+      <div style="font-weight:700;color:${COLORS.work};white-space:nowrap;">${pct(row.activity_pct)}</div>
+    </div>`,
+    )
+    .join('')
+
+  return `<div style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
+    <div style="padding:16px 20px;">
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Топ 3 по активности</span>
+      <div style="font-weight:700;color:${COLORS.textH};">${periodLabel}</div>
+    </div>
+    <div style="padding:0 16px 16px;">${items}</div>
+  </div>`
+}
+
 function attentionBlock(rows: AttentionRow[], periodLabel: string) {
   if (rows.length === 0) {
     return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Сотрудников с активностью ниже 30% ${periodLabel} нет.</div>`
@@ -323,7 +405,8 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${formatBrigadeShiftHeadcount(row.supervisor_name, row.workers)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_workers > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_workers > 0 ? `${row.kpp_workers} (${formatMinutes(row.kpp_sec)})` : '—'}</td>
     </tr>`,
@@ -335,7 +418,8 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
       <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Вышло</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Слабая активность</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Длительный простой</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">На КПП</th>
     </tr></thead>
@@ -351,7 +435,8 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.avg_workers}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.unique_employees}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.idle_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_shifts > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_shifts > 0 ? row.kpp_shifts : '—'}</td>
     </tr>`,
@@ -364,7 +449,8 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Чел./день</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Уникальных</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Простой</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Слабая активность</th>
+      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Длительный простой</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
       <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Замечены на КПП</th>
     </tr></thead>
@@ -422,21 +508,24 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
     .eq('report_date', date)
   if (shiftError) throw shiftError
   const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
+  const topActivity = topActivityDaily((shiftData ?? []) as ShiftMetricRow[])
 
   const totals = brigades.reduce(
     (acc, row) => {
       acc.workers += row.workers
       acc.work_sec += row.work_sec
-      acc.idle_sec += row.idle_sec
+      acc.weak_activity_sec += row.weak_activity_sec
+      acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_workers: 0 },
+    { workers: 0, work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_workers: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
-  const idle = totals.total_sec > 0 ? (totals.idle_sec / totals.total_sec) * 100 : 0
+  const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
+  const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
@@ -447,15 +536,19 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
     <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
-          ${metricCell('Вышло на смену', formatShiftHeadcount(totals.workers))}
-          ${metricCell('Активность', pct(activity))}
-          ${metricCell('Простой', pct(idle))}
-          ${metricCell('Ходьба между зонами', pct(go))}
-          ${metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0)}
+          ${metricCell('Вышло на смену', formatShiftHeadcount(totals.workers), false, '33.33%')}
+          ${metricCell('Активность', pct(activity), false, '33.33%')}
+          ${metricCell('Слабая активность', pct(weakActivity), false, '33.33%')}
+        </tr>
+        <tr>
+          ${metricCell('Длительный простой', pct(longIdle), false, '33.33%')}
+          ${metricCell('Ходьба между зонами', pct(go), false, '33.33%')}
+          ${metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0, '33.33%')}
         </tr>
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
       ${brigadeTableDaily(brigades)}
+      ${topActivityBlock(topActivity, 'за день')}
       ${kppBlock(kpp)}
       ${attentionBlock(attention, 'за день')}
     </div>
@@ -482,20 +575,23 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     .lte('report_date', weekEnd)
   if (shiftError) throw shiftError
   const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
+  const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
 
   const totals = brigades.reduce(
     (acc, row) => {
       acc.work_sec += row.work_sec
-      acc.idle_sec += row.idle_sec
+      acc.weak_activity_sec += row.weak_activity_sec
+      acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
       acc.kpp_shifts += row.kpp_shifts
       return acc
     },
-    { work_sec: 0, idle_sec: 0, go_sec: 0, total_sec: 0, kpp_shifts: 0 },
+    { work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_shifts: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
-  const idle = totals.total_sec > 0 ? (totals.idle_sec / totals.total_sec) * 100 : 0
+  const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
+  const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
@@ -506,14 +602,16 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     <div style="padding:8px 24px 24px;">
       <table style="width:100%;border-collapse:separate;border-spacing:8px;">
         <tr>
-          ${metricCell('Активность', pct(activity), false, '25%')}
-          ${metricCell('Простой', pct(idle), false, '25%')}
-          ${metricCell('Ходьба между зонами', pct(go), false, '25%')}
-          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '25%')}
+          ${metricCell('Активность', pct(activity), false, '20%')}
+          ${metricCell('Слабая активность', pct(weakActivity), false, '20%')}
+          ${metricCell('Длительный простой', pct(longIdle), false, '20%')}
+          ${metricCell('Ходьба между зонами', pct(go), false, '20%')}
+          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '20%')}
         </tr>
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
       ${brigadeTableWeekly(brigades)}
+      ${topActivityBlock(topActivity, 'за неделю')}
       ${attentionBlock(attention, 'за неделю')}
     </div>
   ${EMAIL_WRAP_END}`
