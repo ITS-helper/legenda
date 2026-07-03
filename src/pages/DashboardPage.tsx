@@ -4,6 +4,8 @@ import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
 import { AttentionPanel } from '../components/AttentionPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
+import { VolumesPanel } from '../components/VolumesPanel'
+import { useAuth } from '../context/AuthContext'
 import {
   aggregateLowActivityWeekly,
   filterLowActivityDaily,
@@ -35,6 +37,7 @@ import {
   type ShiftMetricRow,
   type ZoneDailyRow,
 } from '../lib/reports'
+import { formatVolumeEntryCount, loadVolumeDates, loadVolumeEntries, mergeDateLists, type VolumeEntry } from '../lib/volumes'
 import { isAlertZone } from '../lib/zones'
 
 type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
@@ -85,12 +88,15 @@ function StructureLegend() {
 }
 
 export function DashboardPage({ uiText }: { uiText: UiText }) {
+  const { password } = useAuth()
   const [availableDates, setAvailableDates] = useState<string[]>([])
+  const [volumeDates, setVolumeDates] = useState<string[]>([])
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [detailDate, setDetailDate] = useState('')
   const [dynamicsDate, setDynamicsDate] = useState('')
+  const [volumesDate, setVolumesDate] = useState('')
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
@@ -101,6 +107,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
   const [weeklyShiftRows, setWeeklyShiftRows] = useState<ShiftMetricRow[]>([])
   const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
+  const [volumeEntries, setVolumeEntries] = useState<VolumeEntry[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [dailyLoading, setDailyLoading] = useState(true)
@@ -111,6 +118,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dynamicsError, setDynamicsError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(true)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
+  const [volumesLoading, setVolumesLoading] = useState(false)
 
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -125,13 +133,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
     async function bootstrap() {
       try {
-        const [dates, weeks] = await Promise.all([loadAvailableDates(), loadAvailableWeeks()])
+        const [dates, weeks, savedVolumeDates] = await Promise.all([
+          loadAvailableDates(),
+          loadAvailableWeeks(),
+          loadVolumeDates().catch(() => [] as string[]),
+        ])
         if (cancelled) return
         setAvailableDates(dates)
+        setVolumeDates(savedVolumeDates)
+        const mergedDates = mergeDateLists(dates, savedVolumeDates)
+        setSelectedDate((current) => current || mergedDates[0] || '')
+        setDetailDate((current) => current || mergedDates[0] || '')
+        setDynamicsDate((current) => current || mergedDates[0] || '')
+        setVolumesDate((current) => current || mergedDates[0] || '')
         setAvailableWeeks(weeks)
-        setSelectedDate((current) => current || dates[0] || '')
-        setDetailDate((current) => current || dates[0] || '')
-        setDynamicsDate((current) => current || dates[0] || '')
         setSelectedWeek((current) => current || weeks[0]?.week_start || '')
       } catch (error) {
         if (!cancelled) setBootstrapError(error instanceof Error ? error.message : String(error))
@@ -177,6 +192,40 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       cancelled = true
     }
   }, [selectedDate])
+
+  useEffect(() => {
+    if (!selectedDate) return
+    let cancelled = false
+
+    async function loadVolumesSummary() {
+      setVolumesLoading(true)
+      try {
+        const entries = await loadVolumeEntries(selectedDate)
+        if (!cancelled) setVolumeEntries(entries)
+      } catch {
+        if (!cancelled) setVolumeEntries([])
+      } finally {
+        if (!cancelled) setVolumesLoading(false)
+      }
+    }
+
+    void loadVolumesSummary()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate])
+
+  async function refreshVolumesForBlock(date: string) {
+    if (!date) return
+    try {
+      const entries = await loadVolumeEntries(date)
+      if (date === selectedDate) setVolumeEntries(entries)
+      const dates = await loadVolumeDates()
+      setVolumeDates(dates)
+    } catch {
+      if (date === selectedDate) setVolumeEntries([])
+    }
+  }
 
   useEffect(() => {
     if (!selectedWeek) return
@@ -265,6 +314,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
   const dailyLongIdle = ratio(dailyTotals.long_idle_sec, dailyTotals.total_sec)
   const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
+  const dailyPv = ratio(dailyTotals.pv_sec, dailyTotals.total_sec)
+
+  const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
   const zoneTotalSec = useMemo(() => zoneRows.reduce((sum, row) => sum + row.sec, 0), [zoneRows])
 
@@ -331,7 +383,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     <>
       <section className="hero-block dashboard-hero reveal-block">
         <p className="hero-copy hero-copy-compact">
-          Дашборд разбит на пять блоков: ежедневная сводка, еженедельная аналитика, динамика активности, местоположение и простои и детализация по сотрудникам.
+          Дашборд разбит на шесть блоков: ежедневная сводка, еженедельная аналитика, динамика активности, местоположение и простои, объёмы и детализация по сотрудникам.
         </p>
       </section>
 
@@ -402,6 +454,22 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="metric-note">{dailyTotals.kpp_workers > 0 ? 'чел. в зоне КПП' : 'в зоне КПП никого (обед 13:00–14:00 не учитывается)'}</p>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
               </article>
+              <article className="metric-card">
+                <span className="metric-label">В рабочей зоне (ПВ)</span>
+                <p className="metric-note">зоны проведения работ, от общего времени</p>
+                <strong className="metric-value">{formatPercent(dailyPv)}</strong>
+              </article>
+              <a className="metric-card metric-card-link" href="#block-volumes">
+                <span className="metric-label">Объёмы</span>
+                <p className="metric-note">
+                  {volumeEntries.length > 0
+                    ? 'ручной ввод показателей за день'
+                    : volumesLoading
+                      ? 'загрузка...'
+                      : 'добавьте значения в блоке 5'}
+                </p>
+                <strong className="metric-value">{formatVolumeEntryCount(volumeEntries.length)}</strong>
+              </a>
             </div>
 
             <div className="brigade-grid">
@@ -752,9 +820,48 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 5 — ДЕТАЛИЗАЦИЯ */}
+      {/* БЛОК 5 — ОБЪЁМЫ */}
       <CollapsibleBlock
-        kicker="Блок 5 · Детализация"
+        id="block-volumes"
+        kicker="Блок 5 · Объёмы"
+        title="Объёмы"
+        description="Ручной ввод показателей объёмов за выбранный день: цифры, единицы измерения и пояснения сохраняются в базе данных."
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Дата</span>
+            <input
+              type="date"
+              list="dashboard-volume-dates"
+              value={volumesDate}
+              onChange={(event) => setVolumesDate(event.target.value)}
+            />
+            <datalist id="dashboard-volume-dates">
+              {calendarDates.map((date) => (
+                <option key={date} value={date} />
+              ))}
+            </datalist>
+          </label>
+          <div className="filter-caption">
+            <span>Выбранный день</span>
+            <strong>{volumesDate ? formatFullDate(volumesDate) : '—'}</strong>
+          </div>
+        </div>
+
+        {volumesDate ? (
+          <VolumesPanel
+            password={password}
+            reportDate={volumesDate}
+            onSaved={() => void refreshVolumesForBlock(volumesDate)}
+          />
+        ) : (
+          <div className="empty-state">Выберите дату.</div>
+        )}
+      </CollapsibleBlock>
+
+      {/* БЛОК 6 — ДЕТАЛИЗАЦИЯ */}
+      <CollapsibleBlock
+        kicker="Блок 6 · Детализация"
         title="Расшифровка по сотрудникам"
         description="Полная таблица смен за выбранный день: работа, слабая активность, длительный простой, всего, активность и КПП."
         defaultOpen={false}

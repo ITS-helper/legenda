@@ -521,11 +521,22 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
       acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
+      acc.pv_sec += row.pv_sec
       acc.kpp_sec += row.kpp_sec
       acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_sec: 0, kpp_workers: 0 },
+    {
+      workers: 0,
+      work_sec: 0,
+      weak_activity_sec: 0,
+      long_idle_sec: 0,
+      go_sec: 0,
+      total_sec: 0,
+      pv_sec: 0,
+      kpp_sec: 0,
+      kpp_workers: 0,
+    },
   )
 }
 

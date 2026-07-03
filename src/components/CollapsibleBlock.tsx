@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
 type CollapsibleBlockProps = {
+  id?: string
   kicker: string
   title: string
   description?: string
@@ -10,6 +11,7 @@ type CollapsibleBlockProps = {
 }
 
 export function CollapsibleBlock({
+  id,
   kicker,
   title,
   description,
@@ -20,7 +22,7 @@ export function CollapsibleBlock({
   const [open, setOpen] = useState(defaultOpen)
 
   return (
-    <section className={`dash-block${open ? ' dash-block-open' : ' dash-block-closed'}`}>
+    <section id={id} className={`dash-block${open ? ' dash-block-open' : ' dash-block-closed'}`}>
       <header className="dash-block-head">
         <button
           type="button"
