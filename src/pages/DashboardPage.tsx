@@ -2,7 +2,6 @@
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { AttentionPanel } from '../components/AttentionPanel'
-import { ShiftDurationPanel } from '../components/ShiftDurationPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import {
   aggregateLowActivityWeekly,
@@ -88,10 +87,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
+  const [detailDate, setDetailDate] = useState('')
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
+  const [detailShiftRows, setDetailShiftRows] = useState<ShiftMetricRow[]>([])
   const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
   const [idleEpisodes, setIdleEpisodes] = useState<IdleEpisode[]>([])
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
@@ -100,16 +101,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [dailyLoading, setDailyLoading] = useState(true)
   const [dailyError, setDailyError] = useState<string | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(true)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [kppOpen, setKppOpen] = useState(false)
-  const [shiftDurationOpen, setShiftDurationOpen] = useState(false)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
-  const [shiftDurationWeeklyOpen, setShiftDurationWeeklyOpen] = useState(false)
   const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
   const [weeklyAttentionOpen, setWeeklyAttentionOpen] = useState(false)
 
@@ -123,6 +124,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setAvailableDates(dates)
         setAvailableWeeks(weeks)
         setSelectedDate((current) => current || dates[0] || '')
+        setDetailDate((current) => current || dates[0] || '')
         setSelectedWeek((current) => current || weeks[0]?.week_start || '')
       } catch (error) {
         if (!cancelled) setBootstrapError(error instanceof Error ? error.message : String(error))
@@ -198,6 +200,30 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     }
   }, [selectedWeek, availableWeeks])
 
+  useEffect(() => {
+    if (!detailDate) return
+    let cancelled = false
+
+    async function loadDetail() {
+      setDetailLoading(true)
+      setDetailError(null)
+      try {
+        const shifts = await loadShiftRows(detailDate)
+        if (cancelled) return
+        setDetailShiftRows(shifts)
+      } catch (error) {
+        if (!cancelled) setDetailError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setDetailLoading(false)
+      }
+    }
+
+    void loadDetail()
+    return () => {
+      cancelled = true
+    }
+  }, [detailDate])
+
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
@@ -228,7 +254,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
 
   const sortedShiftRows = useMemo(() => {
-    return [...shiftRows].sort((left, right) => {
+    return [...detailShiftRows].sort((left, right) => {
       const leftValue =
         sortKey === 'productivity'
           ? getRowProductivity(left)
@@ -254,16 +280,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ? Number(leftValue ?? 0) - Number(rightValue ?? 0)
         : Number(rightValue ?? 0) - Number(leftValue ?? 0)
     })
-  }, [shiftRows, sortKey, sortDirection])
-
-  const topWorkers = useMemo(
-    () =>
-      [...shiftRows]
-        .map((row) => ({ ...row, productivity: getRowProductivity(row) }))
-        .sort((left, right) => right.productivity - left.productivity)
-        .slice(0, 5),
-    [shiftRows],
-  )
+  }, [detailShiftRows, sortKey, sortDirection])
 
   function toggleSort(key: SortKey, defaultDirection: SortDirection = 'desc') {
     if (sortKey === key) {
@@ -395,28 +412,36 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <span>Ходьба между зонами</span>
                       <strong>{formatPercent(brigade.go_pct)}</strong>
                     </div>
+                  </div>
+                  <div className="brigade-card-footer">
                     <div className={`brigade-stat${brigade.kpp_workers > 0 ? ' brigade-stat-alert' : ''}`}>
                       <span>На КПП</span>
                       <strong>{brigade.kpp_workers > 0 ? `${brigade.kpp_workers} чел.` : 'нет'}</strong>
+                    </div>
+                    <div className="brigade-stat">
+                      <span>Длительность смены</span>
+                      <strong>
+                        {brigade.avg_shift_duration_sec > 0 ? formatSeconds(brigade.avg_shift_duration_sec) : '—'}
+                      </strong>
                     </div>
                   </div>
                 </article>
               ))}
             </div>
 
-            <ShiftDurationPanel
-              brigades={dailyRows}
-              open={shiftDurationOpen}
-              onToggle={() => setShiftDurationOpen((current) => !current)}
-              periodLabel="за день"
-              emptyMessage="Нет данных о длительности смен за этот день."
-            />
-
             <TopActivityPanel
               employees={topDaily}
               periodLabel="за день"
               open={topDailyOpen}
               onToggle={() => setTopDailyOpen((current) => !current)}
+            />
+
+            <AttentionPanel
+              employees={lowActivityDaily}
+              open={attentionOpen}
+              onToggle={() => setAttentionOpen((current) => !current)}
+              emptyMessage="Нет сотрудников с активностью ниже 30% за этот день."
+              periodLabel="за день"
             />
 
             <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
@@ -457,14 +482,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 )
               ) : null}
             </div>
-
-            <AttentionPanel
-              employees={lowActivityDaily}
-              open={attentionOpen}
-              onToggle={() => setAttentionOpen((current) => !current)}
-              emptyMessage="Нет сотрудников с активностью ниже 30% за этот день."
-              periodLabel="за день"
-            />
           </>
         ) : null}
       </CollapsibleBlock>
@@ -541,9 +558,17 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span>Дней в отчёте</span>
                     <strong>{brigade.days}</strong>
                   </div>
+                </div>
+                <div className="brigade-card-footer">
                   <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
                     <span>Замечены на КПП</span>
                     <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
+                  </div>
+                  <div className="brigade-stat">
+                    <span>Длительность смены</span>
+                    <strong>
+                      {brigade.avg_shift_duration_sec > 0 ? formatSeconds(brigade.avg_shift_duration_sec) : '—'}
+                    </strong>
                   </div>
                 </div>
               </article>
@@ -552,21 +577,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
 
         {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
-          <>
-            <ShiftDurationPanel
-              brigades={weeklyRows}
-              open={shiftDurationWeeklyOpen}
-              onToggle={() => setShiftDurationWeeklyOpen((current) => !current)}
-              periodLabel="за неделю"
-              emptyMessage="Нет данных о длительности смен за эту неделю."
-            />
-            <TopActivityPanel
-              employees={topWeekly}
-              periodLabel="за неделю"
-              open={topWeeklyOpen}
-              onToggle={() => setTopWeeklyOpen((current) => !current)}
-            />
-          </>
+          <TopActivityPanel
+            employees={topWeekly}
+            periodLabel="за неделю"
+            open={topWeeklyOpen}
+            onToggle={() => setTopWeeklyOpen((current) => !current)}
+          />
         ) : null}
 
         {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
@@ -681,84 +697,78 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 4 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день (работа / слабая активность / длительный простой / всего / активность / КПП) и топ по активности."
+        description="Полная таблица смен за выбранный день: работа, слабая активность, длительный простой, всего, активность и КПП."
         defaultOpen={false}
       >
-        {dailyLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
-
-        {!dailyLoading && shiftRows.length > 0 ? (
-          <div className="detail-grid">
-            <article className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Топ 5</p>
-                  <h2>Самые активные смены</h2>
-                </div>
-              </div>
-              <div className="leaderboard">
-                {topWorkers.map((row, index) => (
-                  <div className="leader-row" key={row.ww_shift_id}>
-                    <span className="leader-rank">{String(index + 1).padStart(2, '0')}</span>
-                    <div className="leader-main">
-                      <strong>{row.full_name}</strong>
-                      <p>{row.supervisor_name ?? NO_SUPERVISOR}</p>
-                    </div>
-                    <div className="leader-metric">
-                      <strong>{formatPercent(row.productivity)}</strong>
-                      <span>{formatSeconds(row.work_sec_total)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel panel-wide">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Смены</p>
-                  <h2>Сортируемая таблица за день</h2>
-                </div>
-              </div>
-              <div className="table-wrap">
-                <table className="analytics-table">
-                  <thead>
-                    <tr>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('weak_activity_sec_total')}>Слабая активность</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('long_idle_sec_total')}>Длительный простой</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{sortLabel(uiText.table.total, 'total_sec_total')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{sortLabel(uiText.table.activity, 'productivity')}</button></th>
-                      <th><button type="button" className="sort-button" onClick={() => toggleSort('kpp_sec_total')}>{sortLabel('КПП', 'kpp_sec_total')}</button></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedShiftRows.map((row) => (
-                      <tr key={row.ww_shift_id} className={row.kpp_sec_total > 0 ? 'row-alert' : undefined}>
-                        <td>
-                          <div className="employee-cell">
-                            <strong>{row.full_name}</strong>
-                            <span>#{row.employee_number}</span>
-                          </div>
-                        </td>
-                        <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
-                        <td>{formatSeconds(row.work_sec_total)}</td>
-                        <td>{formatSeconds(row.weak_activity_sec_total)}</td>
-                        <td>{formatSeconds(row.long_idle_sec_total)}</td>
-                        <td>{formatSeconds(row.total_sec_total)}</td>
-                        <td>{formatPercent(getRowProductivity(row))}</td>
-                        <td>{row.kpp_sec_total > 0 ? formatMinutes(row.kpp_sec_total) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Дата</span>
+            <select value={detailDate} onChange={(event) => setDetailDate(event.target.value)}>
+              {availableDates.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Выбранный день</span>
+            <strong>{detailDate ? formatFullDate(detailDate) : '—'}</strong>
           </div>
+        </div>
+
+        {detailLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
+        {detailError ? <div className="empty-state error-state">Ошибка: {detailError}</div> : null}
+
+        {!detailLoading && !detailError && detailShiftRows.length > 0 ? (
+          <article className="panel panel-wide">
+            <div className="panel-head">
+              <div>
+                <p className="panel-kicker">Смены</p>
+                <h2>Сортируемая таблица за день</h2>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="analytics-table">
+                <thead>
+                  <tr>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('weak_activity_sec_total')}>Слабая активность</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('long_idle_sec_total')}>Длительный простой</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{sortLabel(uiText.table.total, 'total_sec_total')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{sortLabel(uiText.table.activity, 'productivity')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('kpp_sec_total')}>{sortLabel('КПП', 'kpp_sec_total')}</button></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedShiftRows.map((row) => (
+                    <tr key={row.ww_shift_id} className={row.kpp_sec_total > 0 ? 'row-alert' : undefined}>
+                      <td>
+                        <div className="employee-cell">
+                          <strong>{row.full_name}</strong>
+                          <span>#{row.employee_number}</span>
+                        </div>
+                      </td>
+                      <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
+                      <td>{formatSeconds(row.work_sec_total)}</td>
+                      <td>{formatSeconds(row.weak_activity_sec_total)}</td>
+                      <td>{formatSeconds(row.long_idle_sec_total)}</td>
+                      <td>{formatSeconds(row.total_sec_total)}</td>
+                      <td>{formatPercent(getRowProductivity(row))}</td>
+                      <td>{row.kpp_sec_total > 0 ? formatMinutes(row.kpp_sec_total) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
         ) : null}
 
-        {!dailyLoading && shiftRows.length === 0 ? <div className="empty-state">Нет смен за выбранный день.</div> : null}
+        {!detailLoading && !detailError && detailDate && detailShiftRows.length === 0 ? (
+          <div className="empty-state">Нет смен за выбранный день.</div>
+        ) : null}
       </CollapsibleBlock>
     </>
   )

@@ -586,8 +586,8 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       ${brigadeTableDaily(brigades)}
       ${shiftDurationBlock(brigades, 'за день')}
       ${topActivityBlock(topActivity, 'за день')}
-      ${kppBlock(kpp)}
       ${attentionBlock(attention, 'за день')}
+      ${kppBlock(kpp)}
     </div>
   ${EMAIL_WRAP_END}`
 
