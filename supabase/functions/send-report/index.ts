@@ -482,18 +482,22 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
 
   const items = rows
     .map(
-      (row, index) => `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
-      <div style="min-width:28px;height:28px;border-radius:10px;background:${COLORS.workSoft};color:${COLORS.work};font-weight:700;display:grid;place-items:center;">${index + 1}</div>
-      <div style="flex:1;">
-        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
-        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
-      </div>
-      <div style="font-weight:700;color:${COLORS.work};white-space:nowrap;">${pct(row.activity_pct)}</div>
-    </div>`,
+      (row, index) => `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:8px;border:1px solid ${COLORS.border};border-radius:14px;background:${COLORS.surface};border-collapse:separate;">
+      <tr>
+        <td width="44" style="padding:12px 0 12px 14px;vertical-align:middle;">
+          <div style="width:28px;height:28px;border-radius:10px;background:${COLORS.surface2};color:${COLORS.textH};font-weight:700;text-align:center;line-height:28px;font-size:14px;">${index + 1}</div>
+        </td>
+        <td style="padding:12px 8px;vertical-align:middle;">
+          <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
+          <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
+        </td>
+        <td align="right" style="padding:12px 14px 12px 8px;vertical-align:middle;font-weight:700;color:${COLORS.textH};white-space:nowrap;">${pct(row.activity_pct)}</td>
+      </tr>
+    </table>`,
     )
     .join('')
 
-  return `<details style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Топ 3 по активности</span>
       ${periodLabel}
