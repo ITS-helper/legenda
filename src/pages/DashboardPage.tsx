@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
+import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
 import { AttentionPanel } from '../components/AttentionPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import {
@@ -15,6 +16,7 @@ import {
   formatWeekRange,
   loadAvailableDates,
   loadAvailableWeeks,
+  loadBrigadeActivityDynamics,
   loadBrigadeDaily,
   loadBrigadeWeekly,
   loadIdleEpisodes,
@@ -27,6 +29,7 @@ import {
   topActivityDaily,
   topActivityWeekly,
   type BrigadeDailyRow,
+  type BrigadeDynamicsCard,
   type BrigadeWeeklyRow,
   type IdleEpisode,
   type KppEmployee,
@@ -88,6 +91,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [detailDate, setDetailDate] = useState('')
+  const [dynamicsDate, setDynamicsDate] = useState('')
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
@@ -97,12 +101,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [idleEpisodes, setIdleEpisodes] = useState<IdleEpisode[]>([])
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
   const [weeklyShiftRows, setWeeklyShiftRows] = useState<ShiftMetricRow[]>([])
+  const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [dailyLoading, setDailyLoading] = useState(true)
   const [dailyError, setDailyError] = useState<string | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [dynamicsLoading, setDynamicsLoading] = useState(false)
+  const [dynamicsError, setDynamicsError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(true)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
@@ -125,6 +132,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setAvailableWeeks(weeks)
         setSelectedDate((current) => current || dates[0] || '')
         setDetailDate((current) => current || dates[0] || '')
+        setDynamicsDate((current) => current || dates[0] || '')
         setSelectedWeek((current) => current || weeks[0]?.week_start || '')
       } catch (error) {
         if (!cancelled) setBootstrapError(error instanceof Error ? error.message : String(error))
@@ -224,6 +232,30 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     }
   }, [detailDate])
 
+  useEffect(() => {
+    if (!dynamicsDate) return
+    let cancelled = false
+
+    async function loadDynamics() {
+      setDynamicsLoading(true)
+      setDynamicsError(null)
+      try {
+        const cards = await loadBrigadeActivityDynamics(dynamicsDate)
+        if (cancelled) return
+        setDynamicsCards(cards)
+      } catch (error) {
+        if (!cancelled) setDynamicsError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setDynamicsLoading(false)
+      }
+    }
+
+    void loadDynamics()
+    return () => {
+      cancelled = true
+    }
+  }, [dynamicsDate])
+
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
@@ -300,7 +332,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     <>
       <section className="hero-block dashboard-hero reveal-block">
         <p className="hero-copy hero-copy-compact">
-          Дашборд разбит на четыре блока: ежедневная сводка, еженедельная аналитика, местоположение и простои и детализация по сотрудникам.
+          Дашборд разбит на пять блоков: ежедневная сводка, еженедельная аналитика, динамика активности, местоположение и простои и детализация по сотрудникам.
         </p>
       </section>
 
@@ -594,9 +626,40 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 3 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      {/* БЛОК 3 — ДИНАМИКА АКТИВНОСТИ */}
       <CollapsibleBlock
-        kicker="Блок 3 · Зоны"
+        kicker="Блок 3 · Динамика"
+        title="Динамика показателей активности"
+        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера, текущая неделя против прошлой и тренд за 7 дней."
+      >
+        <div className="filter-row">
+          <label className="filter-field">
+            <span>Дата</span>
+            <select value={dynamicsDate} onChange={(event) => setDynamicsDate(event.target.value)}>
+              {availableDates.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="filter-caption">
+            <span>Выбранный день</span>
+            <strong>{dynamicsDate ? formatFullDate(dynamicsDate) : '—'}</strong>
+          </div>
+        </div>
+
+        {dynamicsLoading ? <div className="empty-state">Загружаем динамику активности...</div> : null}
+        {dynamicsError ? <div className="empty-state error-state">Ошибка: {dynamicsError}</div> : null}
+
+        {!dynamicsLoading && !dynamicsError && dynamicsDate ? (
+          <ActivityDynamicsPanel referenceDate={dynamicsDate} cards={dynamicsCards} />
+        ) : null}
+      </CollapsibleBlock>
+
+      {/* БЛОК 4 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      <CollapsibleBlock
+        kicker="Блок 4 · Зоны"
         title="Местоположение и простои"
         description="Где сотрудники проводили время за день и эпизоды длительного бездействия от 10 минут с привязкой к зоне."
       >
@@ -636,7 +699,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <div className={`zone-row${isAlertZone(zone.zona) ? ' zone-row-alert' : ''}`} key={zone.zona}>
                       <div className="zone-row-head">
                         <span className="zone-name">{zone.zonaName}</span>
-                        <span className="zone-value">{formatSeconds(zone.sec)} · {formatPercent(ratio(zone.sec, zoneTotalSec))}</span>
+                        <span className="zone-value">{formatPercent(ratio(zone.sec, zoneTotalSec))}</span>
                       </div>
                       <div className="zone-bar">
                         <div
@@ -691,9 +754,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 4 — ДЕТАЛИЗАЦИЯ */}
+      {/* БЛОК 5 — ДЕТАЛИЗАЦИЯ */}
       <CollapsibleBlock
-        kicker="Блок 4 · Детализация"
+        kicker="Блок 5 · Детализация"
         title="Расшифровка по сотрудникам"
         description="Полная таблица смен за выбранный день: работа, слабая активность, длительный простой, всего, активность и КПП."
         defaultOpen={false}

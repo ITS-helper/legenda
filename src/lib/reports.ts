@@ -109,14 +109,28 @@ const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   'ЛИ СОН ХАК': 22,
 }
 
+export const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
+
+export function brigadeNamesMatch(left: string, right: string) {
+  return (
+    left.localeCompare(right, 'ru', { sensitivity: 'accent' }) === 0 || left.toUpperCase() === right.toUpperCase()
+  )
+}
+
+function findBrigadeRow<T extends { supervisor_name: string }>(rows: T[], brigadeName: string) {
+  return rows.find((row) => brigadeNamesMatch(row.supervisor_name, brigadeName)) ?? null
+}
+
+export function addDaysIso(dateIso: string, days: number) {
+  const date = new Date(`${dateIso}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export const SHIFT_TARGET_WORKERS = 50
 
 function getBrigadeShiftTarget(supervisorName: string) {
-  const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(
-    ([name]) =>
-      name.localeCompare(supervisorName, 'ru', { sensitivity: 'accent' }) === 0 ||
-      name.toUpperCase() === supervisorName.toUpperCase(),
-  )
+  const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(([name]) => brigadeNamesMatch(name, supervisorName))
   return match?.[1] ?? null
 }
 
@@ -135,6 +149,14 @@ export function formatPercent(value: number) {
 
 export function formatDecimalPercent(value: number) {
   return `${Number(value).toFixed(1)}%`
+}
+
+export function formatDeltaPp(delta: number | null) {
+  if (delta == null || Number.isNaN(delta)) return '—'
+  const rounded = Math.round(delta * 10) / 10
+  if (rounded === 0) return '0 п.п.'
+  const sign = rounded > 0 ? '+' : ''
+  return `${sign}${rounded} п.п.`
 }
 
 export function formatShortDate(value: string) {
@@ -210,6 +232,77 @@ export async function loadBrigadeWeekly(weekStart: string) {
 
   if (error) throw error
   return (data ?? []) as BrigadeWeeklyRow[]
+}
+
+export type BrigadeDynamicsPoint = {
+  report_date: string
+  activity_pct: number
+}
+
+export type BrigadeDynamicsCard = {
+  supervisor_name: string
+  today_pct: number | null
+  yesterday_pct: number | null
+  day_delta: number | null
+  week_pct: number | null
+  prev_week_pct: number | null
+  week_delta: number | null
+  sparkline: BrigadeDynamicsPoint[]
+}
+
+export async function loadBrigadeActivityDynamics(referenceDate: string) {
+  const sparklineStart = addDaysIso(referenceDate, -6)
+  const yesterday = addDaysIso(referenceDate, -1)
+  const weekStart = getWeekStart(referenceDate)
+  const prevWeekStart = addDaysIso(weekStart, -7)
+
+  const { data: dailyData, error: dailyError } = await supabase
+    .schema('analytics')
+    .from('brigade_daily_metrics')
+    .select('report_date, supervisor_name, activity_pct')
+    .gte('report_date', sparklineStart)
+    .lte('report_date', referenceDate)
+    .order('report_date', { ascending: true })
+
+  if (dailyError) throw dailyError
+
+  const dailyRows = (dailyData ?? []) as Array<{
+    report_date: string
+    supervisor_name: string
+    activity_pct: number
+  }>
+
+  const [currentWeek, prevWeek] = await Promise.all([
+    loadBrigadeWeekly(weekStart),
+    loadBrigadeWeekly(prevWeekStart),
+  ])
+
+  return TRACKED_BRIGADES.map((brigadeName) => {
+    const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
+    const todayRow = brigadeDaily.find((row) => row.report_date === referenceDate) ?? null
+    const yesterdayRow = brigadeDaily.find((row) => row.report_date === yesterday) ?? null
+    const weekRow = findBrigadeRow(currentWeek, brigadeName)
+    const prevWeekRow = findBrigadeRow(prevWeek, brigadeName)
+
+    const todayPct = todayRow?.activity_pct ?? null
+    const yesterdayPct = yesterdayRow?.activity_pct ?? null
+    const weekPct = weekRow?.activity_pct ?? null
+    const prevWeekPct = prevWeekRow?.activity_pct ?? null
+
+    return {
+      supervisor_name: brigadeName,
+      today_pct: todayPct,
+      yesterday_pct: yesterdayPct,
+      day_delta: todayPct != null && yesterdayPct != null ? todayPct - yesterdayPct : null,
+      week_pct: weekPct,
+      prev_week_pct: prevWeekPct,
+      week_delta: weekPct != null && prevWeekPct != null ? weekPct - prevWeekPct : null,
+      sparkline: brigadeDaily.map((row) => ({
+        report_date: row.report_date,
+        activity_pct: row.activity_pct,
+      })),
+    } satisfies BrigadeDynamicsCard
+  })
 }
 
 export type AttentionEmployee = {

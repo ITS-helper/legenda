@@ -1725,6 +1725,167 @@
   background: var(--alert);
 }
 
+/* ===== Activity dynamics ===== */
+.dynamics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dynamics-card {
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: grid;
+  gap: 16px;
+}
+
+.dynamics-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dynamics-card-head strong {
+  color: var(--text-h);
+  font-size: 20px;
+}
+
+.dynamics-card-kicker {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dynamics-day {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.dynamics-day-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.dynamics-day-value {
+  color: var(--text-h);
+  font-size: 36px;
+  line-height: 1;
+}
+
+.dynamics-delta {
+  display: grid;
+  gap: 4px;
+  text-align: right;
+}
+
+.dynamics-delta span {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.dynamics-delta small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dynamics-delta-up span {
+  color: var(--work);
+}
+
+.dynamics-delta-down span {
+  color: var(--alert);
+}
+
+.dynamics-delta-neutral span {
+  color: var(--text-muted);
+}
+
+.dynamics-week {
+  display: grid;
+  gap: 4px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.dynamics-week strong {
+  color: var(--text-h);
+  font-size: 18px;
+}
+
+.dynamics-week-delta {
+  font-size: 13px;
+}
+
+.dynamics-week-delta.dynamics-delta-up {
+  color: var(--work);
+}
+
+.dynamics-week-delta.dynamics-delta-down {
+  color: var(--alert);
+}
+
+.dynamics-sparkline-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.dynamics-sparkline-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dynamics-sparkline {
+  display: grid;
+  gap: 6px;
+}
+
+.dynamics-sparkline-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.dynamics-sparkline-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dynamics-sparkline-dot {
+  fill: var(--brand);
+}
+
+.dynamics-sparkline-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .dynamics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ===== Detail grid ===== */
 .detail-grid {
   display: grid;
