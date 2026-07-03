@@ -8,7 +8,6 @@ import {
   aggregateLowActivityWeekly,
   filterLowActivityDaily,
   formatFullDate,
-  formatMinutes,
   formatPercent,
   formatSeconds,
   formatShiftHeadcount,
@@ -722,8 +721,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 </div>
                 {idleEpisodes.length > 0 ? (
                   <div className="zone-summary">
-                    <strong>{idleEpisodes.length}</strong>
-                    <span>эпизодов · {formatMinutes(idleTotalMin * 60)}</span>
+                    <span className="zone-summary-kicker">Всего за день</span>
+                    <strong>{idleEpisodes.length} эп.</strong>
+                    <span>{idleTotalMin} мин суммарно</span>
                   </div>
                 ) : null}
               </div>

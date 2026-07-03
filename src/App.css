@@ -1673,17 +1673,27 @@
 .zone-summary {
   display: grid;
   justify-items: end;
-  gap: 2px;
+  gap: 4px;
+  text-align: right;
+}
+
+.zone-summary-kicker {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .zone-summary strong {
-  font-size: 22px;
+  font-size: 18px;
+  font-weight: 700;
   color: var(--alert);
+  line-height: 1.2;
 }
 
 .zone-summary span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .zone-list {
