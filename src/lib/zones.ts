@@ -48,6 +48,14 @@ const ZONE_GROUP_MAP: Record<number, ZoneGroup> = {
   13: 'alert',
 }
 
+/** Зоны, которые не показываем в интерфейсе (данные в БД остаются). */
+export const HIDDEN_ZONES = new Set<number>([0])
+
+export function isHiddenZone(value: string | number | null | undefined): boolean {
+  const zone = parseZone(value)
+  return zone !== null && HIDDEN_ZONES.has(zone)
+}
+
 /** КПП и другие зоны, которые стоит подсвечивать как потенциальные нарушения. */
 export const ALERT_ZONES = new Set<number>([3, 6, 13])
 export const KPP_ZONE = 13

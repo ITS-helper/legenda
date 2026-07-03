@@ -48,5 +48,23 @@ That means:
 ## Next Step After Schema
 
 1. Apply `supabase/migrations/20260702_long_idle_and_drive.sql` if the database was created before LongIDLE support.
-2. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
-3. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.
+2. Apply `supabase/migrations/20260707_weak_activity_long_idle.sql` — колонки `weak_activity_*` и `long_idle_*` в view (без неё на дашборде будет `NaN%`).
+3. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
+4. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.
+
+### Как применить миграцию
+
+**Вариант A — SQL Editor (надёжнее):**
+
+1. Откройте [SQL Editor проекта legenda](https://supabase.com/dashboard/project/jcgurjybdipalekotphw/sql/new)
+2. Вставьте содержимое файла `supabase/migrations/20260707_weak_activity_long_idle.sql`
+3. Нажмите Run
+
+**Вариант B — локально (если pooler доступен):**
+
+```bash
+npm install pg --no-save
+npm run db:migrate -- supabase/migrations/20260707_weak_activity_long_idle.sql
+```
+
+Если `password authentication failed` — обновите пароль БД в Supabase Dashboard → Settings → Database и пропишите его в `SUPABASE_DB_URL` в `.env.local`.

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { zoneName } from './zones'
+import { zoneName, isHiddenZone } from './zones'
 
 export type BrigadeDailyRow = {
   report_date: string
@@ -377,7 +377,7 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
   const totals = new Map<number, { sec: number; shifts: number }>()
   for (const row of data ?? []) {
     const zona = Number(row.zona)
-    if (!Number.isFinite(zona)) continue
+    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
     const current = totals.get(zona) ?? { sec: 0, shifts: 0 }
     current.sec += Number(row.sec)
     current.shifts = Math.max(current.shifts, Number(row.shifts))
@@ -399,7 +399,9 @@ export async function loadIdleEpisodes(reportDate: string) {
 
   if (error) throw error
 
-  return (data ?? []).map((row) => ({
+  return (data ?? [])
+    .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
+    .map((row) => ({
     ww_shift_id: Number(row.ww_shift_id),
     session_id: row.session_id === null ? null : Number(row.session_id),
     employee_number: (row.employee_number as string | null) ?? null,
