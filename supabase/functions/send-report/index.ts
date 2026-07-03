@@ -335,6 +335,22 @@ const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   'ЛИ СОН ХАК': 22,
 }
 
+const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
+
+function brigadeNamesMatch(left: string, right: string) {
+  return (
+    left.localeCompare(right, 'ru', { sensitivity: 'accent' }) === 0 || left.toUpperCase() === right.toUpperCase()
+  )
+}
+
+function formatDeltaPercent(delta: number | null) {
+  if (delta == null || Number.isNaN(delta)) return '—'
+  const rounded = Math.round(delta * 10) / 10
+  if (rounded === 0) return '0%'
+  const sign = rounded > 0 ? '+' : ''
+  return `${sign}${rounded}%`
+}
+
 const SHIFT_TARGET_WORKERS = 50
 
 function getBrigadeShiftTarget(supervisorName: string) {
@@ -599,6 +615,188 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
   </table>`
 }
 
+type BrigadeDynamicsPoint = {
+  report_date: string
+  activity_pct: number
+}
+
+type BrigadeDynamicsCard = {
+  supervisor_name: string
+  today_pct: number | null
+  prior_pct: number | null
+  delta: number | null
+  sparkline: BrigadeDynamicsPoint[]
+}
+
+function deltaColor(delta: number | null) {
+  if (delta == null || delta === 0) return COLORS.textMuted
+  return delta > 0 ? COLORS.work : COLORS.alert
+}
+
+function buildSparklineSvg(points: BrigadeDynamicsPoint[]) {
+  if (points.length < 2) {
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных</div>`
+  }
+
+  const width = 168
+  const height = 44
+  const padding = 4
+  const values = points.map((point) => point.activity_pct)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const coords = values.map((value, index) => {
+    const x = padding + (index / (values.length - 1)) * (width - padding * 2)
+    const y = height - padding - ((value - min) / range) * (height - padding * 2)
+    return { x, y }
+  })
+  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
+  const last = coords[coords.length - 1]
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+    <polyline points="${polyline}" fill="none" stroke="${COLORS.brand}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${last.x}" cy="${last.y}" r="3.5" fill="${COLORS.brand}" />
+  </svg>`
+}
+
+function dynamicsCardHtml(
+  card: BrigadeDynamicsCard,
+  options: { periodLabel: string; comparePrefix: string; emptyCompare: string; sparklineTitle: string },
+) {
+  const compareText =
+    card.prior_pct != null
+      ? `${options.comparePrefix} (${pct(card.prior_pct)})`
+      : options.emptyCompare
+
+  const sparklineLabels =
+    card.sparkline.length > 0
+      ? `<div style="display:flex;justify-content:space-between;color:${COLORS.textMuted};font-size:11px;margin-top:4px;">
+          <span>${ruShort(card.sparkline[0].report_date)}</span>
+          <span>${ruShort(card.sparkline[card.sparkline.length - 1].report_date)}</span>
+        </div>`
+      : ''
+
+  return `<div style="padding:20px;border-radius:20px;border:1px solid ${COLORS.border};background:${COLORS.surface};">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px;">
+      <strong style="font-size:18px;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</strong>
+      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">Активность</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};margin-bottom:16px;">
+      <div>
+        <span style="display:block;color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</span>
+        <strong style="font-size:32px;line-height:1;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</strong>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatDeltaPercent(card.delta)}</div>
+        <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
+      </div>
+    </div>
+    <div>
+      <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
+      ${buildSparklineSvg(card.sparkline)}
+      ${sparklineLabels}
+    </div>
+  </div>`
+}
+
+function activityDynamicsBlock(
+  cards: BrigadeDynamicsCard[],
+  options: {
+    periodLabel: string
+    comparePrefix: string
+    emptyCompare: string
+    sparklineTitle: string
+  },
+) {
+  const cells = cards
+    .map(
+      (card) =>
+        `<td width="50%" valign="top" style="padding:0 6px;">${dynamicsCardHtml(card, options)}</td>`,
+    )
+    .join('')
+
+  return `<div style="margin-top:20px;">
+    <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика показателей активности</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>${cells}</tr></table>
+  </div>`
+}
+
+async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
+  const sparklineStart = addDaysIso(referenceDate, -6)
+  const priorDate = addDaysIso(referenceDate, -1)
+
+  const { data, error } = await supabase!
+    .from('brigade_daily_metrics')
+    .select('report_date, supervisor_name, activity_pct')
+    .gte('report_date', sparklineStart)
+    .lte('report_date', referenceDate)
+    .order('report_date', { ascending: true })
+  if (error) throw error
+
+  const dailyRows = (data ?? []) as Array<{
+    report_date: string
+    supervisor_name: string
+    activity_pct: number
+  }>
+
+  return TRACKED_BRIGADES.map((brigadeName) => {
+    const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
+    const todayRow = brigadeDaily.find((row) => row.report_date === referenceDate) ?? null
+    const priorRow = brigadeDaily.find((row) => row.report_date === priorDate) ?? null
+    const todayPct = todayRow?.activity_pct ?? null
+    const priorPct = priorRow?.activity_pct ?? null
+
+    return {
+      supervisor_name: brigadeName,
+      today_pct: todayPct,
+      prior_pct: priorPct,
+      delta: todayPct != null && priorPct != null ? todayPct - priorPct : null,
+      sparkline: brigadeDaily.map((row) => ({
+        report_date: row.report_date,
+        activity_pct: row.activity_pct,
+      })),
+    } satisfies BrigadeDynamicsCard
+  })
+}
+
+async function loadBrigadeWeeklyActivityDynamics(supabase: ReturnType<typeof getAdminClient>, weekStart: string) {
+  const sparklineStart = addDaysIso(weekStart, -42)
+  const priorWeekStart = addDaysIso(weekStart, -7)
+
+  const { data, error } = await supabase!
+    .from('brigade_weekly_metrics')
+    .select('week_start, supervisor_name, activity_pct')
+    .gte('week_start', sparklineStart)
+    .lte('week_start', weekStart)
+    .order('week_start', { ascending: true })
+  if (error) throw error
+
+  const weeklyRows = (data ?? []) as Array<{
+    week_start: string
+    supervisor_name: string
+    activity_pct: number
+  }>
+
+  return TRACKED_BRIGADES.map((brigadeName) => {
+    const brigadeWeekly = weeklyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
+    const weekRow = brigadeWeekly.find((row) => row.week_start === weekStart) ?? null
+    const priorRow = brigadeWeekly.find((row) => row.week_start === priorWeekStart) ?? null
+    const weekPct = weekRow?.activity_pct ?? null
+    const priorPct = priorRow?.activity_pct ?? null
+
+    return {
+      supervisor_name: brigadeName,
+      today_pct: weekPct,
+      prior_pct: priorPct,
+      delta: weekPct != null && priorPct != null ? weekPct - priorPct : null,
+      sparkline: brigadeWeekly.map((row) => ({
+        report_date: row.week_start,
+        activity_pct: row.activity_pct,
+      })),
+    } satisfies BrigadeDynamicsCard
+  })
+}
+
 function kppBlock(rows: KppRow[]) {
   if (rows.length === 0) {
     return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">На КПП никого не фиксировалось.</div>`
@@ -645,6 +843,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   if (shiftError) throw shiftError
   const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityDaily((shiftData ?? []) as ShiftMetricRow[])
+  const dynamics = await loadBrigadeActivityDynamics(supabase, date)
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -684,6 +883,12 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
       ${brigadeTableDaily(brigades)}
+      ${activityDynamicsBlock(dynamics, {
+        periodLabel: 'За день',
+        comparePrefix: 'к вчера',
+        emptyCompare: 'нет данных за вчера',
+        sparklineTitle: `7 дней до ${ru(date)}`,
+      })}
       ${shiftDurationBlock(brigades, 'за день')}
       ${topActivityBlock(topActivity, 'за день')}
       ${attentionBlock(attention, 'за день')}
@@ -713,6 +918,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   if (shiftError) throw shiftError
   const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
+  const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart)
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -748,6 +954,12 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       </table>
       <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
       ${brigadeTableWeekly(brigades)}
+      ${activityDynamicsBlock(dynamics, {
+        periodLabel: 'За неделю',
+        comparePrefix: 'к прошлой неделе',
+        emptyCompare: 'нет данных за прошлую неделю',
+        sparklineTitle: `7 недель до ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+      })}
       ${shiftDurationBlock(brigades, 'за неделю')}
       ${topActivityBlock(topActivity, 'за неделю')}
       ${attentionBlock(attention, 'за неделю')}
