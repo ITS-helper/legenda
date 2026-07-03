@@ -400,7 +400,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Замечены на КПП</span>
-                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого'}</p>
+                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого (обед 13:00–14:00 не учитывается)'}</p>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
               </article>
             </div>
@@ -630,7 +630,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 3 · Динамика"
         title="Динамика показателей активности"
-        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера, текущая неделя против прошлой и тренд за 7 дней."
+        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 7 дней."
       >
         <div className="filter-row">
           <label className="filter-field">

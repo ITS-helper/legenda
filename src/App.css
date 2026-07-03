@@ -1813,31 +1813,6 @@
   color: var(--text-muted);
 }
 
-.dynamics-week {
-  display: grid;
-  gap: 4px;
-  padding: 0 4px;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.dynamics-week strong {
-  color: var(--text-h);
-  font-size: 18px;
-}
-
-.dynamics-week-delta {
-  font-size: 13px;
-}
-
-.dynamics-week-delta.dynamics-delta-up {
-  color: var(--work);
-}
-
-.dynamics-week-delta.dynamics-delta-down {
-  color: var(--alert);
-}
-
 .dynamics-sparkline-wrap {
   display: grid;
   gap: 8px;

@@ -117,10 +117,6 @@ export function brigadeNamesMatch(left: string, right: string) {
   )
 }
 
-function findBrigadeRow<T extends { supervisor_name: string }>(rows: T[], brigadeName: string) {
-  return rows.find((row) => brigadeNamesMatch(row.supervisor_name, brigadeName)) ?? null
-}
-
 export function addDaysIso(dateIso: string, days: number) {
   const date = new Date(`${dateIso}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)
@@ -151,12 +147,12 @@ export function formatDecimalPercent(value: number) {
   return `${Number(value).toFixed(1)}%`
 }
 
-export function formatDeltaPp(delta: number | null) {
+export function formatDeltaPercent(delta: number | null) {
   if (delta == null || Number.isNaN(delta)) return '—'
   const rounded = Math.round(delta * 10) / 10
-  if (rounded === 0) return '0 п.п.'
+  if (rounded === 0) return '0%'
   const sign = rounded > 0 ? '+' : ''
-  return `${sign}${rounded} п.п.`
+  return `${sign}${rounded}%`
 }
 
 export function formatShortDate(value: string) {
@@ -244,17 +240,12 @@ export type BrigadeDynamicsCard = {
   today_pct: number | null
   yesterday_pct: number | null
   day_delta: number | null
-  week_pct: number | null
-  prev_week_pct: number | null
-  week_delta: number | null
   sparkline: BrigadeDynamicsPoint[]
 }
 
 export async function loadBrigadeActivityDynamics(referenceDate: string) {
   const sparklineStart = addDaysIso(referenceDate, -6)
   const yesterday = addDaysIso(referenceDate, -1)
-  const weekStart = getWeekStart(referenceDate)
-  const prevWeekStart = addDaysIso(weekStart, -7)
 
   const { data: dailyData, error: dailyError } = await supabase
     .schema('analytics')
@@ -272,31 +263,19 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
     activity_pct: number
   }>
 
-  const [currentWeek, prevWeek] = await Promise.all([
-    loadBrigadeWeekly(weekStart),
-    loadBrigadeWeekly(prevWeekStart),
-  ])
-
   return TRACKED_BRIGADES.map((brigadeName) => {
     const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const todayRow = brigadeDaily.find((row) => row.report_date === referenceDate) ?? null
     const yesterdayRow = brigadeDaily.find((row) => row.report_date === yesterday) ?? null
-    const weekRow = findBrigadeRow(currentWeek, brigadeName)
-    const prevWeekRow = findBrigadeRow(prevWeek, brigadeName)
 
     const todayPct = todayRow?.activity_pct ?? null
     const yesterdayPct = yesterdayRow?.activity_pct ?? null
-    const weekPct = weekRow?.activity_pct ?? null
-    const prevWeekPct = prevWeekRow?.activity_pct ?? null
 
     return {
       supervisor_name: brigadeName,
       today_pct: todayPct,
       yesterday_pct: yesterdayPct,
       day_delta: todayPct != null && yesterdayPct != null ? todayPct - yesterdayPct : null,
-      week_pct: weekPct,
-      prev_week_pct: prevWeekPct,
-      week_delta: weekPct != null && prevWeekPct != null ? weekPct - prevWeekPct : null,
       sparkline: brigadeDaily.map((row) => ({
         report_date: row.report_date,
         activity_pct: row.activity_pct,

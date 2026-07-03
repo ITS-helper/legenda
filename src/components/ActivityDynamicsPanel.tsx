@@ -1,11 +1,8 @@
 import {
-  addDaysIso,
-  formatDeltaPp,
+  formatDeltaPercent,
   formatFullDate,
   formatPercent,
   formatShortDate,
-  formatWeekRange,
-  getWeekStart,
   type BrigadeDynamicsCard,
 } from '../lib/reports'
 
@@ -34,7 +31,7 @@ function Sparkline({ points }: { points: BrigadeDynamicsCard['sparkline'] }) {
   const coords = values.map((value, index) => {
     const x = padding + (index / (values.length - 1)) * (width - padding * 2)
     const y = height - padding - ((value - min) / range) * (height - padding * 2)
-    return { x, y, value, date: points[index].report_date }
+    return { x, y }
   })
 
   const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
@@ -55,11 +52,6 @@ function Sparkline({ points }: { points: BrigadeDynamicsCard['sparkline'] }) {
 }
 
 function DynamicsCard({ card, referenceDate }: { card: BrigadeDynamicsCard; referenceDate: string }) {
-  const weekStart = getWeekStart(referenceDate)
-  const weekEnd = addDaysIso(weekStart, 6)
-  const prevWeekStart = addDaysIso(weekStart, -7)
-  const prevWeekEnd = addDaysIso(weekStart, -1)
-
   return (
     <article className="dynamics-card">
       <div className="dynamics-card-head">
@@ -75,23 +67,13 @@ function DynamicsCard({ card, referenceDate }: { card: BrigadeDynamicsCard; refe
           </strong>
         </div>
         <div className={`dynamics-delta ${deltaClass(card.day_delta)}`}>
-          <span>{formatDeltaPp(card.day_delta)}</span>
+          <span>{formatDeltaPercent(card.day_delta)}</span>
           <small>
             {card.yesterday_pct != null
               ? `к вчера (${formatPercent(card.yesterday_pct)})`
               : 'нет данных за вчера'}
           </small>
         </div>
-      </div>
-
-      <div className="dynamics-week">
-        <span>Неделя {formatWeekRange(weekStart, weekEnd)}</span>
-        <strong>{card.week_pct != null ? formatPercent(card.week_pct) : '—'}</strong>
-        <span className={`dynamics-week-delta ${deltaClass(card.week_delta)}`}>
-          {card.week_delta != null
-            ? `${formatDeltaPp(card.week_delta)} к ${formatWeekRange(prevWeekStart, prevWeekEnd)}`
-            : `нет сравнения с ${formatWeekRange(prevWeekStart, prevWeekEnd)}`}
-        </span>
       </div>
 
       <div className="dynamics-sparkline-wrap">

@@ -51,8 +51,9 @@ That means:
 2. Apply `supabase/migrations/20260707_weak_activity_long_idle.sql` — колонки `weak_activity_*` и `long_idle_*` в view (без неё на дашборде будет `NaN%`).
 3. Apply `supabase/migrations/20260708_report10_metrics_10min.sql` — метрики из отчётов 11+10, длительный простой от **10 мин**.
 4. Apply `supabase/migrations/20260709_avg_shift_duration.sql` — средняя длительность смены по бригадам.
-5. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
-6. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.
+5. Apply `supabase/migrations/20260710_kpp_exclude_lunch.sql` — КПП без обеда 13:00–14:00 МСК.
+6. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
+7. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.
 
 ### Как применить миграцию
 

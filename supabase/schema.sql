@@ -162,6 +162,19 @@ create index if not exists idx_ble_facts_shift_id on analytics.ble_minute_facts(
 create index if not exists idx_ble_facts_session_id on analytics.ble_minute_facts(tech_session_id);
 create index if not exists idx_ble_facts_event_at on analytics.ble_minute_facts(event_at);
 
+create or replace function analytics.is_kpp_metric_minute(p_zona text, p_event_at timestamptz)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select p_zona = '13'
+    and not (
+      (p_event_at at time zone 'Europe/Moscow')::time >= time '13:00'
+      and (p_event_at at time zone 'Europe/Moscow')::time < time '14:00'
+    );
+$$;
+
 create or replace view analytics.shift_daily_metrics as
 select
   s.report_date,
@@ -187,8 +200,11 @@ select
   -- zona=1 is the work zone (ПВ); see docs/zones-reference.md.
   coalesce(sum(case when b.zona = '1' then b.total_sec else 0 end), 0) as pv_sec_total,
   coalesce(sum(case when b.zona is not null and b.zona <> '1' then b.total_sec else 0 end), 0) as outside_pv_sec_total,
-  -- КПП: zona=13 is the checkpoint zone.
-  coalesce(sum(case when b.zona = '13' then b.total_sec else 0 end), 0) as kpp_sec_total
+  -- КПП: zona=13, кроме обеда 13:00–14:00 (МСК); см. analytics.is_kpp_metric_minute.
+  coalesce(
+    sum(case when analytics.is_kpp_metric_minute(b.zona, b.event_at) then b.total_sec else 0 end),
+    0
+  ) as kpp_sec_total
 from analytics.shifts s
 join analytics.employees e on e.id = s.employee_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id
@@ -286,8 +302,19 @@ select
   b.report_date,
   coalesce(sup.name, 'Без начальника') as supervisor_name,
   b.zona,
-  sum(b.total_sec) as sec,
-  count(distinct b.ww_shift_id) as shifts
+  sum(
+    case
+      when analytics.is_kpp_metric_minute(b.zona, b.event_at) then b.total_sec
+      when b.zona = '13' then 0
+      else b.total_sec
+    end
+  ) as sec,
+  count(
+    distinct case
+      when b.zona = '13' and not analytics.is_kpp_metric_minute(b.zona, b.event_at) then null
+      else b.ww_shift_id
+    end
+  ) as shifts
 from analytics.ble_minute_facts b
 left join analytics.shifts s on s.ww_shift_id = b.ww_shift_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id
