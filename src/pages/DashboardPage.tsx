@@ -400,7 +400,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Замечены на КПП</span>
-                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? `в зоне КПП, суммарно ${formatMinutes(dailyTotals.kpp_sec)}` : 'в зоне КПП никого (обед 13:00–14:00 не учитывается)'}</p>
+                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? 'чел. в зоне КПП' : 'в зоне КПП никого (обед 13:00–14:00 не учитывается)'}</p>
                 <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
               </article>
             </div>
@@ -504,8 +504,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                           </span>
                         </div>
                         <div className="kpp-metrics">
-                          <div className="kpp-time-range">{employee.kpp_time}</div>
-                          <div className="kpp-time">{formatMinutes(employee.kpp_sec)}</div>
+                          <div className="kpp-time">{employee.kpp_time}</div>
                         </div>
                       </div>
                     ))}
@@ -821,7 +820,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <td>{formatSeconds(row.long_idle_sec_total)}</td>
                       <td>{formatSeconds(row.total_sec_total)}</td>
                       <td>{formatPercent(getRowProductivity(row))}</td>
-                      <td>{row.kpp_sec_total > 0 ? formatMinutes(row.kpp_sec_total) : '—'}</td>
+                      <td>{row.kpp_sec_total > 0 ? 'да' : '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -120,15 +120,11 @@ export function formatMoscowTime(iso: string) {
   }).format(new Date(iso))
 }
 
-export function buildKppTimeLabel(eventTimes: string[]) {
-  const filtered = [...eventTimes]
-    .filter(isKppMetricMinuteAt)
-    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
-
-  if (filtered.length === 0) return '—'
+function formatKppRanges(eventTimes: string[]) {
+  if (eventTimes.length === 0) return ''
 
   const ranges: Array<{ start: string; end: string }> = []
-  for (const iso of filtered) {
+  for (const iso of eventTimes) {
     const timestamp = new Date(iso).getTime()
     const last = ranges[ranges.length - 1]
     if (last && timestamp - new Date(last.end).getTime() <= 90_000) {
@@ -145,6 +141,22 @@ export function buildKppTimeLabel(eventTimes: string[]) {
       return start === end ? start : `${start}–${end}`
     })
     .join(', ')
+}
+
+export function buildKppTimeLabel(eventTimes: string[]) {
+  const sorted = [...eventTimes]
+    .filter((iso) => Boolean(iso))
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
+
+  const metric = sorted.filter(isKppMetricMinuteAt)
+  if (metric.length > 0) return formatKppRanges(metric)
+
+  if (sorted.length > 0) {
+    const lunch = formatKppRanges(sorted)
+    return lunch ? `${lunch} (обед)` : '—'
+  }
+
+  return '—'
 }
 
 const NO_SUPERVISOR = 'Без начальника'
@@ -482,11 +494,13 @@ export async function loadKppEmployees(reportDate: string) {
     .eq('report_date', reportDate)
     .eq('zona', '13')
     .in('ww_shift_id', shiftIds)
+    .limit(10_000)
 
   if (minuteError) throw minuteError
 
   const minutesByShift = new Map<number, string[]>()
   for (const row of minuteData ?? []) {
+    if (!row.event_at) continue
     const shiftId = Number(row.ww_shift_id)
     const events = minutesByShift.get(shiftId) ?? []
     events.push(String(row.event_at))

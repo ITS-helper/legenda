@@ -1637,21 +1637,16 @@
 }
 
 .kpp-metrics {
-  display: grid;
-  gap: 4px;
   text-align: right;
 }
 
-.kpp-time-range {
-  font-size: 13px;
+.kpp-time {
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-h);
-  white-space: nowrap;
-}
-
-.kpp-time {
-  font-weight: 700;
-  color: var(--alert);
+  text-align: right;
+  max-width: min(52vw, 320px);
+  line-height: 1.35;
 }
 
 .kpp-empty {

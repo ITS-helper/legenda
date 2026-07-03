@@ -158,10 +158,6 @@ function addDaysIso(dateIso: string, days: number) {
   return date.toISOString().slice(0, 10)
 }
 
-function formatMinutes(totalSeconds: number) {
-  return `${Math.round(Math.max(0, totalSeconds) / 60)} мин`
-}
-
 const KPP_LUNCH_START_MIN = 13 * 60
 const KPP_LUNCH_END_MIN = 14 * 60
 
@@ -191,15 +187,11 @@ function formatMoscowTime(iso: string) {
   }).format(new Date(iso))
 }
 
-function buildKppTimeLabel(eventTimes: string[]) {
-  const filtered = [...eventTimes]
-    .filter(isKppMetricMinuteAt)
-    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
-
-  if (filtered.length === 0) return '—'
+function formatKppRanges(eventTimes: string[]) {
+  if (eventTimes.length === 0) return ''
 
   const ranges: Array<{ start: string; end: string }> = []
-  for (const iso of filtered) {
+  for (const iso of eventTimes) {
     const timestamp = new Date(iso).getTime()
     const last = ranges[ranges.length - 1]
     if (last && timestamp - new Date(last.end).getTime() <= 90_000) {
@@ -216,6 +208,22 @@ function buildKppTimeLabel(eventTimes: string[]) {
       return start === end ? start : `${start}–${end}`
     })
     .join(', ')
+}
+
+function buildKppTimeLabel(eventTimes: string[]) {
+  const sorted = [...eventTimes]
+    .filter((iso) => Boolean(iso))
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
+
+  const metric = sorted.filter(isKppMetricMinuteAt)
+  if (metric.length > 0) return formatKppRanges(metric)
+
+  if (sorted.length > 0) {
+    const lunch = formatKppRanges(sorted)
+    return lunch ? `${lunch} (обед)` : '—'
+  }
+
+  return '—'
 }
 
 async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: string) {
@@ -237,10 +245,12 @@ async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: st
     .eq('report_date', date)
     .eq('zona', '13')
     .in('ww_shift_id', shiftIds)
+    .limit(10_000)
   if (minuteError) throw minuteError
 
   const minutesByShift = new Map<number, string[]>()
   for (const row of minuteData ?? []) {
+    if (!row.event_at) continue
     const shiftId = Number(row.ww_shift_id)
     const events = minutesByShift.get(shiftId) ?? []
     events.push(String(row.event_at))
@@ -539,7 +549,7 @@ function brigadeTableDaily(rows: BrigadeDailyRow[]) {
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_workers > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_workers > 0 ? `${row.kpp_workers} (${formatMinutes(row.kpp_sec)})` : '—'}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_workers > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_workers > 0 ? row.kpp_workers : '—'}</td>
     </tr>`,
     )
     .join('')
@@ -602,8 +612,7 @@ function kppBlock(rows: KppRow[]) {
         <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
       </div>
       <div style="text-align:right;white-space:nowrap;">
-        <div style="font-size:13px;font-weight:600;color:${COLORS.textH};">${escapeHtml(row.kpp_time)}</div>
-        <div style="font-weight:700;color:${COLORS.alert};margin-top:4px;">${formatMinutes(row.kpp_sec_total)}</div>
+        <div style="font-size:14px;font-weight:600;color:${COLORS.textH};">${escapeHtml(row.kpp_time)}</div>
       </div>
     </div>`,
     )
