@@ -497,7 +497,7 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
     )
     .join('')
 
-  return `<details style="margin-top:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};overflow:hidden;">
+  return `<details style="margin-top:16px;border:1px solid ${COLORS.workBorder};border-radius:20px;background:${COLORS.workSoft};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Топ 3 по активности</span>
       ${periodLabel}
