@@ -613,11 +613,17 @@ function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
   </table>`
 }
 
+type BrigadeDynamicsPoint = {
+  report_date: string
+  activity_pct: number
+}
+
 type BrigadeDynamicsCard = {
   supervisor_name: string
   today_pct: number | null
   prior_pct: number | null
   delta: number | null
+  sparkline?: BrigadeDynamicsPoint[]
 }
 
 function deltaColor(delta: number | null) {
@@ -625,21 +631,63 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? COLORS.work : COLORS.alert
 }
 
+function buildSparklineSvg(points: BrigadeDynamicsPoint[]) {
+  if (points.length < 2) {
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за 7 дней</div>`
+  }
+
+  const width = 168
+  const height = 44
+  const padding = 4
+  const values = points.map((point) => point.activity_pct)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const coords = values.map((value, index) => {
+    const x = padding + (index / (values.length - 1)) * (width - padding * 2)
+    const y = height - padding - ((value - min) / range) * (height - padding * 2)
+    return { x, y }
+  })
+  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
+  const last = coords[coords.length - 1]
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+    <polyline points="${polyline}" fill="none" stroke="${COLORS.brand}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${last.x}" cy="${last.y}" r="3.5" fill="${COLORS.brand}" />
+  </svg>`
+}
+
 function dynamicsCardHtml(
   card: BrigadeDynamicsCard,
-  options: { periodLabel: string; comparePrefix: string; emptyCompare: string },
+  options: { periodLabel: string; comparePrefix: string; emptyCompare: string; sparklineTitle?: string },
 ) {
   const compareText =
     card.prior_pct != null
       ? `${options.comparePrefix} (${pct(card.prior_pct)})`
       : options.emptyCompare
 
+  const sparkline = card.sparkline ?? []
+  const sparklineLabels =
+    sparkline.length >= 2
+      ? `<div style="display:flex;justify-content:space-between;color:${COLORS.textMuted};font-size:11px;margin-top:4px;">
+        <span>${ruShort(sparkline[0].report_date)}</span>
+        <span>${ruShort(sparkline[sparkline.length - 1].report_date)}</span>
+      </div>`
+      : ''
+  const sparklineSection = options.sparklineTitle
+    ? `<div>
+      <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
+      ${buildSparklineSvg(sparkline)}
+      ${sparklineLabels}
+    </div>`
+    : ''
+
   return `<div style="padding:20px;border-radius:20px;border:1px solid ${COLORS.border};background:${COLORS.surface};">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px;">
       <strong style="font-size:18px;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</strong>
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">Активность</span>
     </div>
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
       <div>
         <span style="display:block;color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</span>
         <strong style="font-size:32px;line-height:1;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</strong>
@@ -649,6 +697,7 @@ function dynamicsCardHtml(
         <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
       </div>
     </div>
+    ${sparklineSection}
   </div>`
 }
 
@@ -658,6 +707,7 @@ function activityDynamicsBlock(
     periodLabel: string
     comparePrefix: string
     emptyCompare: string
+    sparklineTitle?: string
   },
 ) {
   const cells = cards
@@ -674,12 +724,15 @@ function activityDynamicsBlock(
 }
 
 async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
+  const sparklineStart = addDaysIso(referenceDate, -6)
   const priorDate = addDaysIso(referenceDate, -1)
 
   const { data, error } = await supabase!
     .from('brigade_daily_metrics')
     .select('report_date, supervisor_name, activity_pct')
-    .in('report_date', [referenceDate, priorDate])
+    .gte('report_date', sparklineStart)
+    .lte('report_date', referenceDate)
+    .order('report_date', { ascending: true })
   if (error) throw error
 
   const dailyRows = (data ?? []) as Array<{
@@ -700,6 +753,10 @@ async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminC
       today_pct: todayPct,
       prior_pct: priorPct,
       delta: todayPct != null && priorPct != null ? todayPct - priorPct : null,
+      sparkline: brigadeDaily.map((row) => ({
+        report_date: row.report_date,
+        activity_pct: row.activity_pct,
+      })),
     } satisfies BrigadeDynamicsCard
   })
 }
@@ -825,6 +882,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         periodLabel: 'За день',
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
+        sparklineTitle: `7 дней до ${ru(date)}`,
       })}
       ${shiftDurationBlock(brigades, 'за день')}
       ${topActivityBlock(topActivity, 'за день')}
