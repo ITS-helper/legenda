@@ -48,7 +48,7 @@ import {
   normalizeReportDate,
   type VolumeEntry,
 } from '../lib/volumes'
-import { isAlertZone } from '../lib/zones'
+import { isAlertZone, KPP_ZONE, parseZone } from '../lib/zones'
 
 type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
@@ -768,89 +768,95 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
 
         {!dailyLoading && !dailyError && selectedDate ? (
-          <div className="brigade-grid brigade-grid--zones">
+          <div className="zones-brigade-matrix">
+            {dailyRows.map((brigade) => (
+              <div className="zones-brigade-matrix-head" key={`head-${brigade.supervisor_name}`}>
+                <strong>{brigade.supervisor_name}</strong>
+              </div>
+            ))}
+
             {dailyRows.map((brigade) => {
-              const brigadeZones = zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? []
+              const brigadeZones = (zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? []).filter(
+                (zone) => parseZone(zone.zona) !== KPP_ZONE,
+              )
               const brigadeZoneTotalSec = brigadeZones.reduce((sum, row) => sum + row.sec, 0)
+
+              return (
+                <div className="zone-panel zone-panel--location" key={`loc-${brigade.supervisor_name}`}>
+                  <div className="panel-head">
+                    <div>
+                      <p className="panel-kicker">Местоположение</p>
+                      <h3>Распределение времени по зонам</h3>
+                      <p className="panel-description">Где сотрудники бригады проводили время за день.</p>
+                    </div>
+                  </div>
+                  {brigadeZones.length > 0 ? (
+                    <div className="zone-list">
+                      {brigadeZones.map((zone) => (
+                        <div className={`zone-row${isAlertZone(zone.zona) ? ' zone-row-alert' : ''}`} key={`${brigade.supervisor_name}-${zone.zona}`}>
+                          <div className="zone-row-head">
+                            <span className="zone-name">{zone.zonaName}</span>
+                            <span className="zone-value">{formatPercent(ratio(zone.sec, brigadeZoneTotalSec))}</span>
+                          </div>
+                          <div className="zone-bar">
+                            <div
+                              className={`zone-bar-fill${isAlertZone(zone.zona) ? ' zone-bar-fill-alert' : ''}`}
+                              style={{ width: `${Math.max(ratio(zone.sec, brigadeZoneTotalSec), 1)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="kpp-empty">Нет данных по зонам за выбранный день.</p>
+                  )}
+                </div>
+              )
+            })}
+
+            {dailyRows.map((brigade) => {
               const brigadeIdle = idleByBrigade.get(brigade.supervisor_name)
 
               return (
-                <article className="brigade-card" key={`zone-${brigade.supervisor_name}`}>
-                  <div className="brigade-card-head">
+                <div
+                  className={`zone-panel zone-panel--idle${(brigadeIdle?.totalEpisodes ?? 0) > 0 ? ' kpp-panel-alert' : ''}`}
+                  key={`idle-${brigade.supervisor_name}`}
+                >
+                  <div className="panel-head">
                     <div>
-                      <strong>{brigade.supervisor_name}</strong>
+                      <p className="panel-kicker">Простои</p>
+                      <h3>Длительные простои</h3>
+                      <p className="panel-description">Эпизоды бездействия от 10 минут с привязкой к зоне.</p>
                     </div>
-                  </div>
-
-                  <div className="zones-idle-grid">
-                    <div className="zone-panel">
-                      <div className="panel-head">
-                        <div>
-                          <p className="panel-kicker">Местоположение</p>
-                          <h3>Распределение времени по зонам</h3>
-                          <p className="panel-description">Где сотрудники бригады проводили время за день.</p>
-                        </div>
+                    {brigadeIdle && brigadeIdle.totalEpisodes > 0 ? (
+                      <div className="zone-summary">
+                        <span className="zone-summary-kicker">Всего за день</span>
+                        <strong>{brigadeIdle.totalEpisodes} эп.</strong>
+                        <span>{brigadeIdle.totalMin} мин суммарно</span>
                       </div>
-                      {brigadeZones.length > 0 ? (
-                        <div className="zone-list">
-                          {brigadeZones.map((zone) => (
-                            <div className={`zone-row${isAlertZone(zone.zona) ? ' zone-row-alert' : ''}`} key={`${brigade.supervisor_name}-${zone.zona}`}>
-                              <div className="zone-row-head">
-                                <span className="zone-name">{zone.zonaName}</span>
-                                <span className="zone-value">{formatPercent(ratio(zone.sec, brigadeZoneTotalSec))}</span>
-                              </div>
-                              <div className="zone-bar">
-                                <div
-                                  className={`zone-bar-fill${isAlertZone(zone.zona) ? ' zone-bar-fill-alert' : ''}`}
-                                  style={{ width: `${Math.max(ratio(zone.sec, brigadeZoneTotalSec), 1)}%` }}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="kpp-empty">Нет данных по зонам за выбранный день.</p>
-                      )}
-                    </div>
-
-                    <div className={`zone-panel${(brigadeIdle?.totalEpisodes ?? 0) > 0 ? ' kpp-panel-alert' : ''}`}>
-                      <div className="panel-head">
-                        <div>
-                          <p className="panel-kicker">Простои</p>
-                          <h3>Длительные простои</h3>
-                          <p className="panel-description">Эпизоды бездействия от 10 минут с привязкой к зоне.</p>
-                        </div>
-                        {brigadeIdle && brigadeIdle.totalEpisodes > 0 ? (
-                          <div className="zone-summary">
-                            <span className="zone-summary-kicker">Всего за день</span>
-                            <strong>{brigadeIdle.totalEpisodes} эп.</strong>
-                            <span>{brigadeIdle.totalMin} мин суммарно</span>
+                    ) : null}
+                  </div>
+                  {brigadeIdle && brigadeIdle.byZone.length > 0 ? (
+                    <div className="zone-list">
+                      {brigadeIdle.byZone.map((zone) => (
+                        <div className={`zone-row${zone.alert ? ' zone-row-alert' : ''}`} key={`${brigade.supervisor_name}-${zone.zonaName}`}>
+                          <div className="zone-row-head">
+                            <span className="zone-name">{zone.zonaName}</span>
+                            <span className="zone-value">{zone.count} эп. · {zone.minutes} мин</span>
                           </div>
-                        ) : null}
-                      </div>
-                      {brigadeIdle && brigadeIdle.byZone.length > 0 ? (
-                        <div className="zone-list">
-                          {brigadeIdle.byZone.map((zone) => (
-                            <div className={`zone-row${zone.alert ? ' zone-row-alert' : ''}`} key={`${brigade.supervisor_name}-${zone.zonaName}`}>
-                              <div className="zone-row-head">
-                                <span className="zone-name">{zone.zonaName}</span>
-                                <span className="zone-value">{zone.count} эп. · {zone.minutes} мин</span>
-                              </div>
-                              <div className="zone-bar">
-                                <div
-                                  className={`zone-bar-fill${zone.alert ? ' zone-bar-fill-alert' : ''}`}
-                                  style={{ width: `${Math.max(ratio(zone.minutes, brigadeIdle.totalMin), 1)}%` }}
-                                />
-                              </div>
-                            </div>
-                          ))}
+                          <div className="zone-bar">
+                            <div
+                              className={`zone-bar-fill${zone.alert ? ' zone-bar-fill-alert' : ''}`}
+                              style={{ width: `${Math.max(ratio(zone.minutes, brigadeIdle.totalMin), 1)}%` }}
+                            />
+                          </div>
                         </div>
-                      ) : (
-                        <p className="kpp-empty">Данные о длительных простоях за этот день не загружены или простоев нет.</p>
-                      )}
+                      ))}
                     </div>
-                  </div>
-                </article>
+                  ) : (
+                    <p className="kpp-empty">Данные о длительных простоях за этот день не загружены или простоев нет.</p>
+                  )}
+                </div>
               )
             })}
           </div>
