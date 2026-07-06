@@ -3,7 +3,11 @@ name: Send Reports
 on:
   schedule:
     - cron: '0 9 * * *'   # 12:00 МСК — ежедневный отчёт за вчера
-    - cron: '30 9 * * 1'  # 12:30 МСК понедельник — недельный отчёт за прошлую неделю
+    - cron: '30 9 * * 1'  # 12:30 МСК понедельник — недельный отчёт
+    - cron: '0 11 * * *'  # 14:00 МСК — резервная попытка (дубликаты отсекаются в send-report)
+  workflow_run:
+    workflows: ['Sync Drive Reports']
+    types: [completed]
   workflow_dispatch:
     inputs:
       type:
@@ -18,41 +22,66 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
-      - name: Determine report type
-        id: kind
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TYPE="${{ inputs.type }}"
-          elif [ "${{ github.event.schedule }}" = "30 9 * * 1" ]; then
-            TYPE="weekly"
-          else
-            TYPE="daily"
-          fi
-          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
-          echo "Report type: $TYPE"
-
-      - name: Trigger send-report edge function
+      - name: Send reports
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           ADMIN_PASSWORD: ${{ secrets.SETTINGS_ADMIN_PASSWORD }}
-          REPORT_TYPE: ${{ steps.kind.outputs.type }}
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          DISPATCH_TYPE: ${{ inputs.type }}
         run: |
           set -e
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
-            "$SUPABASE_URL/functions/v1/send-report" \
-            -H "Content-Type: application/json" \
-            -H "apikey: $ANON_KEY" \
-            -H "Authorization: Bearer $ANON_KEY" \
-            -H "x-settings-password: $ADMIN_PASSWORD" \
-            -H "x-triggered-by: schedule" \
-            -d "{\"type\":\"$REPORT_TYPE\"}")
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          CODE=$(echo "$RESPONSE" | tail -n 1)
-          echo "HTTP $CODE"
-          echo "$BODY"
-          if [ "$CODE" -ge 300 ]; then
-            echo "::error::send-report failed"
-            exit 1
+
+          send_report() {
+            local report_type="$1"
+            echo "=== send-report: $report_type ==="
+            RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
+              "$SUPABASE_URL/functions/v1/send-report" \
+              -H "Content-Type: application/json" \
+              -H "apikey: $ANON_KEY" \
+              -H "Authorization: Bearer $ANON_KEY" \
+              -H "x-settings-password: $ADMIN_PASSWORD" \
+              -H "x-triggered-by: schedule" \
+              -d "{\"type\":\"$report_type\"}")
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            CODE=$(echo "$RESPONSE" | tail -n 1)
+            echo "HTTP $CODE"
+            echo "$BODY"
+            if [ "$CODE" -ge 300 ]; then
+              echo "::error::send-report $report_type failed"
+              exit 1
+            fi
+          }
+
+          SEND_DAILY=false
+          SEND_WEEKLY=false
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$DISPATCH_TYPE" = "weekly" ]; then
+              SEND_WEEKLY=true
+            else
+              SEND_DAILY=true
+            fi
+          elif [ "$SCHEDULE" = "30 9 * * 1" ]; then
+            SEND_WEEKLY=true
+          else
+            SEND_DAILY=true
+            if [ "$SCHEDULE" = "0 11 * * *" ]; then
+              DOW=$(TZ=Europe/Moscow date +%u)
+              if [ "$DOW" = "1" ]; then
+                SEND_WEEKLY=true
+              fi
+            fi
+          fi
+
+          if [ "$SEND_DAILY" = "true" ]; then
+            send_report daily
+          fi
+          if [ "$SEND_WEEKLY" = "true" ]; then
+            send_report weekly
           fi

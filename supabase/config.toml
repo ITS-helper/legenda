@@ -1,0 +1,3 @@
+[functions.send-report]
+verify_jwt = false
+static_files = [ "./functions/send-report/assets/Roboto-Regular.ttf" ]

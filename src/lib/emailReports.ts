@@ -22,6 +22,8 @@ export type SendReportResult = {
   periodKey: string
   recipients: string[]
   previewHtml?: string
+  pdfAttached?: boolean
+  pdfError?: string | null
 }
 
 type RecipientsResponse = {
@@ -34,6 +36,8 @@ type SendResponse = {
   periodKey?: string
   recipients?: string[]
   previewHtml?: string
+  pdfAttached?: boolean
+  pdfError?: string | null
 }
 
 function withResource(url: string, resource: string) {
@@ -77,16 +81,21 @@ type SendReportOptions = {
 }
 
 export async function sendReport(options: SendReportOptions) {
-  const response = await fetch(getEdgeFunctionUrl('send-report'), {
-    method: 'POST',
-    headers: getEdgeFunctionHeaders(options.password, true),
-    body: JSON.stringify({
-      type: options.type,
-      date: options.date,
-      weekStart: options.weekStart,
-      preview: options.preview ?? false,
-    }),
-  })
+  let response: Response
+  try {
+    response = await fetch(getEdgeFunctionUrl('send-report'), {
+      method: 'POST',
+      headers: getEdgeFunctionHeaders(options.password, true),
+      body: JSON.stringify({
+        type: options.type,
+        date: options.date,
+        weekStart: options.weekStart,
+        preview: options.preview ?? false,
+      }),
+    })
+  } catch {
+    throw new Error('Не удалось связаться с сервером (сеть, CORS или таймаут). Проверьте деплой send-report и попробуйте снова.')
+  }
 
   const payload = await readEdgeFunctionJson<SendResponse>(response)
   if (!payload?.ok) {

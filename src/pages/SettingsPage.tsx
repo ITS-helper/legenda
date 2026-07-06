@@ -124,11 +124,19 @@ export function SettingsPage() {
         setPreviewHtml(result.previewHtml)
         setSendStatus('Предпросмотр отображён ниже')
       } else {
-        setSendStatus(
+        const recipientText =
           result.recipients.length > 0
             ? `Отправлено (${result.recipients.length}): ${result.recipients.join(', ')}`
-            : 'Нет активных получателей для этого типа рассылки',
-        )
+            : 'Нет активных получателей для этого типа рассылки'
+        const pdfText =
+          result.recipients.length === 0
+            ? ''
+            : result.pdfAttached === true
+              ? ' PDF приложен.'
+              : result.pdfAttached === false
+                ? ` PDF не приложен${result.pdfError ? `: ${result.pdfError}` : ''}.`
+                : ''
+        setSendStatus(`${recipientText}${pdfText}`)
       }
     } catch (error) {
       setSendError(true)

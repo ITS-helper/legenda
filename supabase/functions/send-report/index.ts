@@ -1,5 +1,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer@6.9.16'
+import { Buffer } from 'node:buffer'
+import type { ReportPdfPayload } from './pdf.ts'
+import {
+  formatPercent,
+  isAlertZone,
+  isHiddenZone,
+  ratio,
+  zoneName,
+  type IdleZoneRow,
+  type ZoneRow,
+} from './zones.ts'
 
 type ReportType = 'daily' | 'weekly'
 
@@ -236,6 +247,239 @@ function buildKppTimeLabel(eventTimes: string[]) {
   return '—'
 }
 
+async function loadZoneRows(
+  supabase: ReturnType<typeof getAdminClient>,
+  dateStart: string,
+  dateEnd: string,
+): Promise<ZoneRow[]> {
+  const { data, error } = await supabase!
+    .from('zone_daily_metrics')
+    .select('zona, sec')
+    .gte('report_date', dateStart)
+    .lte('report_date', dateEnd)
+  if (error) throw error
+
+  const totals = new Map<number, number>()
+  for (const row of data ?? []) {
+    const zona = Number(row.zona)
+    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
+    totals.set(zona, (totals.get(zona) ?? 0) + Number(row.sec))
+  }
+
+  return [...totals.entries()]
+    .map(([zona, sec]) => ({ zona, zonaName: zoneName(zona), sec }))
+    .sort((left, right) => right.sec - left.sec)
+}
+
+type IdleEpisodeRow = {
+  duration_min: number
+  ble_tag_zone: number | null
+}
+
+async function loadIdleEpisodes(
+  supabase: ReturnType<typeof getAdminClient>,
+  dateStart: string,
+  dateEnd: string,
+): Promise<IdleEpisodeRow[]> {
+  const { data, error } = await supabase!
+    .from('idle_episodes_daily')
+    .select('duration_min, ble_tag_zone')
+    .gte('report_date', dateStart)
+    .lte('report_date', dateEnd)
+  if (error) throw error
+
+  return (data ?? [])
+    .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
+    .map((row) => ({
+      duration_min: Number(row.duration_min),
+      ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
+    }))
+}
+
+function aggregateIdleByZone(episodes: IdleEpisodeRow[]): IdleZoneRow[] {
+  const map = new Map<string, IdleZoneRow>()
+  for (const episode of episodes) {
+    const name = zoneName(episode.ble_tag_zone)
+    const current = map.get(name) ?? {
+      zonaName: name,
+      minutes: 0,
+      count: 0,
+      alert: isAlertZone(episode.ble_tag_zone),
+    }
+    current.minutes += episode.duration_min
+    current.count += 1
+    map.set(name, current)
+  }
+  return [...map.values()].sort((left, right) => right.minutes - left.minutes)
+}
+
+function zoneBarEmail(widthPct: number, alert = false) {
+  const fill = alert ? COLORS.alert : COLORS.brand
+  const track = '#e8ebf0'
+  const width = Math.max(Math.min(widthPct, 100), widthPct > 0 ? 1 : 0)
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;background:${track};border-radius:999px;overflow:hidden;">
+    <tr><td width="${width}%" style="background:${fill};height:10px;font-size:0;line-height:0;">&nbsp;</td>${width < 100 ? '<td style="font-size:0;line-height:0;">&nbsp;</td>' : ''}</tr>
+  </table>`
+}
+
+function zoneRowEmail(name: string, value: string, barPct: number, alert = false) {
+  const nameColor = alert ? COLORS.alert : COLORS.textH
+  const valueColor = alert ? COLORS.alert : COLORS.textMuted
+  return `<div style="margin-bottom:10px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+      <tr>
+        <td style="font-size:14px;font-weight:600;color:${nameColor};">${escapeHtml(name)}</td>
+        <td align="right" style="font-size:14px;color:${valueColor};white-space:nowrap;">${escapeHtml(value)}</td>
+      </tr>
+    </table>
+    <div style="margin-top:6px;">${zoneBarEmail(barPct, alert)}</div>
+  </div>`
+}
+
+function zonesPanelEmail(options: {
+  kicker: string
+  title: string
+  description: string
+  summaryHtml?: string
+  rowsHtml: string
+  emptyText: string
+  alertBorder?: boolean
+}) {
+  const border = options.alertBorder ? COLORS.alertBorder : COLORS.border
+  const background = options.alertBorder ? COLORS.alertSoft : COLORS.surface
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${border};border-radius:20px;background:${background};border-collapse:separate;">
+    <tr><td style="padding:18px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:14px;">
+        <tr>
+          <td valign="top">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.kicker}</div>
+            <div style="font-size:16px;font-weight:700;color:${COLORS.textH};margin-top:6px;">${options.title}</div>
+            <div style="font-size:13px;color:${COLORS.textMuted};margin-top:6px;">${options.description}</div>
+          </td>
+          ${options.summaryHtml ? `<td align="right" valign="top">${options.summaryHtml}</td>` : ''}
+        </tr>
+      </table>
+      ${options.rowsHtml || `<div style="font-size:13px;color:${COLORS.textMuted};">${options.emptyText}</div>`}
+    </td></tr>
+  </table>`
+}
+
+function zonesBlockEmail(options: {
+  periodLabel: string
+  locationDescription: string
+  idleDescription: string
+  idleSummaryLabel: string
+  zoneRows: ZoneRow[]
+  idleByZone: IdleZoneRow[]
+  idleEpisodeCount: number
+  idleTotalMin: number
+}) {
+  const zoneTotalSec = options.zoneRows.reduce((sum, row) => sum + row.sec, 0)
+  const locationRows =
+    options.zoneRows.length > 0
+      ? options.zoneRows
+          .map((zone) =>
+            zoneRowEmail(
+              zone.zonaName,
+              formatPercent(ratio(zone.sec, zoneTotalSec)),
+              ratio(zone.sec, zoneTotalSec),
+              isAlertZone(zone.zona),
+            ),
+          )
+          .join('')
+      : ''
+
+  const idleRows =
+    options.idleByZone.length > 0
+      ? options.idleByZone
+          .map((zone) =>
+            zoneRowEmail(
+              zone.zonaName,
+              `${zone.count} эп. · ${zone.minutes} мин`,
+              ratio(zone.minutes, options.idleTotalMin),
+              false,
+            ),
+          )
+          .join('')
+      : ''
+
+  const idleSummary =
+    options.idleEpisodeCount > 0
+      ? `<div style="text-align:right;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
+          <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${options.idleEpisodeCount} эп.</div>
+          <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${options.idleTotalMin} мин суммарно</div>
+        </div>`
+      : ''
+
+  const locationPanel = zonesPanelEmail({
+    kicker: 'Местоположение',
+    title: 'Распределение времени по зонам',
+    description: options.locationDescription,
+    rowsHtml: locationRows,
+    emptyText: `Нет данных по зонам ${options.periodLabel}.`,
+  })
+
+  const idlePanel = zonesPanelEmail({
+    kicker: 'Простои',
+    title: 'Длительные простои',
+    description: options.idleDescription,
+    summaryHtml: idleSummary,
+    rowsHtml: idleRows,
+    emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
+  })
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+    <tr><td>
+      <h3 style="margin:0 0 8px;color:${COLORS.textH};font-size:16px;">Местоположение и простои</h3>
+      <p style="margin:0 0 16px;color:${COLORS.textMuted};font-size:13px;line-height:1.45;">Где сотрудники проводили время ${options.periodLabel} и эпизоды длительного бездействия от 10 минут с привязкой к зоне.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+        <tr>
+          <td width="50%" valign="top" style="padding-right:8px;">${locationPanel}</td>
+          <td width="50%" valign="top" style="padding-left:8px;">${idlePanel}</td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>`
+}
+
+function zonesPdfPayload(options: {
+  zoneRows: ZoneRow[]
+  idleByZone: IdleZoneRow[]
+  idleEpisodeCount: number
+  idleTotalMin: number
+  periodLabel: string
+  locationDescription: string
+  idleDescription: string
+  idleSummaryLabel: string
+}) {
+  const zoneTotalSec = options.zoneRows.reduce((sum, row) => sum + row.sec, 0)
+  return {
+    zonesTitle: 'Местоположение и простои',
+    zonesPeriodLabel: options.periodLabel,
+    zonesLocationDescription: options.locationDescription,
+    zonesIdleDescription: options.idleDescription,
+    zonesIdleSummaryLabel: options.idleSummaryLabel,
+    zonesLocationRows: options.zoneRows.map((zone) => ({
+      name: zone.zonaName,
+      value: formatPercent(ratio(zone.sec, zoneTotalSec)),
+      barPct: ratio(zone.sec, zoneTotalSec),
+      alert: isAlertZone(zone.zona),
+    })),
+    zonesIdleSummary:
+      options.idleEpisodeCount > 0
+        ? { episodes: options.idleEpisodeCount, minutes: options.idleTotalMin }
+        : undefined,
+    zonesIdleRows: options.idleByZone.map((zone) => ({
+      name: zone.zonaName,
+      value: `${zone.count} эп. · ${zone.minutes} мин`,
+      barPct: ratio(zone.minutes, options.idleTotalMin),
+      alert: false,
+    })),
+  }
+}
+
 async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: string) {
   const { data: kppData, error: kppError } = await supabase!
     .from('shift_daily_metrics')
@@ -303,15 +547,26 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
 }
 
+const EMAIL_LAYOUT_WIDTH = 720
+
 function wrapEmailHtml(innerHtml: string) {
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="x-apple-disable-message-reformatting" />
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no" />
 <title>Work Watch Analytics</title>
+<style type="text/css">
+  body { margin: 0 !important; padding: 0 !important; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table { border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
+  img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+  .email-scroll { overflow-x: auto !important; overflow-y: visible !important; -webkit-overflow-scrolling: touch !important; width: 100% !important; max-width: 100% !important; }
+  .email-canvas { width: ${EMAIL_LAYOUT_WIDTH}px !important; min-width: ${EMAIL_LAYOUT_WIDTH}px !important; }
+</style>
 </head>
-<body style="margin:0;padding:0;background:#eef1f6;">
+<body style="margin:0;padding:0;background:#eef1f6;width:100%;">
 ${innerHtml}
 </body>
 </html>`
@@ -336,9 +591,26 @@ const COLORS = {
   workBorder: 'rgba(0, 213, 180, 0.45)',
 }
 
-const EMAIL_WRAP_START = `<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};padding:24px;color:${COLORS.text};">
-<div style="max-width:720px;margin:0 auto;background:${COLORS.surface};border-radius:20px;overflow:hidden;border:1px solid ${COLORS.border};box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
-const EMAIL_WRAP_END = `<div style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Work Watch Analytics</div></div></div>`
+const EMAIL_WRAP_START = `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;background:${COLORS.page};color:${COLORS.text};width:100%;">
+<tr><td align="center" style="padding:12px;">
+<div class="email-scroll" style="overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;width:100%;max-width:100%;">
+<table class="email-canvas" width="${EMAIL_LAYOUT_WIDTH}" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:${EMAIL_LAYOUT_WIDTH}px;min-width:${EMAIL_LAYOUT_WIDTH}px;background:${COLORS.surface};border-radius:20px;border:1px solid ${COLORS.border};border-collapse:separate;box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
+const EMAIL_WRAP_END = `<tr><td style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Work Watch Analytics</td></tr>
+</table>
+</div>
+</td></tr></table>`
+
+function personRowHtml(name: string, meta: string, value: string, alert = false) {
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:8px;border:1px solid ${COLORS.border};border-radius:14px;background:${COLORS.surface};border-collapse:separate;">
+    <tr>
+      <td style="padding:12px 14px;vertical-align:top;">
+        <div style="font-weight:700;color:${COLORS.textH};word-break:break-word;">${name}</div>
+        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;word-break:break-word;">${meta}</div>
+        <div class="person-value" style="font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};margin-top:8px;">${value}</div>
+      </td>
+    </tr>
+  </table>`
+}
 
 const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   Джалол: 20,
@@ -381,13 +653,203 @@ function formatShiftHeadcount(actual: number) {
   return `${actual} / ${SHIFT_TARGET_WORKERS}`
 }
 
-function metricCell(label: string, value: string, alert = false, width = '20%') {
+function metricCell(label: string, value: string, alert = false, width = '33.33%') {
   return `<td style="width:${width};vertical-align:top;padding:0;">
     <div style="padding:14px 16px;border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};height:110px;box-sizing:border-box;position:relative;overflow:hidden;">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};line-height:1.35;height:42px;overflow:hidden;">${label}</div>
       <div style="position:absolute;left:14px;right:14px;bottom:14px;text-align:center;font-size:24px;font-weight:700;color:${alert ? COLORS.alert : COLORS.textH};line-height:1.1;">${value}</div>
     </div>
   </td>`
+}
+
+function metricsGrid(rows: string[][]) {
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:separate;border-spacing:8px;table-layout:fixed;">
+    ${rows.map((row) => `<tr>${row.join('')}</tr>`).join('')}
+  </table>`
+}
+
+const STRUCTURE_COLORS = {
+  work: '#00d5b4',
+  weak: '#f5a623',
+  longIdle: '#d1495b',
+  go: '#004ecf',
+  track: '#e8ebf0',
+}
+
+function structureShare(part: number, total: number) {
+  if (total <= 0) return 0
+  return Math.round((part / total) * 1000) / 10
+}
+
+function structureBarEmail(workSec: number, weakSec: number, longIdleSec: number, goSec: number, totalSec: number) {
+  if (totalSec <= 0) {
+    return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr><td style="height:16px;background:${STRUCTURE_COLORS.track};border-radius:999px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`
+  }
+
+  const segments = [
+    { width: structureShare(workSec, totalSec), color: STRUCTURE_COLORS.work },
+    { width: structureShare(weakSec, totalSec), color: STRUCTURE_COLORS.weak },
+    { width: structureShare(longIdleSec, totalSec), color: STRUCTURE_COLORS.longIdle },
+    { width: structureShare(goSec, totalSec), color: STRUCTURE_COLORS.go },
+  ].filter((segment) => segment.width > 0)
+
+  const cells = segments
+    .map(
+      (segment) =>
+        `<td width="${segment.width}%" style="background:${segment.color};height:16px;font-size:0;line-height:0;">&nbsp;</td>`,
+    )
+    .join('')
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;background:${STRUCTURE_COLORS.track};border-radius:999px;overflow:hidden;"><tr>${cells}</tr></table>`
+}
+
+function structureLegendEmail() {
+  const items = [
+    [STRUCTURE_COLORS.work, 'Активность'],
+    [STRUCTURE_COLORS.weak, 'Слабая активность'],
+    [STRUCTURE_COLORS.longIdle, 'Длительный простой'],
+    [STRUCTURE_COLORS.go, 'Ходьба между зонами'],
+  ]
+
+  const cells = items
+    .map(
+      ([color, label]) =>
+        `<td style="padding:0 12px 10px 0;font-size:11px;color:${COLORS.textMuted};white-space:nowrap;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};vertical-align:middle;margin-right:6px;"></span>${label}
+        </td>`,
+    )
+    .join('')
+
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>`
+}
+
+function brigadeStatCellEmail(label: string, value: string, alert = false) {
+  const background = alert ? COLORS.alertSoft : COLORS.surface2
+  const border = alert ? COLORS.alertBorder : COLORS.border
+  const valueColor = alert ? COLORS.alert : COLORS.textH
+
+  return `<td width="50%" style="padding:0 5px 10px 0;vertical-align:top;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${border};border-radius:16px;background:${background};border-collapse:separate;">
+      <tr><td style="padding:12px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:${COLORS.textMuted};">${label}</div>
+        <div style="font-size:18px;font-weight:700;color:${valueColor};margin-top:6px;">${value}</div>
+      </td></tr>
+    </table>
+  </td>`
+}
+
+function brigadeStatCellEmailRight(label: string, value: string) {
+  return `<td width="50%" style="padding:0 0 10px 5px;vertical-align:top;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${COLORS.border};border-radius:16px;background:${COLORS.surface2};border-collapse:separate;">
+      <tr><td style="padding:12px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:${COLORS.textMuted};">${label}</div>
+        <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:6px;">${value}</div>
+      </td></tr>
+    </table>
+  </td>`
+}
+
+function brigadeBadgeEmail(activityPct: number) {
+  const warn = activityPct < 40
+  const background = warn ? COLORS.alertSoft : COLORS.brandSoft
+  const color = warn ? COLORS.alert : COLORS.brand
+  return `<div style="display:inline-block;min-width:64px;padding:8px 12px;border-radius:999px;background:${background};color:${color};font-weight:700;text-align:center;">${pct(activityPct)}</div>`
+}
+
+function brigadeCardEmail(card: {
+  supervisor_name: string
+  subtitle: string
+  activity_pct: number
+  work_sec: number
+  weak_activity_sec: number
+  long_idle_sec: number
+  go_sec: number
+  total_sec: number
+  weak_activity_pct: number
+  long_idle_pct: number
+  go_pct: number
+  kpp_label: string
+  kpp_value: string
+  kpp_alert: boolean
+  shift_duration: string
+}) {
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};border-collapse:separate;">
+    <tr><td style="padding:18px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:14px;">
+        <tr>
+          <td valign="top">
+            <div style="font-size:16px;font-weight:700;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</div>
+            <div style="font-size:13px;color:${COLORS.textMuted};margin-top:6px;">${escapeHtml(card.subtitle)}</div>
+          </td>
+          <td align="right" valign="top">${brigadeBadgeEmail(card.activity_pct)}</td>
+        </tr>
+      </table>
+      ${structureBarEmail(card.work_sec, card.weak_activity_sec, card.long_idle_sec, card.go_sec, card.total_sec)}
+      <div style="margin-top:10px;">${structureLegendEmail()}</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:6px;">
+        <tr>
+          ${brigadeStatCellEmail('Активность', pct(card.activity_pct))}
+          ${brigadeStatCellEmailRight('Слабая активность', pct(card.weak_activity_pct))}
+        </tr>
+        <tr>
+          ${brigadeStatCellEmail('Длительный простой', pct(card.long_idle_pct))}
+          ${brigadeStatCellEmailRight('Ходьба между зонами', pct(card.go_pct))}
+        </tr>
+        <tr>
+          ${brigadeStatCellEmail(card.kpp_label, card.kpp_value, card.kpp_alert)}
+          ${brigadeStatCellEmailRight('Длительность смены', card.shift_duration)}
+        </tr>
+      </table>
+    </td></tr>
+  </table>`
+}
+
+function brigadeCardPayloadDaily(row: BrigadeDailyRow) {
+  return {
+    supervisor_name: row.supervisor_name,
+    subtitle: `${formatBrigadeShiftHeadcount(row.supervisor_name, row.workers)} на смене`,
+    activity_pct: row.activity_pct,
+    work_sec: row.work_sec,
+    weak_activity_sec: row.weak_activity_sec,
+    long_idle_sec: row.long_idle_sec,
+    go_sec: row.go_sec,
+    total_sec: row.total_sec,
+    weak_activity_pct: row.weak_activity_pct,
+    long_idle_pct: row.long_idle_pct,
+    go_pct: row.go_pct,
+    kpp_label: 'На КПП',
+    kpp_value: row.kpp_workers > 0 ? `${row.kpp_workers} чел.` : 'нет',
+    kpp_alert: row.kpp_workers > 0,
+    shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
+  }
+}
+
+function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow) {
+  return {
+    supervisor_name: row.supervisor_name,
+    subtitle: `≈ ${row.avg_workers} чел./день · ${row.unique_employees} уникальных`,
+    activity_pct: row.activity_pct,
+    work_sec: row.work_sec,
+    weak_activity_sec: row.weak_activity_sec,
+    long_idle_sec: row.long_idle_sec,
+    go_sec: row.go_sec,
+    total_sec: row.total_sec,
+    weak_activity_pct: row.weak_activity_pct,
+    long_idle_pct: row.long_idle_pct,
+    go_pct: row.go_pct,
+    kpp_label: 'Замечены на КПП',
+    kpp_value: row.kpp_shifts > 0 ? String(row.kpp_shifts) : 'нет',
+    kpp_alert: row.kpp_shifts > 0,
+    shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
+  }
+}
+
+function brigadeCardsEmailDaily(rows: BrigadeDailyRow[]) {
+  return rows.map((row) => brigadeCardEmail(brigadeCardPayloadDaily(row))).join('')
+}
+
+function brigadeCardsEmailWeekly(rows: BrigadeWeeklyRow[]) {
+  return rows.map((row) => brigadeCardEmail(brigadeCardPayloadWeekly(row))).join('')
 }
 
 function shiftActivityPct(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
@@ -501,7 +963,7 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
           <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
           <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
         </td>
-        <td align="right" style="padding:12px 14px 12px 8px;vertical-align:middle;font-weight:700;color:${COLORS.textH};white-space:nowrap;">${pct(row.activity_pct)}</td>
+        <td align="right" style="padding:12px 14px 12px 8px;vertical-align:middle;font-weight:700;color:${COLORS.textH};">${pct(row.activity_pct)}</td>
       </tr>
     </table>`,
     )
@@ -516,33 +978,6 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
   </details>`
 }
 
-function shiftDurationBlock(
-  rows: Array<{ supervisor_name: string; avg_shift_duration_sec: number }>,
-  periodLabel: string,
-) {
-  const withData = rows.filter((row) => row.avg_shift_duration_sec > 0)
-  if (withData.length === 0) {
-    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Нет данных о длительности смены ${periodLabel}.</div>`
-  }
-
-  const items = withData
-    .map(
-      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
-      <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</div>
-      <div style="font-weight:700;color:${COLORS.textH};white-space:nowrap;">${formatShiftDuration(row.avg_shift_duration_sec)}</div>
-    </div>`,
-    )
-    .join('')
-
-  return `<details style="margin-top:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};overflow:hidden;">
-    <summary style="padding:16px 20px;font-weight:700;color:${COLORS.textH};cursor:pointer;list-style:none;">
-      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Длительность смены</span>
-      Среднее время смены ${periodLabel}
-    </summary>
-    <div style="padding:0 16px 16px;">${items}</div>
-  </details>`
-}
-
 function attentionBlock(rows: AttentionRow[], periodLabel: string) {
   if (rows.length === 0) {
     return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Сотрудников с активностью ниже 30% ${periodLabel} нет.</div>`
@@ -550,13 +985,13 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string) {
 
   const items = rows
     .map(
-      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
-      <div>
-        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
-        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
-      </div>
-      <div style="font-weight:700;color:${COLORS.alert};white-space:nowrap;">${pct(row.activity_pct)}</div>
-    </div>`,
+      (row) =>
+        personRowHtml(
+          escapeHtml(row.full_name),
+          `#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}`,
+          pct(row.activity_pct),
+          true,
+        ),
     )
     .join('')
 
@@ -567,64 +1002,6 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string) {
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
-}
-
-function brigadeTableDaily(rows: BrigadeDailyRow[]) {
-  const body = rows
-    .map(
-      (row) => `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${formatBrigadeShiftHeadcount(row.supervisor_name, row.workers)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_workers > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_workers > 0 ? row.kpp_workers : '—'}</td>
-    </tr>`,
-    )
-    .join('')
-
-  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px;">
-    <thead><tr style="background:${COLORS.surface2};color:${COLORS.textMuted};text-align:left;">
-      <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Вышло</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Слабая активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Длительный простой</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">На КПП</th>
-    </tr></thead>
-    <tbody>${body}</tbody>
-  </table>`
-}
-
-function brigadeTableWeekly(rows: BrigadeWeeklyRow[]) {
-  const body = rows
-    .map(
-      (row) => `<tr>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};font-weight:600;color:${COLORS.textH};">${escapeHtml(row.supervisor_name)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${row.avg_workers}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.weak_activity_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.long_idle_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;">${pct(row.go_pct)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid ${COLORS.border};text-align:center;color:${row.kpp_shifts > 0 ? COLORS.alert : COLORS.textH};">${row.kpp_shifts > 0 ? row.kpp_shifts : '—'}</td>
-    </tr>`,
-    )
-    .join('')
-
-  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px;">
-    <thead><tr style="background:${COLORS.surface2};color:${COLORS.textMuted};text-align:left;">
-      <th style="padding:10px 12px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Бригада</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Чел./день</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Слабая активность</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Длительный простой</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Ходьба между зонами</th>
-      <th style="padding:10px 12px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Замечены на КПП</th>
-    </tr></thead>
-    <tbody>${body}</tbody>
-  </table>`
 }
 
 type BrigadeDynamicsPoint = {
@@ -699,23 +1076,25 @@ function dynamicsCardHtml(
     </div>`
     : ''
 
-  return `<div style="padding:20px;border-radius:20px;border:1px solid ${COLORS.border};background:${COLORS.surface};">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px;">
-      <strong style="font-size:18px;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</strong>
-      <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">Активность</span>
-    </div>
-    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:16px;border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
-      <div>
-        <span style="display:block;color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</span>
-        <strong style="font-size:32px;line-height:1;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</strong>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatDeltaPercent(card.delta)}</div>
-        <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
-      </div>
-    </div>
-    ${sparklineSection}
-  </div>`
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface};border-collapse:separate;">
+    <tr><td style="padding:20px;">
+      <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-bottom:4px;">${escapeHtml(card.supervisor_name)}</div>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};margin-bottom:16px;">Активность</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
+        <tr>
+          <td valign="top" style="padding:16px 12px 16px 16px;">
+            <div style="color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</div>
+            <div style="font-size:32px;line-height:1;font-weight:700;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</div>
+          </td>
+          <td align="right" valign="top" style="padding:16px 16px 16px 12px;">
+            <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatDeltaPercent(card.delta)}</div>
+            <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
+          </td>
+        </tr>
+      </table>
+      ${sparklineSection}
+    </td></tr>
+  </table>`
 }
 
 function activityDynamicsBlock(
@@ -734,10 +1113,12 @@ function activityDynamicsBlock(
     )
     .join('')
 
-  return `<div style="margin-top:20px;">
-    <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика показателей активности</h3>
-    <table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>${cells}</tr></table>
-  </div>`
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+    <tr><td>
+      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика показателей активности</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>
+    </td></tr>
+  </table>`
 }
 
 async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
@@ -835,6 +1216,46 @@ async function loadBrigadeWeeklyActivityDynamics(
   })
 }
 
+function dynamicsPdfCards(
+  cards: BrigadeDynamicsCard[],
+  options: { comparePrefix: string; emptyCompare: string },
+  sparklineTitle?: string,
+) {
+  return cards.map((card) => ({
+    name: card.supervisor_name,
+    value: card.today_pct != null ? pct(card.today_pct) : '—',
+    delta: formatDeltaPercent(card.delta),
+    compare:
+      card.prior_pct != null
+        ? `${options.comparePrefix} (${pct(card.prior_pct)})`
+        : options.emptyCompare,
+    sparkline: (card.sparkline ?? []).map((point) => ({
+      label: ruShort(point.report_date),
+      value: point.activity_pct,
+    })),
+    sparklineTitle,
+  }))
+}
+
+function personPdfRows(rows: Array<{ full_name: string; employee_number?: string; supervisor_name?: string | null; activity_pct?: number; kpp_time?: string }>, mode: 'activity' | 'kpp') {
+  return rows.map((row) => ({
+    name: row.full_name,
+    meta:
+      mode === 'kpp'
+        ? `#${row.employee_number ?? '—'} · ${row.supervisor_name ?? 'Без начальника'}`
+        : `#${row.employee_number ?? '—'} · ${row.supervisor_name ?? 'Без начальника'}`,
+    value: mode === 'kpp' ? (row.kpp_time ?? '—') : pct(row.activity_pct ?? 0),
+  }))
+}
+
+function dailyPdfFilename(date: string) {
+  return `legenda-daily-${date}.pdf`
+}
+
+function weeklyPdfFilename(weekStart: string) {
+  return `legenda-weekly-${weekStart}.pdf`
+}
+
 function kppBlock(rows: KppRow[]) {
   if (rows.length === 0) {
     return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">На КПП никого не фиксировалось.</div>`
@@ -842,15 +1263,12 @@ function kppBlock(rows: KppRow[]) {
 
   const items = rows
     .map(
-      (row) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:${COLORS.surface};border:1px solid ${COLORS.border};margin-bottom:8px;">
-      <div>
-        <div style="font-weight:700;color:${COLORS.textH};">${escapeHtml(row.full_name)}</div>
-        <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}</div>
-      </div>
-      <div style="text-align:right;white-space:nowrap;">
-        <div style="font-size:14px;font-weight:600;color:${COLORS.textH};">${escapeHtml(row.kpp_time)}</div>
-      </div>
-    </div>`,
+      (row) =>
+        personRowHtml(
+          escapeHtml(row.full_name),
+          `#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}`,
+          escapeHtml(row.kpp_time),
+        ),
     )
     .join('')
 
@@ -882,6 +1300,10 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeActivityDynamics(supabase, date)
+  const zoneRows = await loadZoneRows(supabase, date, date)
+  const idleEpisodes = await loadIdleEpisodes(supabase, date, date)
+  const idleByZone = aggregateIdleByZone(idleEpisodes)
+  const idleTotalMin = idleEpisodes.reduce((sum, episode) => sum + episode.duration_min, 0)
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -902,40 +1324,97 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
-    <div style="padding:24px 24px 8px;">
+    <tr><td style="padding:24px 24px 8px;">
       <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Ежедневный отчёт</div>
       <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}</h1>
-    </div>
-    <div style="padding:8px 24px 24px;">
-      <table style="width:100%;border-collapse:separate;border-spacing:8px;table-layout:fixed;">
-        <tr>
-          ${metricCell('Вышло на смену', formatShiftHeadcount(totals.workers), false, '33.33%')}
-          ${metricCell('Активность', pct(activity), false, '33.33%')}
-          ${metricCell('Слабая активность', pct(weakActivity), false, '33.33%')}
-        </tr>
-        <tr>
-          ${metricCell('Длительный простой', pct(longIdle), false, '33.33%')}
-          ${metricCell('Ходьба между зонами', pct(go), false, '33.33%')}
-          ${metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0, '33.33%')}
-        </tr>
-      </table>
-      <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
-      ${brigadeTableDaily(brigades)}
+    </td></tr>
+    <tr><td style="padding:8px 24px 24px;">
+      ${metricsGrid([
+        [
+          metricCell('Вышло на смену', formatShiftHeadcount(totals.workers)),
+          metricCell('Активность', pct(activity)),
+          metricCell('Слабая активность', pct(weakActivity)),
+        ],
+        [
+          metricCell('Длительный простой', pct(longIdle)),
+          metricCell('Ходьба между зонами', pct(go)),
+          metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0),
+        ],
+      ])}
+      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
+      ${brigadeCardsEmailDaily(brigades)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За день',
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
         sparklineTitle: `7 дней до ${ru(date)}`,
       })}
-      ${shiftDurationBlock(brigades, 'за день')}
+      ${zonesBlockEmail({
+        periodLabel: 'за день',
+        locationDescription: 'Где сотрудники проводили время за день.',
+        idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
+        idleSummaryLabel: 'Всего за день',
+        zoneRows,
+        idleByZone,
+        idleEpisodeCount: idleEpisodes.length,
+        idleTotalMin,
+      })}
       ${topActivityBlock(topActivity, 'за день')}
       ${attentionBlock(attention, 'за день')}
       ${kppBlock(kpp)}
-    </div>
+    </td></tr>
   ${EMAIL_WRAP_END}`
 
+  const pdfPayload: ReportPdfPayload = {
+    title: 'Ежедневный отчёт',
+    subtitle: `Смена за ${ru(date)}`,
+    metrics: [
+      { label: 'Вышло на смену', value: formatShiftHeadcount(totals.workers) },
+      { label: 'Активность', value: pct(activity) },
+      { label: 'Слабая активность', value: pct(weakActivity) },
+      { label: 'Длительный простой', value: pct(longIdle) },
+      { label: 'Ходьба между зонами', value: pct(go) },
+      { label: 'Замечены на КПП', value: String(totals.kpp_workers) },
+    ],
+    brigadeSectionTitle: 'По бригадам',
+    brigadeCards: brigades.map(brigadeCardPayloadDaily),
+    dynamicsTitle: 'Динамика показателей активности',
+    dynamicsPeriodLabel: 'За день',
+    dynamicsCards: dynamicsPdfCards(
+      dynamics,
+      {
+        comparePrefix: 'к вчера',
+        emptyCompare: 'нет данных за вчера',
+      },
+      `7 дней до ${ru(date)}`,
+    ),
+    ...zonesPdfPayload({
+      zoneRows,
+      idleByZone,
+      idleEpisodeCount: idleEpisodes.length,
+      idleTotalMin,
+      periodLabel: 'за день',
+      locationDescription: 'Где сотрудники проводили время за день.',
+      idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
+      idleSummaryLabel: 'Всего за день',
+    }),
+    topActivityTitle: 'Топ 3 по активности за день',
+    topActivityRows: personPdfRows(topActivity, 'activity'),
+    attentionTitle: 'Требуют внимания (активность ниже 30%)',
+    attentionRows: personPdfRows(attention, 'activity'),
+    kppTitle: 'Контроль КПП',
+    kppRows: personPdfRows(kpp, 'kpp'),
+  }
+
   const subject = `Ежедневный отчёт Legenda — ${ruShort(date)}`
-  return { html, subject, periodKey: date, hasData: brigades.length > 0 }
+  return {
+    html,
+    subject,
+    periodKey: date,
+    hasData: brigades.length > 0,
+    pdfPayload,
+    pdfFilename: dailyPdfFilename(date),
+  }
 }
 
 async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, weekStart: string) {
@@ -957,6 +1436,10 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd)
+  const zoneRows = await loadZoneRows(supabase, weekStart, weekEnd)
+  const idleEpisodes = await loadIdleEpisodes(supabase, weekStart, weekEnd)
+  const idleByZone = aggregateIdleByZone(idleEpisodes)
+  const idleTotalMin = idleEpisodes.reduce((sum, episode) => sum + episode.duration_min, 0)
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -976,36 +1459,90 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
   const html = `${EMAIL_WRAP_START}
-    <div style="padding:24px 24px 8px;">
+    <tr><td style="padding:24px 24px 8px;">
       <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Еженедельный отчёт</div>
       <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}</h1>
-    </div>
-    <div style="padding:8px 24px 24px;">
-      <table style="width:100%;border-collapse:separate;border-spacing:8px;table-layout:fixed;">
-        <tr>
-          ${metricCell('Активность', pct(activity), false, '20%')}
-          ${metricCell('Слабая активность', pct(weakActivity), false, '20%')}
-          ${metricCell('Длительный простой', pct(longIdle), false, '20%')}
-          ${metricCell('Ходьба между зонами', pct(go), false, '20%')}
-          ${metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '20%')}
-        </tr>
-      </table>
-      <h3 style="margin:20px 0 0;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
-      ${brigadeTableWeekly(brigades)}
+    </td></tr>
+    <tr><td style="padding:8px 24px 24px;">
+      ${metricsGrid([
+        [
+          metricCell('Активность', pct(activity), false, '20%'),
+          metricCell('Слабая активность', pct(weakActivity), false, '20%'),
+          metricCell('Длительный простой', pct(longIdle), false, '20%'),
+          metricCell('Ходьба между зонами', pct(go), false, '20%'),
+          metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '20%'),
+        ],
+      ])}
+      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
+      ${brigadeCardsEmailWeekly(brigades)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой неделе',
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
-      ${shiftDurationBlock(brigades, 'за неделю')}
+      ${zonesBlockEmail({
+        periodLabel: 'за неделю',
+        locationDescription: 'Где сотрудники проводили время за неделю.',
+        idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
+        idleSummaryLabel: 'Всего за неделю',
+        zoneRows,
+        idleByZone,
+        idleEpisodeCount: idleEpisodes.length,
+        idleTotalMin,
+      })}
       ${topActivityBlock(topActivity, 'за неделю')}
       ${attentionBlock(attention, 'за неделю')}
-    </div>
+    </td></tr>
   ${EMAIL_WRAP_END}`
 
+  const pdfPayload: ReportPdfPayload = {
+    title: 'Еженедельный отчёт',
+    subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+    metrics: [
+      { label: 'Активность', value: pct(activity) },
+      { label: 'Слабая активность', value: pct(weakActivity) },
+      { label: 'Длительный простой', value: pct(longIdle) },
+      { label: 'Ходьба между зонами', value: pct(go) },
+      { label: 'Замечены на КПП', value: String(totals.kpp_shifts) },
+    ],
+    brigadeSectionTitle: 'По бригадам за неделю',
+    brigadeCards: brigades.map(brigadeCardPayloadWeekly),
+    dynamicsTitle: 'Динамика показателей активности',
+    dynamicsPeriodLabel: 'За неделю',
+    dynamicsCards: dynamicsPdfCards(
+      dynamics,
+      {
+        comparePrefix: 'к прошлой неделе',
+        emptyCompare: 'нет данных за прошлую неделю',
+      },
+      `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+    ),
+    ...zonesPdfPayload({
+      zoneRows,
+      idleByZone,
+      idleEpisodeCount: idleEpisodes.length,
+      idleTotalMin,
+      periodLabel: 'за неделю',
+      locationDescription: 'Где сотрудники проводили время за неделю.',
+      idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
+      idleSummaryLabel: 'Всего за неделю',
+    }),
+    topActivityTitle: 'Топ 3 по активности за неделю',
+    topActivityRows: personPdfRows(topActivity, 'activity'),
+    attentionTitle: 'Требуют внимания (активность ниже 30%)',
+    attentionRows: personPdfRows(attention, 'activity'),
+  }
+
   const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}`
-  return { html, subject, periodKey: weekStart, hasData: brigades.length > 0 }
+  return {
+    html,
+    subject,
+    periodKey: weekStart,
+    hasData: brigades.length > 0,
+    pdfPayload,
+    pdfFilename: weeklyPdfFilename(weekStart),
+  }
 }
 
 async function listRecipients(supabase: ReturnType<typeof getAdminClient>) {
@@ -1039,7 +1576,12 @@ async function replaceRecipients(supabase: ReturnType<typeof getAdminClient>, re
   return listRecipients(supabase)
 }
 
-async function sendEmails(subject: string, html: string, recipients: string[]) {
+async function sendEmails(
+  subject: string,
+  html: string,
+  recipients: string[],
+  pdfAttachment?: { filename: string; content: Uint8Array },
+) {
   const hostname = Deno.env.get('SMTP_HOST')
   const port = Number(Deno.env.get('SMTP_PORT') ?? '465')
   const username = Deno.env.get('SMTP_USER')
@@ -1067,6 +1609,16 @@ async function sendEmails(subject: string, html: string, recipients: string[]) {
         to,
         subject,
         html: fullHtml,
+        attachments: pdfAttachment
+          ? [
+              {
+                filename: pdfAttachment.filename,
+                content: Buffer.from(pdfAttachment.content),
+                contentType: 'application/pdf',
+                contentDisposition: 'attachment',
+              },
+            ]
+          : undefined,
       })
     }
   } finally {
@@ -1138,6 +1690,28 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: `Нет данных за период ${report.periodKey}` }, 400)
     }
 
+    const triggeredBy = request.headers.get('x-triggered-by') ?? 'manual'
+    if (triggeredBy === 'schedule') {
+      const { data: existing } = await supabase
+        .from('email_log')
+        .select('id')
+        .eq('report_type', type)
+        .eq('period_key', report.periodKey)
+        .eq('status', 'sent')
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        return jsonResponse({
+          ok: true,
+          skipped: true,
+          reason: 'already_sent',
+          reportType: type,
+          periodKey: report.periodKey,
+        })
+      }
+    }
+
     const allRecipients = await listRecipients(supabase)
     const targets = allRecipients
       .filter((row) => row.active && (type === 'daily' ? row.daily : row.weekly))
@@ -1148,13 +1722,41 @@ Deno.serve(async (request) => {
     }
 
     try {
-      await sendEmails(report.subject, report.html, targets)
+      let pdfAttachment: { filename: string; content: Uint8Array } | undefined
+      let pdfAttached = false
+      let pdfError: string | null = null
+
+      try {
+        const { renderReportPdf } = await import('./pdf.ts')
+        const pdfBytes = await renderReportPdf(report.pdfPayload)
+        if (pdfBytes.byteLength < 100) {
+          throw new Error(`PDF слишком маленький (${pdfBytes.byteLength} байт)`)
+        }
+        pdfAttachment = { filename: report.pdfFilename, content: pdfBytes }
+        pdfAttached = true
+      } catch (error) {
+        pdfError = getErrorMessage(error)
+        console.error('PDF generation failed:', pdfError)
+        throw new Error(`Письмо не отправлено: не удалось создать PDF (${pdfError})`)
+      }
+
+      await sendEmails(report.subject, report.html, targets, pdfAttachment)
       await supabase.from('email_log').insert({
         report_type: type,
         period_key: report.periodKey,
         recipients: targets,
         status: 'sent',
         triggered_by: request.headers.get('x-triggered-by') ?? 'manual',
+        error_message: pdfAttached ? null : pdfError ? `PDF не создан: ${pdfError}` : null,
+      })
+
+      return jsonResponse({
+        ok: true,
+        reportType: type,
+        periodKey: report.periodKey,
+        recipients: targets,
+        pdfAttached,
+        pdfError,
       })
     } catch (sendError) {
       await supabase.from('email_log').insert({
@@ -1167,8 +1769,6 @@ Deno.serve(async (request) => {
       })
       throw sendError
     }
-
-    return jsonResponse({ ok: true, reportType: type, periodKey: report.periodKey, recipients: targets })
   } catch (error) {
     return jsonResponse({ error: getErrorMessage(error) }, 500)
   }
