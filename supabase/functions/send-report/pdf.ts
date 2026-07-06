@@ -14,9 +14,6 @@ export type BrigadeCardPayload = {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
-  kpp_label: string
-  kpp_value: string
-  kpp_alert: boolean
   shift_duration: string
 }
 
@@ -56,12 +53,6 @@ export type ReportPdfPayload = {
   }>
   zonesTitle: string
   zonesBrigadeSections: BrigadeZonesPdfSection[]
-  topActivityTitle: string
-  topActivityRows: Array<{ name: string; meta: string; value: string }>
-  attentionTitle: string
-  attentionRows: Array<{ name: string; meta: string; value: string }>
-  kppTitle?: string
-  kppRows?: Array<{ name: string; meta: string; value: string }>
 }
 
 const PAGE_WIDTH = 595.28
@@ -416,7 +407,7 @@ class PdfWriter {
     const innerPad = compact ? 14 : 18
     const statGap = compact ? 8 : 8
     const statWidth = (cardWidth - innerPad * 2 - statGap) / 2
-    const statRows = compact ? 3 : 3
+    const statRows = compact ? 2 : 2
     const statHeight = compact ? 48 : 60
     const headerBlock = compact ? 28 : 44
     const barHeight = compact ? 10 : 16
@@ -488,15 +479,7 @@ class PdfWriter {
     )
 
     statTop += statHeight + statGap
-    this.miniStat(left + innerPad, statTop, statWidth, card.kpp_label, card.kpp_value, compact, card.kpp_alert)
-    this.miniStat(
-      left + innerPad + statWidth + statGap,
-      statTop,
-      statWidth,
-      'Длительность смены',
-      card.shift_duration,
-      compact,
-    )
+    this.miniStat(left + innerPad, statTop, statWidth, 'Длительность смены', card.shift_duration, compact)
 
     return cardHeight
   }
@@ -833,18 +816,6 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
       idleRows: section.zonesIdleRows,
       idleSummary: section.zonesIdleSummary,
     })
-  }
-
-  writer.newPage()
-  writer.sectionTitle(payload.topActivityTitle, 16)
-  writer.personList(payload.topActivityRows, 'Нет данных для топа по активности.', 'success')
-  writer.sectionTitle(payload.attentionTitle, 16)
-  writer.personList(payload.attentionRows, 'Сотрудников с активностью ниже 30% нет.', 'alert')
-
-  if (payload.kppTitle) {
-    writer.newPage()
-    writer.sectionTitle(payload.kppTitle, 16)
-    writer.personList(payload.kppRows ?? [], 'На КПП никого не фиксировалось.', 'alert')
   }
 
   writer.footer('Work Watch Analytics')

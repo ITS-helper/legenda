@@ -1,4 +1,5 @@
 import {
+  ACTIVITY_DYNAMICS_SPARKLINE_DAYS,
   formatDeltaPercent,
   formatFullDate,
   formatPercent,
@@ -16,36 +17,57 @@ function deltaClass(delta: number | null) {
   return delta > 0 ? 'dynamics-delta-up' : 'dynamics-delta-down'
 }
 
-function Sparkline({ points }: { points: BrigadeDynamicsCard['sparkline'] }) {
-  if (points.length < 2) {
-    return <div className="dynamics-sparkline dynamics-sparkline-empty">Мало данных за 7 дней</div>
+function Sparkline({
+  points,
+  referenceDate,
+}: {
+  points: BrigadeDynamicsCard['sparkline']
+  referenceDate: string
+}) {
+  const numericValues = points
+    .map((point) => point.activity_pct)
+    .filter((value): value is number => value != null)
+
+  if (numericValues.length < 2) {
+    return (
+      <div className="dynamics-sparkline dynamics-sparkline-empty">
+        Мало данных за {ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней
+      </div>
+    )
   }
 
-  const width = 168
-  const height = 44
-  const padding = 4
-  const values = points.map((point) => point.activity_pct)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const min = Math.min(...numericValues)
+  const max = Math.max(...numericValues)
   const range = max - min || 1
-  const coords = values.map((value, index) => {
-    const x = padding + (index / (values.length - 1)) * (width - padding * 2)
-    const y = height - padding - ((value - min) / range) * (height - padding * 2)
-    return { x, y }
-  })
-
-  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ')
-  const last = coords[coords.length - 1]
 
   return (
-    <div className="dynamics-sparkline">
-      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} aria-hidden="true">
-        <polyline className="dynamics-sparkline-line" points={polyline} />
-        <circle className="dynamics-sparkline-dot" cx={last.x} cy={last.y} r="3.5" />
-      </svg>
-      <div className="dynamics-sparkline-labels">
-        <span>{formatShortDate(points[0].report_date)}</span>
-        <span>{formatShortDate(points[points.length - 1].report_date)}</span>
+    <div className="dynamics-sparkline dynamics-sparkline-bars">
+      <div
+        className="dynamics-sparkline-chart"
+        style={{ gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))` }}
+      >
+        {points.map((point) => {
+          const isReference = point.report_date === referenceDate
+          const hasValue = point.activity_pct != null
+          const heightPct = hasValue ? ((point.activity_pct! - min) / range) * 100 : 0
+
+          return (
+            <div
+              className={`dynamics-sparkline-day${isReference ? ' dynamics-sparkline-day-ref' : ''}`}
+              key={point.report_date}
+            >
+              <div className="dynamics-sparkline-bar-track">
+                <div
+                  className={`dynamics-sparkline-bar${hasValue ? '' : ' dynamics-sparkline-bar-empty'}`}
+                  style={{ height: hasValue ? `${Math.max(heightPct, 10)}%` : '0%' }}
+                />
+              </div>
+              <span className={`dynamics-sparkline-date${isReference ? ' dynamics-sparkline-date-ref' : ''}`}>
+                {formatShortDate(point.report_date)}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -77,8 +99,10 @@ function DynamicsCard({ card, referenceDate }: { card: BrigadeDynamicsCard; refe
       </div>
 
       <div className="dynamics-sparkline-wrap">
-        <span className="dynamics-sparkline-title">7 дней до {formatFullDate(referenceDate)}</span>
-        <Sparkline points={card.sparkline} />
+        <span className="dynamics-sparkline-title">
+          {ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до {formatFullDate(referenceDate)}
+        </span>
+        <Sparkline points={card.sparkline} referenceDate={referenceDate} />
       </div>
     </article>
   )

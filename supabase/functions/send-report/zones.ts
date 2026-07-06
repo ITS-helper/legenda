@@ -20,6 +20,10 @@ export const ZONE_NAMES: Record<number, string> = {
 
 export const HIDDEN_ZONES = new Set<number>([0])
 export const ALERT_ZONES = new Set<number>([3, 6, 13])
+export const KPP_ZONE = 13
+
+/** Зоны, которые не показываем в email/PDF-отчётах. */
+export const REPORT_EXCLUDED_ZONES = new Set<number>([KPP_ZONE])
 
 export function parseZone(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null
@@ -36,6 +40,15 @@ export function zoneName(value: string | number | null | undefined): string {
 export function isHiddenZone(value: string | number | null | undefined): boolean {
   const zone = parseZone(value)
   return zone !== null && HIDDEN_ZONES.has(zone)
+}
+
+export function isReportExcludedZone(value: string | number | null | undefined): boolean {
+  const zone = parseZone(value)
+  return zone !== null && REPORT_EXCLUDED_ZONES.has(zone)
+}
+
+export function visibleReportZoneRows(rows: ZoneRow[]): ZoneRow[] {
+  return rows.filter((row) => !isReportExcludedZone(row.zona))
 }
 
 export function isAlertZone(value: string | number | null | undefined): boolean {

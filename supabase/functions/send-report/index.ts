@@ -7,6 +7,7 @@ import {
   isAlertZone,
   isHiddenZone,
   ratio,
+  visibleReportZoneRows,
   zoneName,
   type IdleZoneRow,
   type ZoneRow,
@@ -822,9 +823,6 @@ function brigadeCardEmail(card: {
   weak_activity_pct: number
   long_idle_pct: number
   go_pct: number
-  kpp_label: string
-  kpp_value: string
-  kpp_alert: boolean
   shift_duration: string
 }) {
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};border-collapse:separate;">
@@ -850,8 +848,7 @@ function brigadeCardEmail(card: {
           ${brigadeStatCellEmailRight('Ходьба между зонами', pct(card.go_pct))}
         </tr>
         <tr>
-          ${brigadeStatCellEmail(card.kpp_label, card.kpp_value, card.kpp_alert)}
-          ${brigadeStatCellEmailRight('Длительность смены', card.shift_duration)}
+          ${brigadeStatCellEmail('Длительность смены', card.shift_duration)}
         </tr>
       </table>
     </td></tr>
@@ -871,9 +868,6 @@ function brigadeCardPayloadDaily(row: BrigadeDailyRow) {
     weak_activity_pct: row.weak_activity_pct,
     long_idle_pct: row.long_idle_pct,
     go_pct: row.go_pct,
-    kpp_label: 'На КПП',
-    kpp_value: row.kpp_workers > 0 ? `${row.kpp_workers} чел.` : 'нет',
-    kpp_alert: row.kpp_workers > 0,
     shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
   }
 }
@@ -891,9 +885,6 @@ function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow) {
     weak_activity_pct: row.weak_activity_pct,
     long_idle_pct: row.long_idle_pct,
     go_pct: row.go_pct,
-    kpp_label: 'Замечены на КПП',
-    kpp_value: row.kpp_shifts > 0 ? String(row.kpp_shifts) : 'нет',
-    kpp_alert: row.kpp_shifts > 0,
     shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
   }
 }
@@ -1060,8 +1051,10 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string) {
 
 type BrigadeDynamicsPoint = {
   report_date: string
-  activity_pct: number
+  activity_pct: number | null
 }
+
+const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = 14
 
 type BrigadeDynamicsCard = {
   supervisor_name: string
@@ -1069,6 +1062,18 @@ type BrigadeDynamicsCard = {
   prior_pct: number | null
   delta: number | null
   sparkline?: BrigadeDynamicsPoint[]
+}
+
+function buildBrigadeSparkline(
+  brigadeDaily: Array<{ report_date: string; activity_pct: number }>,
+  referenceDate: string,
+) {
+  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
+  const byDate = new Map(brigadeDaily.map((row) => [row.report_date, row.activity_pct]))
+  return listDatesInclusive(sparklineStart, referenceDate).map((report_date) => ({
+    report_date,
+    activity_pct: byDate.get(report_date) ?? null,
+  }))
 }
 
 function deltaColor(delta: number | null) {
@@ -1079,23 +1084,27 @@ function deltaColor(delta: number | null) {
 const SPARKLINE_BAR_SOFT = 'rgba(0, 78, 207, 0.35)'
 
 function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
-  if (points.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за 7 дней</div>`
+  const numeric = points.map((point) => point.activity_pct).filter((value): value is number => value != null)
+  if (numeric.length < 2) {
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за ${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней</div>`
   }
 
   const chartHeight = 44
   const barWidth = Math.max(10, Math.min(16, Math.floor(168 / points.length) - 2))
-  const values = points.map((point) => point.activity_pct)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const min = Math.min(...numeric)
+  const max = Math.max(...numeric)
   const range = max - min || 1
 
-  const bars = values
-    .map((value, index) => {
-      const barHeight = Math.max(6, Math.round(((value - min) / range) * (chartHeight - 10)) + 6)
-      const isLast = index === values.length - 1
-      return `<td valign="bottom" style="padding:0 2px;height:${chartHeight}px;">
-        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};border-radius:4px 4px 0 0;font-size:0;line-height:0;">&nbsp;</div>
+  const bars = points
+    .map((point, index) => {
+      const isLast = index === points.length - 1
+      const value = point.activity_pct
+      const heightPct = value == null ? 0 : (value - min) / range
+      const barHeight = value == null ? 2 : Math.max(6, Math.round(heightPct * (chartHeight - 10)) + 6)
+      const opacity = value == null ? 0.12 : 1
+      return `<td valign="bottom" style="padding:0 2px;height:${chartHeight}px;text-align:center;">
+        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};opacity:${opacity};border-radius:4px 4px 0 0;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+        <div style="font-size:9px;line-height:1.1;color:${COLORS.textMuted};margin-top:4px;white-space:nowrap;">${ruShort(point.report_date)}</div>
       </td>`
     })
     .join('')
@@ -1113,20 +1122,10 @@ function dynamicsCardHtml(
       : options.emptyCompare
 
   const sparkline = card.sparkline ?? []
-  const sparklineLabels =
-    sparkline.length >= 2
-      ? `<table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation" style="margin-top:4px;">
-        <tr>
-          <td align="left" style="font-size:11px;color:${COLORS.textMuted};">${ruShort(sparkline[0].report_date)}</td>
-          <td align="right" style="font-size:11px;color:${COLORS.textMuted};">${ruShort(sparkline[sparkline.length - 1].report_date)}</td>
-        </tr>
-      </table>`
-      : ''
   const sparklineSection = options.sparklineTitle
     ? `<div>
       <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
       ${buildSparklineEmail(sparkline)}
-      ${sparklineLabels}
     </div>`
     : ''
 
@@ -1176,7 +1175,7 @@ function activityDynamicsBlock(
 }
 
 async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
-  const sparklineStart = addDaysIso(referenceDate, -6)
+  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
   const priorDate = addDaysIso(referenceDate, -1)
 
   const { data, error } = await supabase!
@@ -1205,10 +1204,7 @@ async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminC
       today_pct: todayPct,
       prior_pct: priorPct,
       delta: todayPct != null && priorPct != null ? todayPct - priorPct : null,
-      sparkline: brigadeDaily.map((row) => ({
-        report_date: row.report_date,
-        activity_pct: row.activity_pct,
-      })),
+      sparkline: buildBrigadeSparkline(brigadeDaily, referenceDate),
     } satisfies BrigadeDynamicsCard
   })
 }
@@ -1283,9 +1279,9 @@ function dynamicsPdfCards(
       card.prior_pct != null
         ? `${options.comparePrefix} (${pct(card.prior_pct)})`
         : options.emptyCompare,
-    sparkline: (card.sparkline ?? []).map((point) => ({
+    sparkline: (card.sparkline ?? []).filter((point) => point.activity_pct != null).map((point) => ({
       label: ruShort(point.report_date),
-      value: point.activity_pct,
+      value: point.activity_pct!,
     })),
     sparklineTitle,
   }))
@@ -1344,15 +1340,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   if (brigadesError) throw brigadesError
   const brigades = (brigadesData ?? []) as BrigadeDailyRow[]
 
-  const kpp = await loadKppRows(supabase, date)
-
-  const { data: shiftData, error: shiftError } = await supabase!
-    .from('shift_daily_metrics')
-    .select('full_name, employee_number, supervisor_name, work_sec_total, total_sec_total')
-    .eq('report_date', date)
-  if (shiftError) throw shiftError
-  const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
-  const topActivity = topActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeActivityDynamics(supabase, date)
   const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, date, date)
   const idleEpisodes = await loadIdleEpisodes(supabase, date, date)
@@ -1361,7 +1348,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
     const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
     return {
       supervisor_name: brigade.supervisor_name,
-      zoneRows: zoneRowsByBrigade.get(brigade.supervisor_name) ?? [],
+      zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? []),
       idleByZone,
       idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
       idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
@@ -1376,10 +1363,9 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
-      acc.kpp_workers += row.kpp_workers
       return acc
     },
-    { workers: 0, work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_workers: 0 },
+    { workers: 0, work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
   const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
@@ -1401,7 +1387,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         [
           metricCell('Длительный простой', pct(longIdle)),
           metricCell('Ходьба между зонами', pct(go)),
-          metricCell('Замечены на КПП', String(totals.kpp_workers), totals.kpp_workers > 0),
         ],
       ])}
       <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
@@ -1410,7 +1395,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         periodLabel: 'За день',
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
-        sparklineTitle: `7 дней до ${ru(date)}`,
+        sparklineTitle: `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
       })}
       ${zonesBlockEmail({
         periodLabel: 'за день',
@@ -1419,9 +1404,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         idleSummaryLabel: 'Всего за день',
         sections: zoneSections,
       })}
-      ${topActivityBlock(topActivity, 'за день')}
-      ${attentionBlock(attention, 'за день')}
-      ${kppBlock(kpp)}
     </td></tr>
   ${EMAIL_WRAP_END}`
 
@@ -1434,7 +1416,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
-      { label: 'Замечены на КПП', value: String(totals.kpp_workers) },
     ],
     brigadeSectionTitle: 'По бригадам',
     brigadeCards: brigades.map(brigadeCardPayloadDaily),
@@ -1446,7 +1427,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
       },
-      `7 дней до ${ru(date)}`,
+      `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
     ),
     ...zonesPdfPayload({
       periodLabel: 'за день',
@@ -1455,12 +1436,6 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       idleSummaryLabel: 'Всего за день',
       sections: zoneSections,
     }),
-    topActivityTitle: 'Топ 3 по активности за день',
-    topActivityRows: personPdfRows(topActivity, 'activity'),
-    attentionTitle: 'Требуют внимания (активность ниже 30%)',
-    attentionRows: personPdfRows(attention, 'activity'),
-    kppTitle: 'Контроль КПП',
-    kppRows: personPdfRows(kpp, 'kpp'),
   }
 
   const subject = `Ежедневный отчёт Legenda — ${ruShort(date)}`
@@ -1484,14 +1459,6 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   const brigades = (data ?? []) as BrigadeWeeklyRow[]
   const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
 
-  const { data: shiftData, error: shiftError } = await supabase!
-    .from('shift_daily_metrics')
-    .select('full_name, employee_number, supervisor_name, work_sec_total, total_sec_total')
-    .gte('report_date', weekStart)
-    .lte('report_date', weekEnd)
-  if (shiftError) throw shiftError
-  const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
-  const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd)
   const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, weekStart, weekEnd)
   const idleEpisodes = await loadIdleEpisodes(supabase, weekStart, weekEnd)
@@ -1500,7 +1467,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
     return {
       supervisor_name: brigade.supervisor_name,
-      zoneRows: zoneRowsByBrigade.get(brigade.supervisor_name) ?? [],
+      zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? []),
       idleByZone,
       idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
       idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
@@ -1514,10 +1481,9 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       acc.long_idle_sec += row.long_idle_sec
       acc.go_sec += row.go_sec
       acc.total_sec += row.total_sec
-      acc.kpp_shifts += row.kpp_shifts
       return acc
     },
-    { work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0, kpp_shifts: 0 },
+    { work_sec: 0, weak_activity_sec: 0, long_idle_sec: 0, go_sec: 0, total_sec: 0 },
   )
   const activity = totals.total_sec > 0 ? (totals.work_sec / totals.total_sec) * 100 : 0
   const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
@@ -1532,11 +1498,10 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
         [
-          metricCell('Активность', pct(activity), false, '20%'),
-          metricCell('Слабая активность', pct(weakActivity), false, '20%'),
-          metricCell('Длительный простой', pct(longIdle), false, '20%'),
-          metricCell('Ходьба между зонами', pct(go), false, '20%'),
-          metricCell('Замечены на КПП', String(totals.kpp_shifts), totals.kpp_shifts > 0, '20%'),
+          metricCell('Активность', pct(activity), false, '25%'),
+          metricCell('Слабая активность', pct(weakActivity), false, '25%'),
+          metricCell('Длительный простой', pct(longIdle), false, '25%'),
+          metricCell('Ходьба между зонами', pct(go), false, '25%'),
         ],
       ])}
       <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
@@ -1554,8 +1519,6 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
         idleSummaryLabel: 'Всего за неделю',
         sections: zoneSections,
       })}
-      ${topActivityBlock(topActivity, 'за неделю')}
-      ${attentionBlock(attention, 'за неделю')}
     </td></tr>
   ${EMAIL_WRAP_END}`
 
@@ -1567,7 +1530,6 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
-      { label: 'Замечены на КПП', value: String(totals.kpp_shifts) },
     ],
     brigadeSectionTitle: 'По бригадам за неделю',
     brigadeCards: brigades.map(brigadeCardPayloadWeekly),
@@ -1588,10 +1550,6 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       idleSummaryLabel: 'Всего за неделю',
       sections: zoneSections,
     }),
-    topActivityTitle: 'Топ 3 по активности за неделю',
-    topActivityRows: personPdfRows(topActivity, 'activity'),
-    attentionTitle: 'Требуют внимания (активность ниже 30%)',
-    attentionRows: personPdfRows(attention, 'activity'),
   }
 
   const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}`

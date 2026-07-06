@@ -307,7 +307,31 @@ export async function loadBrigadeWeekly(weekStart: string) {
 
 export type BrigadeDynamicsPoint = {
   report_date: string
-  activity_pct: number
+  activity_pct: number | null
+}
+
+export const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = 14
+
+export function listDatesInclusive(startIso: string, endIso: string) {
+  const dates: string[] = []
+  let current = startIso
+  while (current <= endIso) {
+    dates.push(current)
+    current = addDaysIso(current, 1)
+  }
+  return dates
+}
+
+function buildBrigadeSparkline(
+  brigadeDaily: Array<{ report_date: string; activity_pct: number }>,
+  referenceDate: string,
+) {
+  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
+  const byDate = new Map(brigadeDaily.map((row) => [row.report_date, row.activity_pct]))
+  return listDatesInclusive(sparklineStart, referenceDate).map((report_date) => ({
+    report_date,
+    activity_pct: byDate.get(report_date) ?? null,
+  }))
 }
 
 export type BrigadeDynamicsCard = {
@@ -319,7 +343,7 @@ export type BrigadeDynamicsCard = {
 }
 
 export async function loadBrigadeActivityDynamics(referenceDate: string) {
-  const sparklineStart = addDaysIso(referenceDate, -6)
+  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
   const yesterday = addDaysIso(referenceDate, -1)
 
   const { data: dailyData, error: dailyError } = await supabase
@@ -351,10 +375,7 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
       today_pct: todayPct,
       yesterday_pct: yesterdayPct,
       day_delta: todayPct != null && yesterdayPct != null ? todayPct - yesterdayPct : null,
-      sparkline: brigadeDaily.map((row) => ({
-        report_date: row.report_date,
-        activity_pct: row.activity_pct,
-      })),
+      sparkline: buildBrigadeSparkline(brigadeDaily, referenceDate),
     } satisfies BrigadeDynamicsCard
   })
 }

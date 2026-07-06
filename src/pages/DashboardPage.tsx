@@ -714,7 +714,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         kicker="Блок 3 · Динамика"
         title="Динамика показателей активности"
-        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 7 дней."
+        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней."
       >
         <div className="filter-row">
           <label className="filter-field">
@@ -768,7 +768,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
 
         {!dailyLoading && !dailyError && selectedDate ? (
-          <div className="brigade-grid">
+          <div className="brigade-grid brigade-grid--zones">
             {dailyRows.map((brigade) => {
               const brigadeZones = zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? []
               const brigadeZoneTotalSec = brigadeZones.reduce((sum, row) => sum + row.sec, 0)

@@ -1356,6 +1356,33 @@
   gap: 16px;
 }
 
+.brigade-grid--zones {
+  align-items: stretch;
+}
+
+.brigade-grid--zones .brigade-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.brigade-grid--zones .zones-idle-grid {
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.brigade-grid--zones .zone-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.brigade-grid--zones .zone-list,
+.brigade-grid--zones .zone-panel > .kpp-empty {
+  flex: 1;
+}
+
 .structure-bar {
   height: 16px;
   border-radius: 999px;
@@ -1962,6 +1989,57 @@
   gap: 6px;
 }
 
+.dynamics-sparkline-bars {
+  width: 100%;
+}
+
+.dynamics-sparkline-chart {
+  display: grid;
+  gap: 4px;
+  align-items: end;
+}
+
+.dynamics-sparkline-day {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  min-width: 0;
+}
+
+.dynamics-sparkline-bar-track {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.dynamics-sparkline-bar {
+  width: 100%;
+  background: rgba(0, 78, 207, 0.35);
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+}
+
+.dynamics-sparkline-bar-empty {
+  background: transparent;
+}
+
+.dynamics-sparkline-day-ref .dynamics-sparkline-bar {
+  background: var(--brand);
+}
+
+.dynamics-sparkline-date {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.dynamics-sparkline-date-ref {
+  color: var(--brand);
+  font-weight: 700;
+}
+
 .dynamics-sparkline-empty {
   color: var(--text-muted);
   font-size: 13px;
@@ -1978,13 +2056,6 @@
 
 .dynamics-sparkline-dot {
   fill: var(--brand);
-}
-
-.dynamics-sparkline-labels {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 @media (max-width: 900px) {
