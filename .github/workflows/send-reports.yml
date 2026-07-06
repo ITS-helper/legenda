@@ -2,12 +2,9 @@ name: Send Reports
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # 12:00 МСК — ежедневный отчёт за вчера
-    - cron: '30 9 * * 1'  # 12:30 МСК понедельник — недельный отчёт
-    - cron: '0 11 * * *'  # 14:00 МСК — резервная попытка (дубликаты отсекаются в send-report)
-  workflow_run:
-    workflows: ['Sync Drive Reports']
-    types: [completed]
+    - cron: '0 5 * * *'   # 08:00 МСК — ежедневный отчёт за вчера
+    - cron: '30 5 * * 1'  # 08:30 МСК понедельник — недельный отчёт
+    - cron: '0 6 * * *'   # 09:00 МСК — резервная попытка (дубликаты отсекаются в send-report)
   workflow_dispatch:
     inputs:
       type:
@@ -22,9 +19,6 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Send reports
         env:
@@ -67,11 +61,11 @@ jobs:
             else
               SEND_DAILY=true
             fi
-          elif [ "$SCHEDULE" = "30 9 * * 1" ]; then
+          elif [ "$SCHEDULE" = "30 5 * * 1" ]; then
             SEND_WEEKLY=true
           else
             SEND_DAILY=true
-            if [ "$SCHEDULE" = "0 11 * * *" ]; then
+            if [ "$SCHEDULE" = "0 6 * * *" ]; then
               DOW=$(TZ=Europe/Moscow date +%u)
               if [ "$DOW" = "1" ]; then
                 SEND_WEEKLY=true

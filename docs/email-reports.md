@@ -49,10 +49,13 @@ supabase secrets set SMTP_HOST=... SMTP_PORT=465 SMTP_USER=... SMTP_PASSWORD=...
 
 ## Расписание
 
-Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-reports.yml):
+Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-reports.yml) (после импорта из Drive, см. [drive-sync.md](drive-sync.md)):
 
-- `09:00 UTC` ежедневно (12:00 МСК) — дневной отчёт за вчера (после утреннего импорта из Drive);
-- `09:30 UTC` по понедельникам (12:30 МСК) — недельный отчёт за прошлую неделю.
+- `05:00 UTC` ежедневно (**08:00 МСК**) — дневной отчёт за вчера;
+- `05:30 UTC` по понедельникам (**08:30 МСК**) — недельный отчёт за прошлую неделю;
+- `06:00 UTC` (**09:00 МСК**) — резервная попытка, если основной запуск пропущен.
+
+Повторная отправка за тот же период по расписанию пропускается (см. `email_log`, `skipped: already_sent`).
 
 Ручной запуск: Actions → **Send Reports** → Run workflow → выбрать `daily`/`weekly`.
 

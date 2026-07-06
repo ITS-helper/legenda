@@ -217,7 +217,7 @@ flowchart LR
 
 ```text
 Google Drive (LEGENDA/)
-  → scripts/sync-drive-reports.mjs  (cron 06–08 UTC, workflow_dispatch)
+  → scripts/sync-drive-reports.mjs  (cron 02:30–04:30 UTC, workflow_dispatch)
   → scripts/import-reports.mjs      (локально: npm run import:reports)
   → Supabase service role → analytics.*
   → пересчёт view автоматически (PostgreSQL)
@@ -233,8 +233,8 @@ Google Drive (LEGENDA/)
 | Workflow | Расписание | Действие |
 |----------|------------|----------|
 | [`deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | push в `main` | `npm run build` → GitHub Pages |
-| [`sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) | 06/07/08 UTC | Импорт вчера (МСК) из Drive |
-| [`send-reports.yml`](../.github/workflows/send-reports.yml) | 09:00 UTC daily, пн 09:30 | Вызов `send-report` |
+| [`sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) | 02:30/04:00/04:30 UTC | Импорт вчера (МСК) из Drive (~04:00 файлы в папке) |
+| [`send-reports.yml`](../.github/workflows/send-reports.yml) | 05:00 UTC daily, пн 05:30 | Вызов `send-report` (08:00 / 08:30 МСК) |
 
 При сбое deploy с сообщением *«Deployment failed, try again later»* — временный сбой
 GitHub Pages; помогает **Re-run failed jobs**.

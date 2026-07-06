@@ -2,9 +2,9 @@ name: Sync Drive Reports
 
 on:
   schedule:
-    - cron: '0 6 * * *'
-    - cron: '0 7 * * *'
-    - cron: '0 8 * * *'
+    - cron: '30 2 * * *'  # 05:30 МСК — первая попытка (отчёты в Drive ~04:00)
+    - cron: '0 4 * * *'    # 07:00 МСК — повтор
+    - cron: '30 4 * * *'  # 07:30 МСК — последний импорт перед рассылкой
   workflow_dispatch:
     inputs:
       report_date:
