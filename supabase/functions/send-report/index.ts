@@ -614,7 +614,7 @@ function personRowHtml(name: string, meta: string, value: string, alert = false)
 
 const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   Джалол: 20,
-  'ЛИ СОН ХАК': 22,
+  'ЛИ СОН ХАК': 23,
 }
 
 const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
@@ -633,7 +633,7 @@ function formatDeltaPercent(delta: number | null) {
   return `${sign}${rounded}%`
 }
 
-const SHIFT_TARGET_WORKERS = 50
+const SHIFT_TARGET_WORKERS = 51
 
 function getBrigadeShiftTarget(supervisorName: string) {
   const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(

@@ -175,7 +175,7 @@ export function formatMinutes(totalSeconds: number) {
 
 const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   Джалол: 20,
-  'ЛИ СОН ХАК': 22,
+  'ЛИ СОН ХАК': 23,
 }
 
 export const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
@@ -192,7 +192,7 @@ export function addDaysIso(dateIso: string, days: number) {
   return date.toISOString().slice(0, 10)
 }
 
-export const SHIFT_TARGET_WORKERS = 50
+export const SHIFT_TARGET_WORKERS = 51
 
 function getBrigadeShiftTarget(supervisorName: string) {
   const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(([name]) => brigadeNamesMatch(name, supervisorName))
