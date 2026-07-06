@@ -1,0 +1,23 @@
+---
+description: После push в main — проверить деплой GitHub Pages
+alwaysApply: true
+---
+
+# Push в main и проверка деплоя
+
+Когда пользователь просит **запушить в main** (или вы сами пушите по его просьбе):
+
+1. Закоммитьте изменения, `git push origin main`.
+2. **Сразу после push** проверьте GitHub Actions — workflow **Deploy Pages** (`.github/workflows/deploy-pages.yml`):
+   ```bash
+   gh run list --workflow=deploy-pages.yml --limit 1
+   gh run watch <run-id> --exit-status
+   ```
+   Если `gh run watch` недоступен или run ещё не появился — подождите 10–20 с и повторите `gh run list`.
+3. В ответе пользователю явно укажите:
+   - хеш коммита и что запушено;
+   - статус деплоя: **успех** / **в процессе** / **ошибка** (с краткой причиной при failure);
+   - ссылку на run: `gh run view <run-id> --web` или URL из `gh run list`.
+4. Edge function Supabase (`send-report`) деплоится отдельно — не путать с GitHub Pages. Напоминать про `supabase functions deploy send-report --no-verify-jwt` только если менялись файлы в `supabase/functions/`.
+
+Не считать push завершённым, пока не проверили статус **Deploy Pages** (или не сообщили, что run ещё идёт и как перепроверить).
