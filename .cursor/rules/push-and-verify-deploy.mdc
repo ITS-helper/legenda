@@ -3,9 +3,9 @@ description: После push в main — проверить деплой GitHub 
 alwaysApply: true
 ---
 
-# Push в main и проверка деплоя
+# Завершение задачи: commit, push, проверка деплоя
 
-Когда пользователь просит **запушить в main** (или вы сами пушите по его просьбе):
+После **завершения задачи с изменениями в коде** — без лишних вопросов:
 
 1. Закоммитьте изменения, `git push origin main`.
 2. **Сразу после push** проверьте GitHub Actions — workflow **Deploy Pages** (`.github/workflows/deploy-pages.yml`):
@@ -18,6 +18,8 @@ alwaysApply: true
    - хеш коммита и что запушено;
    - статус деплоя: **успех** / **в процессе** / **ошибка** (с краткой причиной при failure);
    - ссылку на run: `gh run view <run-id> --web` или URL из `gh run list`.
-4. Edge function Supabase (`send-report`) деплоится отдельно — не путать с GitHub Pages. Напоминать про `supabase functions deploy send-report --no-verify-jwt` только если менялись файлы в `supabase/functions/`.
+4. Если менялись файлы в `supabase/functions/` — напомнить про `supabase functions deploy send-report --no-verify-jwt` (это отдельно от GitHub Pages).
 
-Не считать push завершённым, пока не проверили статус **Deploy Pages** (или не сообщили, что run ещё идёт и как перепроверить).
+Не спрашивать «закоммитить?» / «запушить?» — делать сразу, если пользователь явно не запретил commit/push в этом чате.
+
+Не считать задачу завершённой, пока не проверили статус **Deploy Pages** (или не сообщили, что run ещё идёт и как перепроверить).

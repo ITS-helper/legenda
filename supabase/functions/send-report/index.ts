@@ -379,11 +379,13 @@ function zonesPanelEmail(options: {
   rowsHtml: string
   emptyText: string
   alertBorder?: boolean
+  minHeight?: number
 }) {
   const border = options.alertBorder ? COLORS.alertBorder : COLORS.border
   const background = options.alertBorder ? COLORS.alertSoft : COLORS.surface
+  const minHeightStyle = options.minHeight ? `min-height:${options.minHeight}px;` : ''
 
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${border};border-radius:20px;background:${background};border-collapse:separate;">
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${border};border-radius:20px;background:${background};border-collapse:separate;${minHeightStyle}">
     <tr><td style="padding:18px 20px;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:14px;">
         <tr>
@@ -400,6 +402,12 @@ function zonesPanelEmail(options: {
   </table>`
 }
 
+function estimateZonePanelEmailHeight(rowCount: number, hasSummary: boolean) {
+  const headerHeight = hasSummary ? 118 : 92
+  const rowsHeight = rowCount > 0 ? rowCount * 40 + 8 : 28
+  return headerHeight + rowsHeight + 36
+}
+
 function zonesBlockEmail(options: {
   periodLabel: string
   locationDescription: string
@@ -413,72 +421,94 @@ function zonesBlockEmail(options: {
     idleTotalMin: number
   }>
 }) {
-  const brigadeSectionsHtml = options.sections
+  const prepared = options.sections.map((section) => {
+    const zoneTotalSec = section.zoneRows.reduce((sum, row) => sum + row.sec, 0)
+    const locationRows =
+      section.zoneRows.length > 0
+        ? section.zoneRows
+            .map((zone) =>
+              zoneRowEmail(
+                zone.zonaName,
+                formatPercent(ratio(zone.sec, zoneTotalSec)),
+                ratio(zone.sec, zoneTotalSec),
+                isAlertZone(zone.zona),
+              ),
+            )
+            .join('')
+        : ''
+    const idleRows =
+      section.idleByZone.length > 0
+        ? section.idleByZone
+            .map((zone) =>
+              zoneRowEmail(
+                zone.zonaName,
+                `${zone.count} эп. · ${zone.minutes} мин`,
+                ratio(zone.minutes, section.idleTotalMin),
+                false,
+              ),
+            )
+            .join('')
+        : ''
+    const idleSummary =
+      section.idleEpisodeCount > 0
+        ? `<div style="text-align:right;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
+            <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${section.idleEpisodeCount} эп.</div>
+            <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${section.idleTotalMin} мин суммарно</div>
+          </div>`
+        : ''
+
+    return {
+      supervisor_name: section.supervisor_name,
+      locationRows,
+      idleRows,
+      idleSummary,
+      idleEpisodeCount: section.idleEpisodeCount,
+      locationHeight: estimateZonePanelEmailHeight(section.zoneRows.length, false),
+      idleHeight: estimateZonePanelEmailHeight(section.idleByZone.length, section.idleEpisodeCount > 0),
+    }
+  })
+
+  const maxLocationHeight = Math.max(...prepared.map((section) => section.locationHeight), 0)
+  const maxIdleHeight = Math.max(...prepared.map((section) => section.idleHeight), 0)
+  const columnWidth = Math.floor(100 / Math.max(prepared.length, 1))
+
+  const headerCells = prepared
+    .map(
+      (section) =>
+        `<td width="${columnWidth}%" valign="top" style="padding:0 6px 8px;">
+          <div style="font-size:15px;font-weight:700;color:${COLORS.textH};">${escapeHtml(section.supervisor_name)}</div>
+        </td>`,
+    )
+    .join('')
+
+  const locationCells = prepared
     .map((section) => {
-      const zoneTotalSec = section.zoneRows.reduce((sum, row) => sum + row.sec, 0)
-      const locationRows =
-        section.zoneRows.length > 0
-          ? section.zoneRows
-              .map((zone) =>
-                zoneRowEmail(
-                  zone.zonaName,
-                  formatPercent(ratio(zone.sec, zoneTotalSec)),
-                  ratio(zone.sec, zoneTotalSec),
-                  isAlertZone(zone.zona),
-                ),
-              )
-              .join('')
-          : ''
-
-      const idleRows =
-        section.idleByZone.length > 0
-          ? section.idleByZone
-              .map((zone) =>
-                zoneRowEmail(
-                  zone.zonaName,
-                  `${zone.count} эп. · ${zone.minutes} мин`,
-                  ratio(zone.minutes, section.idleTotalMin),
-                  false,
-                ),
-              )
-              .join('')
-          : ''
-
-      const idleSummary =
-        section.idleEpisodeCount > 0
-          ? `<div style="text-align:right;">
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
-              <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${section.idleEpisodeCount} эп.</div>
-              <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${section.idleTotalMin} мин суммарно</div>
-            </div>`
-          : ''
-
-      const locationPanel = zonesPanelEmail({
+      const panel = zonesPanelEmail({
         kicker: 'Местоположение',
         title: 'Распределение времени по зонам',
         description: options.locationDescription,
-        rowsHtml: locationRows,
+        rowsHtml: section.locationRows,
         emptyText: `Нет данных по зонам ${options.periodLabel}.`,
+        minHeight: maxLocationHeight,
       })
+      return `<td width="${columnWidth}%" valign="top" style="padding:0 6px;">${panel}</td>`
+    })
+    .join('')
 
-      const idlePanel = zonesPanelEmail({
+  const idleCells = prepared
+    .map((section) => {
+      const panel = zonesPanelEmail({
         kicker: 'Простои',
         title: 'Длительные простои',
         description: options.idleDescription,
-        summaryHtml: idleSummary,
-        rowsHtml: idleRows,
+        summaryHtml: section.idleSummary,
+        rowsHtml: section.idleRows,
         emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
+        alertBorder: section.idleEpisodeCount > 0,
+        minHeight: maxIdleHeight,
       })
-
-      return `<div style="margin-top:14px;">
-        <h4 style="margin:0 0 10px;color:${COLORS.textH};font-size:15px;">${escapeHtml(section.supervisor_name)}</h4>
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
-          <tr>
-            <td width="50%" valign="top" style="padding-right:8px;">${locationPanel}</td>
-            <td width="50%" valign="top" style="padding-left:8px;">${idlePanel}</td>
-          </tr>
-        </table>
-      </div>`
+      return `<td width="${columnWidth}%" valign="top" style="padding:0 6px;">${panel}</td>`
     })
     .join('')
 
@@ -486,7 +516,9 @@ function zonesBlockEmail(options: {
     <tr><td>
       <h3 style="margin:0 0 8px;color:${COLORS.textH};font-size:16px;">Местоположение и простои</h3>
       <p style="margin:0 0 16px;color:${COLORS.textMuted};font-size:13px;line-height:1.45;">Где сотрудники проводили время ${options.periodLabel} и эпизоды длительного бездействия от 10 минут с привязкой к зоне.</p>
-      ${brigadeSectionsHtml}
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:12px;"><tr>${headerCells}</tr></table>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:12px;"><tr>${locationCells}</tr></table>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${idleCells}</tr></table>
     </td></tr>
   </table>`
 }
@@ -688,7 +720,7 @@ function formatDeltaPercent(delta: number | null) {
   return `${sign}${rounded}%`
 }
 
-const SHIFT_TARGET_WORKERS = 51
+const SHIFT_TARGET_WORKERS = 50
 
 function getBrigadeShiftTarget(supervisorName: string) {
   const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(
@@ -808,7 +840,19 @@ function brigadeBadgeEmail(activityPct: number) {
   const warn = activityPct < 40
   const background = warn ? COLORS.alertSoft : COLORS.brandSoft
   const color = warn ? COLORS.alert : COLORS.brand
-  return `<div style="display:inline-block;min-width:64px;padding:8px 12px;border-radius:999px;background:${background};color:${color};font-weight:700;text-align:center;">${pct(activityPct)}</div>`
+  return `<div style="display:inline-block;min-width:64px;padding:8px 12px;border-radius:999px;background:${background};color:${color};font-weight:700;text-align:center;line-height:1.2;">${pct(activityPct)}</div>`
+}
+
+function brigadeCardsEmailLayout(cardsHtml: string[]) {
+  if (cardsHtml.length === 2) {
+    return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+      <tr>
+        <td width="50%" valign="top" style="padding:0 6px 0 0;">${cardsHtml[0]}</td>
+        <td width="50%" valign="top" style="padding:0 0 0 6px;">${cardsHtml[1]}</td>
+      </tr>
+    </table>`
+  }
+  return cardsHtml.join('')
 }
 
 function brigadeCardEmail(card: {
@@ -829,11 +873,11 @@ function brigadeCardEmail(card: {
     <tr><td style="padding:18px;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:14px;">
         <tr>
-          <td valign="top">
-            <div style="font-size:16px;font-weight:700;color:${COLORS.textH};">${escapeHtml(card.supervisor_name)}</div>
-            <div style="font-size:13px;color:${COLORS.textMuted};margin-top:6px;">${escapeHtml(card.subtitle)}</div>
+          <td valign="middle" style="padding-right:12px;">
+            <div style="font-size:16px;font-weight:700;color:${COLORS.textH};line-height:1.3;">${escapeHtml(card.supervisor_name)}</div>
+            <div style="font-size:13px;color:${COLORS.textMuted};margin-top:6px;line-height:1.35;">${escapeHtml(card.subtitle)}</div>
           </td>
-          <td align="right" valign="top">${brigadeBadgeEmail(card.activity_pct)}</td>
+          <td align="right" valign="middle" width="88" style="white-space:nowrap;">${brigadeBadgeEmail(card.activity_pct)}</td>
         </tr>
       </table>
       ${structureBarEmail(card.work_sec, card.weak_activity_sec, card.long_idle_sec, card.go_sec, card.total_sec)}
@@ -890,11 +934,11 @@ function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow) {
 }
 
 function brigadeCardsEmailDaily(rows: BrigadeDailyRow[]) {
-  return rows.map((row) => brigadeCardEmail(brigadeCardPayloadDaily(row))).join('')
+  return brigadeCardsEmailLayout(rows.map((row) => brigadeCardEmail(brigadeCardPayloadDaily(row))))
 }
 
 function brigadeCardsEmailWeekly(rows: BrigadeWeeklyRow[]) {
-  return rows.map((row) => brigadeCardEmail(brigadeCardPayloadWeekly(row))).join('')
+  return brigadeCardsEmailLayout(rows.map((row) => brigadeCardEmail(brigadeCardPayloadWeekly(row))))
 }
 
 function shiftActivityPct(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
@@ -1090,7 +1134,8 @@ function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
   }
 
   const chartHeight = 44
-  const barWidth = Math.max(10, Math.min(16, Math.floor(168 / points.length) - 2))
+  const barGap = 2
+  const barWidth = Math.max(6, Math.floor((560 - barGap * (points.length - 1)) / points.length))
   const min = Math.min(...numeric)
   const max = Math.max(...numeric)
   const range = max - min || 1
@@ -1102,14 +1147,14 @@ function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
       const heightPct = value == null ? 0 : (value - min) / range
       const barHeight = value == null ? 2 : Math.max(6, Math.round(heightPct * (chartHeight - 10)) + 6)
       const opacity = value == null ? 0.12 : 1
-      return `<td valign="bottom" style="padding:0 2px;height:${chartHeight}px;text-align:center;">
+      return `<td valign="bottom" style="padding:0 ${barGap / 2}px;height:${chartHeight + 18}px;text-align:center;">
         <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};opacity:${opacity};border-radius:4px 4px 0 0;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
-        <div style="font-size:9px;line-height:1.1;color:${COLORS.textMuted};margin-top:4px;white-space:nowrap;">${ruShort(point.report_date)}</div>
+        <div style="font-size:8px;line-height:1.1;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;white-space:nowrap;font-weight:${isLast ? 700 : 400};">${ruShort(point.report_date)}</div>
       </td>`
     })
     .join('')
 
-  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;"><tr>${bars}</tr></table>`
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;table-layout:fixed;"><tr>${bars}</tr></table>`
 }
 
 function dynamicsCardHtml(
@@ -1279,9 +1324,10 @@ function dynamicsPdfCards(
       card.prior_pct != null
         ? `${options.comparePrefix} (${pct(card.prior_pct)})`
         : options.emptyCompare,
-    sparkline: (card.sparkline ?? []).filter((point) => point.activity_pct != null).map((point) => ({
+    sparkline: (card.sparkline ?? []).map((point) => ({
       label: ruShort(point.report_date),
-      value: point.activity_pct!,
+      value: point.activity_pct ?? 0,
+      empty: point.activity_pct == null,
     })),
     sparklineTitle,
   }))

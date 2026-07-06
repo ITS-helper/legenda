@@ -198,7 +198,7 @@ export function addDaysIso(dateIso: string, days: number) {
   return date.toISOString().slice(0, 10)
 }
 
-export const SHIFT_TARGET_WORKERS = 51
+export const SHIFT_TARGET_WORKERS = 50
 
 function getBrigadeShiftTarget(supervisorName: string) {
   const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(([name]) => brigadeNamesMatch(name, supervisorName))

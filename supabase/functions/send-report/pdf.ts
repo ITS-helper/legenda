@@ -48,7 +48,7 @@ export type ReportPdfPayload = {
     value: string
     delta: string
     compare: string
-    sparkline: Array<{ label: string; value: number }>
+    sparkline: Array<{ label: string; value: number; empty?: boolean }>
     sparklineTitle?: string
   }>
   zonesTitle: string
@@ -407,9 +407,9 @@ class PdfWriter {
     const innerPad = compact ? 14 : 18
     const statGap = compact ? 8 : 8
     const statWidth = (cardWidth - innerPad * 2 - statGap) / 2
-    const statRows = compact ? 2 : 2
+    const statRows = 3
     const statHeight = compact ? 48 : 60
-    const headerBlock = compact ? 28 : 44
+    const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
     const legendBlock = compact ? 0 : 28
     const bottomPad = compact ? 16 : 18
@@ -419,23 +419,26 @@ class PdfWriter {
 
     this.rect(left, top, cardWidth, cardHeight, C.surface2, C.border, RADIUS.lg)
 
-    this.text(card.supervisor_name, left + innerPad, top + innerPad, compact ? 11 : 14, C.textH, cardWidth - 72)
+    const badgeText = pct(card.activity_pct)
+    const badgeWidth = this.font.widthOfTextAtSize(badgeText, compact ? 9 : 11) + (compact ? 14 : 20)
+    const badgeHeight = compact ? 20 : 24
+    const badgeLeft = left + cardWidth - badgeWidth - innerPad
+    const textWidth = cardWidth - innerPad * 2 - badgeWidth - 8
+
+    this.text(card.supervisor_name, left + innerPad, top + innerPad, compact ? 11 : 14, C.textH, textWidth)
     this.text(
       card.subtitle,
       left + innerPad,
       top + innerPad + (compact ? 13 : 18),
       compact ? 7 : 10,
       C.textMuted,
-      cardWidth - innerPad * 2,
+      textWidth,
     )
 
-    const badgeText = pct(card.activity_pct)
-    const badgeWidth = this.font.widthOfTextAtSize(badgeText, compact ? 9 : 11) + (compact ? 14 : 20)
-    const badgeHeight = compact ? 20 : 24
-    const badgeLeft = left + cardWidth - badgeWidth - innerPad
+    const badgeTop = top + innerPad + (compact ? 4 : 6)
     this.roundedRect(
       badgeLeft,
-      top + innerPad - 1,
+      badgeTop,
       badgeWidth,
       badgeHeight,
       warn ? C.alertSoft : C.brandSoft,
@@ -445,7 +448,7 @@ class PdfWriter {
     this.text(
       badgeText,
       badgeLeft + (compact ? 7 : 10),
-      top + innerPad + (compact ? 2 : 4),
+      badgeTop + (compact ? 3 : 5),
       compact ? 9 : 11,
       warn ? C.alert : C.brand,
     )
@@ -492,7 +495,7 @@ class PdfWriter {
     const innerPad = compact ? 14 : 18
     const statGap = compact ? 8 : 8
     const statHeight = compact ? 48 : 60
-    const headerBlock = compact ? 28 : 44
+    const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
     const legendBlock = compact ? 0 : 28
     const bottomPad = compact ? 16 : 18
@@ -519,44 +522,48 @@ class PdfWriter {
     left: number,
     top: number,
     width: number,
-    points: Array<{ label: string; value: number }>,
+    points: Array<{ label: string; value: number; empty?: boolean }>,
   ) {
     if (points.length < 2) {
       this.text('Мало данных', left, top + 4, 7, C.textMuted)
       return 24
     }
 
-    const chartHeight = 28
-    const gap = 4
-    const barWidth = Math.max(8, Math.min(14, Math.floor((width - gap * (points.length - 1)) / points.length)))
-    const values = points.map((point) => point.value)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
+    const chartHeight = 30
+    const labelHeight = 10
+    const gap = 2
+    const barWidth = Math.max(4, Math.floor((width - gap * (points.length - 1)) / points.length))
+    const numericValues = points.filter((point) => !point.empty).map((point) => point.value)
+    const min = Math.min(...numericValues)
+    const max = Math.max(...numericValues)
     const range = max - min || 1
 
     let offset = 0
     for (let index = 0; index < points.length; index += 1) {
-      const value = points[index].value
-      const barHeight = Math.max(4, Math.round(((value - min) / range) * (chartHeight - 6)) + 4)
+      const point = points[index]
       const isLast = index === points.length - 1
+      const barHeight = point.empty
+        ? 2
+        : Math.max(4, Math.round(((point.value - min) / range) * (chartHeight - 6)) + 4)
       const barLeft = left + offset
       this.page.drawRectangle({
         x: barLeft,
         y: this.bottomY(top + chartHeight - barHeight, barHeight),
         width: barWidth,
         height: barHeight,
-        color: isLast ? C.brand : hex('#9eb8ea'),
+        color: point.empty ? S.track : isLast ? C.brand : hex('#9eb8ea'),
         borderWidth: 0,
       })
+
+      const label = pdfText(point.label)
+      const labelSize = 5
+      const labelWidth = this.font.widthOfTextAtSize(label, labelSize)
+      const labelLeft = barLeft + Math.max(0, (barWidth - labelWidth) / 2)
+      this.text(label, labelLeft, top + chartHeight + 4, labelSize, isLast ? C.brand : C.textMuted)
       offset += barWidth + gap
     }
 
-    this.text(points[0].label, left, top + chartHeight + 4, 6, C.textMuted)
-    const lastLabel = points[points.length - 1].label
-    const lastLabelWidth = this.font.widthOfTextAtSize(pdfText(lastLabel), 6)
-    this.text(lastLabel, left + width - lastLabelWidth, top + chartHeight + 4, 6, C.textMuted)
-
-    return chartHeight + 14
+    return chartHeight + labelHeight + 6
   }
 
   dynamicsCards(
@@ -565,14 +572,14 @@ class PdfWriter {
       value: string
       delta: string
       compare: string
-      sparkline: Array<{ label: string; value: number }>
+      sparkline: Array<{ label: string; value: number; empty?: boolean }>
       sparklineTitle?: string
     }>,
     periodLabel: string,
   ) {
     const gap = 10
     const cardWidth = (CONTENT_WIDTH - gap) / 2
-    const cardHeight = 132
+    const cardHeight = 148
     const rows = Math.ceil(cards.length / 2)
     const blockHeight = rows * (cardHeight + gap)
 
@@ -637,12 +644,13 @@ class PdfWriter {
       rows: ZonePanelRow[]
       emptyText: string
       summary?: { label: string; episodes: number; minutes: number }
+      minHeight?: number
     },
   ) {
     const rowHeight = 30
     const headerHeight = options.summary ? 106 : 72
     const rowsHeight = options.rows.length > 0 ? options.rows.length * rowHeight + 8 : 28
-    const panelHeight = headerHeight + rowsHeight + 20
+    const panelHeight = Math.max(headerHeight + rowsHeight + 20, options.minHeight ?? 0)
 
     this.rect(left, top, width, panelHeight, C.surface, C.border, RADIUS.lg)
 
@@ -732,6 +740,78 @@ class PdfWriter {
     this.y = panelTop + Math.max(leftHeight, rightHeight) + 12
   }
 
+  zonesBrigadeMatrix(sections: BrigadeZonesPdfSection[]) {
+    if (sections.length === 0) return
+
+    const gap = 10
+    const columnWidth = (CONTENT_WIDTH - gap * (sections.length - 1)) / sections.length
+    const introHeight = 28
+    const maxLocationHeight = Math.max(
+      ...sections.map((section) => this.estimateZonePanelHeight(section.zonesLocationRows, false)),
+      0,
+    )
+    const maxIdleHeight = Math.max(
+      ...sections.map((section) => this.estimateZonePanelHeight(section.zonesIdleRows, Boolean(section.zonesIdleSummary))),
+      0,
+    )
+    const blockHeight = introHeight + 18 + maxLocationHeight + 10 + maxIdleHeight + 8
+
+    this.ensureSpace(blockHeight + 8)
+    const top = this.y
+
+    this.text(
+      'Где сотрудники проводили время и эпизоды длительного бездействия от 10 минут с привязкой к зоне.',
+      MARGIN,
+      top,
+      8,
+      C.textMuted,
+      CONTENT_WIDTH,
+    )
+
+    let headerTop = top + introHeight
+    for (let index = 0; index < sections.length; index += 1) {
+      const left = MARGIN + index * (columnWidth + gap)
+      this.text(sections[index].supervisor_name, left, headerTop, 10, C.textH, columnWidth)
+    }
+
+    const locationTop = headerTop + 18
+    for (let index = 0; index < sections.length; index += 1) {
+      const section = sections[index]
+      const left = MARGIN + index * (columnWidth + gap)
+      this.zonePanel(left, locationTop, columnWidth, {
+        kicker: 'Местоположение',
+        title: 'Распределение времени по зонам',
+        description: section.zonesLocationDescription,
+        rows: section.zonesLocationRows,
+        emptyText: `Нет данных по зонам ${section.zonesPeriodLabel}.`,
+        minHeight: maxLocationHeight,
+      })
+    }
+
+    const idleTop = locationTop + maxLocationHeight + 10
+    for (let index = 0; index < sections.length; index += 1) {
+      const section = sections[index]
+      const left = MARGIN + index * (columnWidth + gap)
+      this.zonePanel(left, idleTop, columnWidth, {
+        kicker: 'Простои',
+        title: 'Длительные простои',
+        description: section.zonesIdleDescription,
+        rows: section.zonesIdleRows,
+        emptyText: `Данные о длительных простоях ${section.zonesPeriodLabel} не загружены или простоев нет.`,
+        summary: section.zonesIdleSummary
+          ? {
+              label: section.zonesIdleSummaryLabel,
+              episodes: section.zonesIdleSummary.episodes,
+              minutes: section.zonesIdleSummary.minutes,
+            }
+          : undefined,
+        minHeight: maxIdleHeight,
+      })
+    }
+
+    this.y = idleTop + maxIdleHeight + 12
+  }
+
   personList(
     rows: Array<{ name: string; meta: string; value: string }>,
     emptyText: string,
@@ -805,18 +885,7 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
 
   writer.newPage()
   writer.sectionTitle(payload.zonesTitle, 14)
-  for (const section of payload.zonesBrigadeSections) {
-    writer.sectionTitle(section.supervisor_name, 10)
-    writer.zonesBlock({
-      periodLabel: section.zonesPeriodLabel,
-      locationDescription: section.zonesLocationDescription,
-      idleDescription: section.zonesIdleDescription,
-      idleSummaryLabel: section.zonesIdleSummaryLabel,
-      locationRows: section.zonesLocationRows,
-      idleRows: section.zonesIdleRows,
-      idleSummary: section.zonesIdleSummary,
-    })
-  }
+  writer.zonesBrigadeMatrix(payload.zonesBrigadeSections)
 
   writer.footer('Work Watch Analytics')
 
