@@ -28,16 +28,16 @@ Validated against real files dated `2026-06-17` and `2026-07-01`:
 
 Root folder `LEGENDA` contains archive subfolders:
 
-| Source | Archive folder |
-|--------|----------------|
-| faceID | `6_report_6_faceID_arh` |
-| AA_BLE | `aa_ble_arh` |
-| LongIDLE | `8_report_8_LongIDLE_arh` |
+| Source | Archive folder | Обязательный |
+|--------|----------------|--------------|
+| faceID | `6_report_6_faceID_arh` | да |
+| AA_BLE | `aa_ble_arh` | да |
+| LongIDLE | `8_report_8_LongIDLE_arh` | да |
+| Отчёт 10 (длительные простои) | `10_report_10_long_idle_arh` | нет (опционально) |
 
-Not used by importer:
+Не используется:
 
 - `100_report_alerts_arh`
-- `10_report_10_long_idle_arh`
 
 ## Shared Summary Sheet
 
