@@ -49,11 +49,17 @@ export type ZoneDailyRow = {
   shifts: number
 }
 
+export type BrigadeZoneDaily = {
+  supervisor_name: string
+  rows: ZoneDailyRow[]
+}
+
 export type IdleEpisode = {
   ww_shift_id: number
   session_id: number | null
   employee_number: string | null
   full_name: string | null
+  supervisor_name: string
   dt_start: string | null
   dt_end: string | null
   duration_min: number
@@ -583,6 +589,38 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
     .sort((left, right) => right.sec - left.sec) satisfies ZoneDailyRow[]
 }
 
+export async function loadZoneDailyByBrigade(reportDate: string) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('zone_daily_metrics')
+    .select('zona, sec, shifts, supervisor_name')
+    .eq('report_date', reportDate)
+
+  if (error) throw error
+
+  const supervisors = new Map<string, Map<number, { sec: number; shifts: number }>>()
+  for (const row of data ?? []) {
+    const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
+    const zona = Number(row.zona)
+    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
+    const supervisorTotals = supervisors.get(supervisorName) ?? new Map<number, { sec: number; shifts: number }>()
+    const current = supervisorTotals.get(zona) ?? { sec: 0, shifts: 0 }
+    current.sec += Number(row.sec)
+    current.shifts = Math.max(current.shifts, Number(row.shifts))
+    supervisorTotals.set(zona, current)
+    supervisors.set(supervisorName, supervisorTotals)
+  }
+
+  return [...supervisors.entries()]
+    .map(([supervisor_name, totals]) => ({
+      supervisor_name,
+      rows: [...totals.entries()]
+        .map(([zona, value]) => ({ zona, zonaName: zoneName(zona), sec: value.sec, shifts: value.shifts }))
+        .sort((left, right) => right.sec - left.sec),
+    }))
+    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru')) satisfies BrigadeZoneDaily[]
+}
+
 export async function loadIdleEpisodes(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
@@ -594,17 +632,31 @@ export async function loadIdleEpisodes(reportDate: string) {
 
   if (error) throw error
 
+  const { data: shifts, error: shiftsError } = await supabase
+    .schema('analytics')
+    .from('shift_daily_metrics')
+    .select('ww_shift_id, supervisor_name')
+    .eq('report_date', reportDate)
+
+  if (shiftsError) throw shiftsError
+
+  const supervisorByShift = new Map<number, string>()
+  for (const row of shifts ?? []) {
+    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? NO_SUPERVISOR)
+  }
+
   return (data ?? [])
     .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
     .map((row) => ({
-    ww_shift_id: Number(row.ww_shift_id),
-    session_id: row.session_id === null ? null : Number(row.session_id),
-    employee_number: (row.employee_number as string | null) ?? null,
-    full_name: (row.full_name as string | null) ?? null,
-    dt_start: (row.dt_start as string | null) ?? null,
-    dt_end: (row.dt_end as string | null) ?? null,
-    duration_min: Number(row.duration_min),
-    ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
-    zonaName: zoneName(row.ble_tag_zone as number | null),
-  })) satisfies IdleEpisode[]
+      ww_shift_id: Number(row.ww_shift_id),
+      session_id: row.session_id === null ? null : Number(row.session_id),
+      employee_number: (row.employee_number as string | null) ?? null,
+      full_name: (row.full_name as string | null) ?? null,
+      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? NO_SUPERVISOR,
+      dt_start: (row.dt_start as string | null) ?? null,
+      dt_end: (row.dt_end as string | null) ?? null,
+      duration_min: Number(row.duration_min),
+      ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
+      zonaName: zoneName(row.ble_tag_zone as number | null),
+    })) satisfies IdleEpisode[]
 }

@@ -27,6 +27,17 @@ export type ZonePanelRow = {
   alert: boolean
 }
 
+export type BrigadeZonesPdfSection = {
+  supervisor_name: string
+  zonesPeriodLabel: string
+  zonesLocationDescription: string
+  zonesIdleDescription: string
+  zonesIdleSummaryLabel: string
+  zonesLocationRows: ZonePanelRow[]
+  zonesIdleRows: ZonePanelRow[]
+  zonesIdleSummary?: { episodes: number; minutes: number }
+}
+
 export type ReportPdfPayload = {
   title: string
   subtitle: string
@@ -44,13 +55,7 @@ export type ReportPdfPayload = {
     sparklineTitle?: string
   }>
   zonesTitle: string
-  zonesPeriodLabel: string
-  zonesLocationDescription: string
-  zonesIdleDescription: string
-  zonesIdleSummaryLabel: string
-  zonesLocationRows: ZonePanelRow[]
-  zonesIdleRows: ZonePanelRow[]
-  zonesIdleSummary?: { episodes: number; minutes: number }
+  zonesBrigadeSections: BrigadeZonesPdfSection[]
   topActivityTitle: string
   topActivityRows: Array<{ name: string; meta: string; value: string }>
   attentionTitle: string
@@ -817,15 +822,18 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
 
   writer.newPage()
   writer.sectionTitle(payload.zonesTitle, 14)
-  writer.zonesBlock({
-    periodLabel: payload.zonesPeriodLabel,
-    locationDescription: payload.zonesLocationDescription,
-    idleDescription: payload.zonesIdleDescription,
-    idleSummaryLabel: payload.zonesIdleSummaryLabel,
-    locationRows: payload.zonesLocationRows,
-    idleRows: payload.zonesIdleRows,
-    idleSummary: payload.zonesIdleSummary,
-  })
+  for (const section of payload.zonesBrigadeSections) {
+    writer.sectionTitle(section.supervisor_name, 10)
+    writer.zonesBlock({
+      periodLabel: section.zonesPeriodLabel,
+      locationDescription: section.zonesLocationDescription,
+      idleDescription: section.zonesIdleDescription,
+      idleSummaryLabel: section.zonesIdleSummaryLabel,
+      locationRows: section.zonesLocationRows,
+      idleRows: section.zonesIdleRows,
+      idleSummary: section.zonesIdleSummary,
+    })
+  }
 
   writer.newPage()
   writer.sectionTitle(payload.topActivityTitle, 16)

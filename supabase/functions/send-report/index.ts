@@ -247,33 +247,43 @@ function buildKppTimeLabel(eventTimes: string[]) {
   return '—'
 }
 
-async function loadZoneRows(
+async function loadZoneRowsByBrigade(
   supabase: ReturnType<typeof getAdminClient>,
   dateStart: string,
   dateEnd: string,
-): Promise<ZoneRow[]> {
+) {
   const { data, error } = await supabase!
     .from('zone_daily_metrics')
-    .select('zona, sec')
+    .select('supervisor_name, zona, sec')
     .gte('report_date', dateStart)
     .lte('report_date', dateEnd)
   if (error) throw error
 
-  const totals = new Map<number, number>()
+  const totals = new Map<string, Map<number, number>>()
   for (const row of data ?? []) {
+    const supervisorName = (row.supervisor_name as string | null) ?? 'Без начальника'
     const zona = Number(row.zona)
     if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
-    totals.set(zona, (totals.get(zona) ?? 0) + Number(row.sec))
+    const byZone = totals.get(supervisorName) ?? new Map<number, number>()
+    byZone.set(zona, (byZone.get(zona) ?? 0) + Number(row.sec))
+    totals.set(supervisorName, byZone)
   }
 
-  return [...totals.entries()]
-    .map(([zona, sec]) => ({ zona, zonaName: zoneName(zona), sec }))
-    .sort((left, right) => right.sec - left.sec)
+  return new Map(
+    [...totals.entries()].map(([supervisor, byZone]) => [
+      supervisor,
+      [...byZone.entries()]
+        .map(([zona, sec]) => ({ zona, zonaName: zoneName(zona), sec }))
+        .sort((left, right) => right.sec - left.sec),
+    ]),
+  )
 }
 
 type IdleEpisodeRow = {
+  ww_shift_id: number
   duration_min: number
   ble_tag_zone: number | null
+  supervisor_name: string
 }
 
 async function loadIdleEpisodes(
@@ -281,9 +291,21 @@ async function loadIdleEpisodes(
   dateStart: string,
   dateEnd: string,
 ): Promise<IdleEpisodeRow[]> {
+  const { data: shiftData, error: shiftError } = await supabase!
+    .from('shift_daily_metrics')
+    .select('ww_shift_id, supervisor_name')
+    .gte('report_date', dateStart)
+    .lte('report_date', dateEnd)
+  if (shiftError) throw shiftError
+
+  const supervisorByShift = new Map<number, string>()
+  for (const row of shiftData ?? []) {
+    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? 'Без начальника')
+  }
+
   const { data, error } = await supabase!
     .from('idle_episodes_daily')
-    .select('duration_min, ble_tag_zone')
+    .select('ww_shift_id, duration_min, ble_tag_zone')
     .gte('report_date', dateStart)
     .lte('report_date', dateEnd)
   if (error) throw error
@@ -291,8 +313,10 @@ async function loadIdleEpisodes(
   return (data ?? [])
     .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
     .map((row) => ({
+      ww_shift_id: Number(row.ww_shift_id),
       duration_min: Number(row.duration_min),
       ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
+      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? 'Без начальника',
     }))
 }
 
@@ -311,6 +335,16 @@ function aggregateIdleByZone(episodes: IdleEpisodeRow[]): IdleZoneRow[] {
     map.set(name, current)
   }
   return [...map.values()].sort((left, right) => right.minutes - left.minutes)
+}
+
+function aggregateIdleByZoneByBrigade(episodes: IdleEpisodeRow[]) {
+  const byBrigade = new Map<string, IdleEpisodeRow[]>()
+  for (const episode of episodes) {
+    const current = byBrigade.get(episode.supervisor_name) ?? []
+    current.push(episode)
+    byBrigade.set(episode.supervisor_name, current)
+  }
+  return new Map([...byBrigade.entries()].map(([supervisor, rows]) => [supervisor, aggregateIdleByZone(rows)]))
 }
 
 function zoneBarEmail(widthPct: number, alert = false) {
@@ -370,113 +404,133 @@ function zonesBlockEmail(options: {
   locationDescription: string
   idleDescription: string
   idleSummaryLabel: string
-  zoneRows: ZoneRow[]
-  idleByZone: IdleZoneRow[]
-  idleEpisodeCount: number
-  idleTotalMin: number
+  sections: Array<{
+    supervisor_name: string
+    zoneRows: ZoneRow[]
+    idleByZone: IdleZoneRow[]
+    idleEpisodeCount: number
+    idleTotalMin: number
+  }>
 }) {
-  const zoneTotalSec = options.zoneRows.reduce((sum, row) => sum + row.sec, 0)
-  const locationRows =
-    options.zoneRows.length > 0
-      ? options.zoneRows
-          .map((zone) =>
-            zoneRowEmail(
-              zone.zonaName,
-              formatPercent(ratio(zone.sec, zoneTotalSec)),
-              ratio(zone.sec, zoneTotalSec),
-              isAlertZone(zone.zona),
-            ),
-          )
-          .join('')
-      : ''
+  const brigadeSectionsHtml = options.sections
+    .map((section) => {
+      const zoneTotalSec = section.zoneRows.reduce((sum, row) => sum + row.sec, 0)
+      const locationRows =
+        section.zoneRows.length > 0
+          ? section.zoneRows
+              .map((zone) =>
+                zoneRowEmail(
+                  zone.zonaName,
+                  formatPercent(ratio(zone.sec, zoneTotalSec)),
+                  ratio(zone.sec, zoneTotalSec),
+                  isAlertZone(zone.zona),
+                ),
+              )
+              .join('')
+          : ''
 
-  const idleRows =
-    options.idleByZone.length > 0
-      ? options.idleByZone
-          .map((zone) =>
-            zoneRowEmail(
-              zone.zonaName,
-              `${zone.count} эп. · ${zone.minutes} мин`,
-              ratio(zone.minutes, options.idleTotalMin),
-              false,
-            ),
-          )
-          .join('')
-      : ''
+      const idleRows =
+        section.idleByZone.length > 0
+          ? section.idleByZone
+              .map((zone) =>
+                zoneRowEmail(
+                  zone.zonaName,
+                  `${zone.count} эп. · ${zone.minutes} мин`,
+                  ratio(zone.minutes, section.idleTotalMin),
+                  false,
+                ),
+              )
+              .join('')
+          : ''
 
-  const idleSummary =
-    options.idleEpisodeCount > 0
-      ? `<div style="text-align:right;">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
-          <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${options.idleEpisodeCount} эп.</div>
-          <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${options.idleTotalMin} мин суммарно</div>
-        </div>`
-      : ''
+      const idleSummary =
+        section.idleEpisodeCount > 0
+          ? `<div style="text-align:right;">
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
+              <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${section.idleEpisodeCount} эп.</div>
+              <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${section.idleTotalMin} мин суммарно</div>
+            </div>`
+          : ''
 
-  const locationPanel = zonesPanelEmail({
-    kicker: 'Местоположение',
-    title: 'Распределение времени по зонам',
-    description: options.locationDescription,
-    rowsHtml: locationRows,
-    emptyText: `Нет данных по зонам ${options.periodLabel}.`,
-  })
+      const locationPanel = zonesPanelEmail({
+        kicker: 'Местоположение',
+        title: 'Распределение времени по зонам',
+        description: options.locationDescription,
+        rowsHtml: locationRows,
+        emptyText: `Нет данных по зонам ${options.periodLabel}.`,
+      })
 
-  const idlePanel = zonesPanelEmail({
-    kicker: 'Простои',
-    title: 'Длительные простои',
-    description: options.idleDescription,
-    summaryHtml: idleSummary,
-    rowsHtml: idleRows,
-    emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
-  })
+      const idlePanel = zonesPanelEmail({
+        kicker: 'Простои',
+        title: 'Длительные простои',
+        description: options.idleDescription,
+        summaryHtml: idleSummary,
+        rowsHtml: idleRows,
+        emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
+      })
+
+      return `<div style="margin-top:14px;">
+        <h4 style="margin:0 0 10px;color:${COLORS.textH};font-size:15px;">${escapeHtml(section.supervisor_name)}</h4>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+          <tr>
+            <td width="50%" valign="top" style="padding-right:8px;">${locationPanel}</td>
+            <td width="50%" valign="top" style="padding-left:8px;">${idlePanel}</td>
+          </tr>
+        </table>
+      </div>`
+    })
+    .join('')
 
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
     <tr><td>
       <h3 style="margin:0 0 8px;color:${COLORS.textH};font-size:16px;">Местоположение и простои</h3>
       <p style="margin:0 0 16px;color:${COLORS.textMuted};font-size:13px;line-height:1.45;">Где сотрудники проводили время ${options.periodLabel} и эпизоды длительного бездействия от 10 минут с привязкой к зоне.</p>
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
-        <tr>
-          <td width="50%" valign="top" style="padding-right:8px;">${locationPanel}</td>
-          <td width="50%" valign="top" style="padding-left:8px;">${idlePanel}</td>
-        </tr>
-      </table>
+      ${brigadeSectionsHtml}
     </td></tr>
   </table>`
 }
 
 function zonesPdfPayload(options: {
-  zoneRows: ZoneRow[]
-  idleByZone: IdleZoneRow[]
-  idleEpisodeCount: number
-  idleTotalMin: number
   periodLabel: string
   locationDescription: string
   idleDescription: string
   idleSummaryLabel: string
+  sections: Array<{
+    supervisor_name: string
+    zoneRows: ZoneRow[]
+    idleByZone: IdleZoneRow[]
+    idleEpisodeCount: number
+    idleTotalMin: number
+  }>
 }) {
-  const zoneTotalSec = options.zoneRows.reduce((sum, row) => sum + row.sec, 0)
   return {
     zonesTitle: 'Местоположение и простои',
-    zonesPeriodLabel: options.periodLabel,
-    zonesLocationDescription: options.locationDescription,
-    zonesIdleDescription: options.idleDescription,
-    zonesIdleSummaryLabel: options.idleSummaryLabel,
-    zonesLocationRows: options.zoneRows.map((zone) => ({
-      name: zone.zonaName,
-      value: formatPercent(ratio(zone.sec, zoneTotalSec)),
-      barPct: ratio(zone.sec, zoneTotalSec),
-      alert: isAlertZone(zone.zona),
-    })),
-    zonesIdleSummary:
-      options.idleEpisodeCount > 0
-        ? { episodes: options.idleEpisodeCount, minutes: options.idleTotalMin }
-        : undefined,
-    zonesIdleRows: options.idleByZone.map((zone) => ({
-      name: zone.zonaName,
-      value: `${zone.count} эп. · ${zone.minutes} мин`,
-      barPct: ratio(zone.minutes, options.idleTotalMin),
-      alert: false,
-    })),
+    zonesBrigadeSections: options.sections.map((section) => {
+      const zoneTotalSec = section.zoneRows.reduce((sum, row) => sum + row.sec, 0)
+      return {
+        supervisor_name: section.supervisor_name,
+        zonesPeriodLabel: options.periodLabel,
+        zonesLocationDescription: options.locationDescription,
+        zonesIdleDescription: options.idleDescription,
+        zonesIdleSummaryLabel: options.idleSummaryLabel,
+        zonesLocationRows: section.zoneRows.map((zone) => ({
+          name: zone.zonaName,
+          value: formatPercent(ratio(zone.sec, zoneTotalSec)),
+          barPct: ratio(zone.sec, zoneTotalSec),
+          alert: isAlertZone(zone.zona),
+        })),
+        zonesIdleSummary:
+          section.idleEpisodeCount > 0
+            ? { episodes: section.idleEpisodeCount, minutes: section.idleTotalMin }
+            : undefined,
+        zonesIdleRows: section.idleByZone.map((zone) => ({
+          name: zone.zonaName,
+          value: `${zone.count} эп. · ${zone.minutes} мин`,
+          barPct: ratio(zone.minutes, section.idleTotalMin),
+          alert: false,
+        })),
+      }
+    }),
   }
 }
 
@@ -1300,10 +1354,19 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   const attention = filterLowActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityDaily((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeActivityDynamics(supabase, date)
-  const zoneRows = await loadZoneRows(supabase, date, date)
+  const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, date, date)
   const idleEpisodes = await loadIdleEpisodes(supabase, date, date)
-  const idleByZone = aggregateIdleByZone(idleEpisodes)
-  const idleTotalMin = idleEpisodes.reduce((sum, episode) => sum + episode.duration_min, 0)
+  const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
+  const zoneSections = brigades.map((brigade) => {
+    const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
+    return {
+      supervisor_name: brigade.supervisor_name,
+      zoneRows: zoneRowsByBrigade.get(brigade.supervisor_name) ?? [],
+      idleByZone,
+      idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
+      idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
+    }
+  })
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -1354,10 +1417,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
         locationDescription: 'Где сотрудники проводили время за день.',
         idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
         idleSummaryLabel: 'Всего за день',
-        zoneRows,
-        idleByZone,
-        idleEpisodeCount: idleEpisodes.length,
-        idleTotalMin,
+        sections: zoneSections,
       })}
       ${topActivityBlock(topActivity, 'за день')}
       ${attentionBlock(attention, 'за день')}
@@ -1389,14 +1449,11 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
       `7 дней до ${ru(date)}`,
     ),
     ...zonesPdfPayload({
-      zoneRows,
-      idleByZone,
-      idleEpisodeCount: idleEpisodes.length,
-      idleTotalMin,
       periodLabel: 'за день',
       locationDescription: 'Где сотрудники проводили время за день.',
       idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
       idleSummaryLabel: 'Всего за день',
+      sections: zoneSections,
     }),
     topActivityTitle: 'Топ 3 по активности за день',
     topActivityRows: personPdfRows(topActivity, 'activity'),
@@ -1436,10 +1493,19 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   const attention = aggregateLowActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const topActivity = topActivityWeekly((shiftData ?? []) as ShiftMetricRow[])
   const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd)
-  const zoneRows = await loadZoneRows(supabase, weekStart, weekEnd)
+  const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, weekStart, weekEnd)
   const idleEpisodes = await loadIdleEpisodes(supabase, weekStart, weekEnd)
-  const idleByZone = aggregateIdleByZone(idleEpisodes)
-  const idleTotalMin = idleEpisodes.reduce((sum, episode) => sum + episode.duration_min, 0)
+  const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
+  const zoneSections = brigades.map((brigade) => {
+    const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
+    return {
+      supervisor_name: brigade.supervisor_name,
+      zoneRows: zoneRowsByBrigade.get(brigade.supervisor_name) ?? [],
+      idleByZone,
+      idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
+      idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
+    }
+  })
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -1486,10 +1552,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
         locationDescription: 'Где сотрудники проводили время за неделю.',
         idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
         idleSummaryLabel: 'Всего за неделю',
-        zoneRows,
-        idleByZone,
-        idleEpisodeCount: idleEpisodes.length,
-        idleTotalMin,
+        sections: zoneSections,
       })}
       ${topActivityBlock(topActivity, 'за неделю')}
       ${attentionBlock(attention, 'за неделю')}
@@ -1519,14 +1582,11 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
     ),
     ...zonesPdfPayload({
-      zoneRows,
-      idleByZone,
-      idleEpisodeCount: idleEpisodes.length,
-      idleTotalMin,
       periodLabel: 'за неделю',
       locationDescription: 'Где сотрудники проводили время за неделю.',
       idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
       idleSummaryLabel: 'Всего за неделю',
+      sections: zoneSections,
     }),
     topActivityTitle: 'Топ 3 по активности за неделю',
     topActivityRows: personPdfRows(topActivity, 'activity'),
