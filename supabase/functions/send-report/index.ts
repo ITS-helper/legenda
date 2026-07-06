@@ -505,7 +505,6 @@ function zonesBlockEmail(options: {
         summaryHtml: section.idleSummary,
         rowsHtml: section.idleRows,
         emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
-        alertBorder: section.idleEpisodeCount > 0,
         minHeight: maxIdleHeight,
       })
       return `<td width="${columnWidth}%" valign="top" style="padding:0 6px;">${panel}</td>`
