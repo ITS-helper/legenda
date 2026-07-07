@@ -411,7 +411,7 @@ class PdfWriter {
     const statHeight = compact ? 48 : 60
     const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
-    const legendBlock = compact ? 0 : 28
+    const legendBlock = 28
     const bottomPad = compact ? 16 : 18
     const cardHeight =
       innerPad + headerBlock + barHeight + legendBlock + statHeight * statRows + statGap * (statRows - 1) + bottomPad
@@ -455,9 +455,7 @@ class PdfWriter {
 
     const barTop = top + innerPad + headerBlock
     this.structureBar(left + innerPad, barTop, cardWidth - innerPad * 2, card, barHeight)
-    if (!compact) {
-      this.structureLegend(left + innerPad, barTop + barHeight + 6, cardWidth - innerPad * 2)
-    }
+    this.structureLegend(left + innerPad, barTop + barHeight + 6, cardWidth - innerPad * 2)
 
     let statTop = barTop + barHeight + legendBlock + (compact ? 10 : 12)
     this.miniStat(left + innerPad, statTop, statWidth, 'Активность', pct(card.activity_pct), compact)
@@ -497,7 +495,7 @@ class PdfWriter {
     const statHeight = compact ? 48 : 60
     const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
-    const legendBlock = compact ? 0 : 28
+    const legendBlock = 28
     const bottomPad = compact ? 16 : 18
     const cardHeight =
       innerPad + headerBlock + barHeight + legendBlock + statHeight * 3 + statGap * 2 + bottomPad
