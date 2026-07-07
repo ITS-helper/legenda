@@ -1384,12 +1384,18 @@
   align-content: start;
 }
 
-/* Блок 4: матрица 2×2 — панели в одном ряду одинаковой высоты */
+/* Блок 4: колонка на бригаду — заголовок, местоположение, простои */
 .zones-brigade-matrix {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
+}
+
+.zones-brigade-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .zones-brigade-matrix-head {
@@ -1402,27 +1408,28 @@
 }
 
 .zones-brigade-matrix .zone-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  height: 100%;
-  min-height: 0;
+  margin: 0;
 }
 
 .zones-brigade-matrix .panel-head {
   margin-bottom: 0;
 }
 
-.zones-brigade-matrix .zone-list,
-.zones-brigade-matrix .zone-panel > .kpp-empty {
-  flex: 1;
-  align-content: start;
+.zones-brigade-matrix .panel-head > div:first-child {
+  min-width: 0;
 }
 
-@media (max-width: 900px) {
-  .zones-brigade-matrix {
-    grid-template-columns: 1fr;
-  }
+.zones-brigade-matrix .zone-summary {
+  flex-shrink: 0;
+}
+
+.zones-brigade-matrix .zone-summary strong {
+  white-space: nowrap;
+}
+
+.zones-brigade-matrix .zone-value {
+  white-space: nowrap;
+  text-align: right;
 }
 
 .structure-bar {
