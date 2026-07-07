@@ -1381,6 +1381,7 @@
 .brigade-grid--zones .zone-list,
 .brigade-grid--zones .zone-panel > .kpp-empty {
   flex: 1;
+  align-content: start;
 }
 
 /* Блок 4: матрица 2×2 — панели в одном ряду одинаковой высоты */
@@ -1415,6 +1416,7 @@
 .zones-brigade-matrix .zone-list,
 .zones-brigade-matrix .zone-panel > .kpp-empty {
   flex: 1;
+  align-content: start;
 }
 
 @media (max-width: 900px) {
