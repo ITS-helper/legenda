@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   aggregateLowActivityWeekly,
   filterLowActivityDaily,
+  formatEpisodeCount,
   formatFullDate,
   formatPercent,
   formatSeconds,
@@ -831,7 +832,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     {brigadeIdle && brigadeIdle.totalEpisodes > 0 ? (
                       <div className="zone-summary">
                         <span className="zone-summary-kicker">Всего за день</span>
-                        <strong>{brigadeIdle.totalEpisodes} эп.</strong>
+                        <strong>{formatEpisodeCount(brigadeIdle.totalEpisodes)}</strong>
                         <span>{brigadeIdle.totalMin} мин суммарно</span>
                       </div>
                     ) : null}
@@ -842,7 +843,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                         <div className={`zone-row${zone.alert ? ' zone-row-alert' : ''}`} key={`${brigade.supervisor_name}-${zone.zonaName}`}>
                           <div className="zone-row-head">
                             <span className="zone-name">{zone.zonaName}</span>
-                            <span className="zone-value">{zone.count} эп. · {zone.minutes} мин</span>
+                            <span className="zone-value">{formatEpisodeCount(zone.count)} · {zone.minutes} мин</span>
                           </div>
                           <div className="zone-bar">
                             <div

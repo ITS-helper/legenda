@@ -3,6 +3,7 @@ import nodemailer from 'npm:nodemailer@6.9.16'
 import { Buffer } from 'node:buffer'
 import type { ReportPdfPayload } from './pdf.ts'
 import {
+  formatEpisodeCount,
   formatPercent,
   isAlertZone,
   isHiddenZone,
@@ -442,7 +443,7 @@ function zonesBlockEmail(options: {
             .map((zone) =>
               zoneRowEmail(
                 zone.zonaName,
-                `${zone.count} эп. · ${zone.minutes} мин`,
+                `${formatEpisodeCount(zone.count)} · ${zone.minutes} мин`,
                 ratio(zone.minutes, section.idleTotalMin),
                 false,
               ),
@@ -453,7 +454,7 @@ function zonesBlockEmail(options: {
       section.idleEpisodeCount > 0
         ? `<div style="text-align:right;">
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};">${options.idleSummaryLabel}</div>
-            <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${section.idleEpisodeCount} эп.</div>
+            <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-top:4px;">${formatEpisodeCount(section.idleEpisodeCount)}</div>
             <div style="font-size:13px;color:${COLORS.textMuted};margin-top:4px;">${section.idleTotalMin} мин суммарно</div>
           </div>`
         : ''
@@ -557,7 +558,7 @@ function zonesPdfPayload(options: {
             : undefined,
         zonesIdleRows: section.idleByZone.map((zone) => ({
           name: zone.zonaName,
-          value: `${zone.count} эп. · ${zone.minutes} мин`,
+          value: `${formatEpisodeCount(zone.count)} · ${zone.minutes} мин`,
           barPct: ratio(zone.minutes, section.idleTotalMin),
           alert: false,
         })),

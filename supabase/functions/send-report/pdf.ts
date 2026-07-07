@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1'
 import { getRobotoFontBytes } from './roboto-font.ts'
+import { formatEpisodeCount } from './zones.ts'
 
 export type BrigadeCardPayload = {
   supervisor_name: string
@@ -657,7 +658,7 @@ class PdfWriter {
     if (options.summary) {
       const summaryLeft = left + width - 108
       this.text(options.summary.label.toUpperCase(), summaryLeft, top + 12, 6, C.textMuted, 96)
-      this.text(`${options.summary.episodes} эп.`, summaryLeft, top + 24, 11, C.textH, 96)
+      this.text(formatEpisodeCount(options.summary.episodes), summaryLeft, top + 24, 11, C.textH, 96)
       this.text(`${options.summary.minutes} мин суммарно`, summaryLeft, top + 40, 6, C.textMuted, 96)
     }
 
