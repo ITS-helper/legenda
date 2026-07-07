@@ -31,15 +31,13 @@
 
 ## Расписание
 
-Ожидается, что файлы за вчера появляются в Google Drive **около 04:00 МСК** (ночная выгрузка).
+Ожидается, что файлы за вчера появляются в Google Drive **не позднее 08:00 МСК**.
 
 GitHub Actions workflow [`.github/workflows/sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) запускается:
 
-- `02:30 UTC` — 05:30 МСК (первая попытка импорта)
-- `04:00 UTC` — 07:00 МСК (повтор)
-- `04:30 UTC` — 07:30 МСК (последний импорт перед рассылкой)
+- `04:50 UTC` — **07:50 МСК** (импорт в БД, за 10 минут до рассылки)
 
-Рассылка — workflow [send-reports.yml](../.github/workflows/send-reports.yml): **08:00 МСК** daily, пн **08:30** weekly, резерв **09:00**.
+Рассылка — workflow [send-reports.yml](../.github/workflows/send-reports.yml): первая попытка **08:00 МСК** daily, пн **08:30** weekly, резерв **09:00**.
 
 По умолчанию импортируется **вчерашний день по Europe/Moscow**.
 
