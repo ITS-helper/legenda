@@ -34,6 +34,7 @@ flowchart TD
 Edge function (через `supabase secrets set`):
 
 - `SETTINGS_ADMIN_PASSWORD` — общий пароль админки (уже есть)
+- `REPORT_CRON_SECRET` — отдельный секрет для pg_cron (рекомендуется; заголовок `x-report-cron-secret`)
 - `SMTP_HOST`, `SMTP_PORT` (по умолчанию 465), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS` (`true`/`false`)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — проставляются платформой автоматически
 
@@ -109,4 +110,4 @@ Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-report
 | `SMTP настройки не заданы` | Не проставлены секреты SMTP_* у функции |
 | `Нет данных за период` | За выбранный день/неделю нет импортированных смен |
 | Письмо не пришло, лог `failed` | Проверить SMTP-креды, порт/TLS, лимиты провайдера |
-| Пустой список получателей | Добавить адреса в `#/settings` и включить нужный флаг |
+| `Неверный пароль админки` / HTTP 401 из pg_cron | В Vault неверный `report_cron_admin_password` или не задан `REPORT_CRON_SECRET`; см. `setup-report-cron-secrets.sql` |

@@ -113,6 +113,12 @@ function getErrorMessage(error: unknown) {
 }
 
 function isAuthorized(request: Request) {
+  const cronSecret = Deno.env.get('REPORT_CRON_SECRET')
+  const requestCronSecret = request.headers.get('x-report-cron-secret')
+  if (cronSecret && requestCronSecret && requestCronSecret === cronSecret) {
+    return { ok: true as const }
+  }
+
   const expectedPassword = Deno.env.get('SETTINGS_ADMIN_PASSWORD')
   const requestPassword = request.headers.get('x-settings-password')
 
