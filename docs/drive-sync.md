@@ -37,7 +37,7 @@ GitHub Actions workflow [`.github/workflows/sync-drive-reports.yml`](../.github/
 
 - `04:50 UTC` — **07:50 МСК** (импорт в БД, за 10 минут до рассылки)
 
-Рассылка — workflow [send-reports.yml](../.github/workflows/send-reports.yml): **08:30 МСК** daily (пн + weekly), резерв **09:00**, плюс автозапуск после успешного импорта.
+Рассылка — workflow [send-reports.yml](../.github/workflows/send-reports.yml): сразу после импорта, **08:00** и **08:20** МСК daily, пн **08:25** weekly (дедлайн **08:30**).
 
 По умолчанию импортируется **вчерашний день по Europe/Moscow**.
 

@@ -200,7 +200,7 @@ function getMoscowMinutesNow() {
   return getMoscowMinutesFromIso(new Date().toISOString())
 }
 
-const SCHEDULED_SEND_START_MIN = 8 * 60 + 30
+const SCHEDULED_SEND_DEADLINE_MIN = 8 * 60 + 30
 
 function isKppMetricMinuteAt(eventAt: string) {
   const minutes = getMoscowMinutesFromIso(eventAt)
@@ -1762,11 +1762,11 @@ Deno.serve(async (request) => {
 
     const triggeredBy = request.headers.get('x-triggered-by') ?? 'manual'
     if (triggeredBy === 'schedule') {
-      if (getMoscowMinutesNow() < SCHEDULED_SEND_START_MIN) {
+      if (getMoscowMinutesNow() > SCHEDULED_SEND_DEADLINE_MIN) {
         return jsonResponse({
           ok: true,
           skipped: true,
-          reason: 'before_send_window',
+          reason: 'after_send_window',
           reportType: type,
           periodKey: report.periodKey,
         })

@@ -2,8 +2,9 @@ name: Send Reports
 
 on:
   schedule:
-    - cron: '30 5 * * *'  # 08:30 МСК — daily (пн + weekly)
-    - cron: '0 6 * * *'   # 09:00 МСК — резерв, если импорт/первый запуск задержались
+    - cron: '0 5 * * *'    # 08:00 МСК — daily (после импорта 07:50)
+    - cron: '20 5 * * *'   # 08:20 МСК — резерв daily (дедлайн 08:30)
+    - cron: '25 5 * * 1'  # 08:25 МСК пн — weekly (дедлайн 08:30)
   workflow_run:
     workflows: [Sync Drive Reports]
     types: [completed]
@@ -59,13 +60,6 @@ jobs:
             fi
           }
 
-          wait_until_send_window() {
-            while [ "$(TZ=Europe/Moscow date +%H%M)" -lt 830 ]; do
-              echo "Ждём окно рассылки 08:30 МСК, сейчас $(TZ=Europe/Moscow date '+%H:%M %Z')"
-              sleep 60
-            done
-          }
-
           SEND_DAILY=false
           SEND_WEEKLY=false
 
@@ -77,13 +71,10 @@ jobs:
             fi
           elif [ "$EVENT_NAME" = "workflow_run" ]; then
             SEND_DAILY=true
-            wait_until_send_window
-          elif [ "$SCHEDULE" = "30 5 * * *" ] || [ "$SCHEDULE" = "0 6 * * *" ]; then
+          elif [ "$SCHEDULE" = "0 5 * * *" ] || [ "$SCHEDULE" = "20 5 * * *" ]; then
             SEND_DAILY=true
-            DOW=$(TZ=Europe/Moscow date +%u)
-            if [ "$DOW" = "1" ]; then
-              SEND_WEEKLY=true
-            fi
+          elif [ "$SCHEDULE" = "25 5 * * 1" ]; then
+            SEND_WEEKLY=true
           else
             echo "Неизвестное расписание: $SCHEDULE"
             exit 1
