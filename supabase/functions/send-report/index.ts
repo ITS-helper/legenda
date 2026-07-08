@@ -15,6 +15,7 @@ import {
 } from './zones.ts'
 
 type ReportType = 'daily' | 'weekly'
+type ReportAudience = 'managers' | 'foremen'
 
 type Recipient = {
   email: string
@@ -22,6 +23,12 @@ type Recipient = {
   daily: boolean
   weekly: boolean
   active: boolean
+  audience?: ReportAudience
+  brigade_name?: string | null
+}
+
+type ReportBuildOptions = {
+  brigadeFilter?: string
 }
 
 type BrigadeDailyRow = {
@@ -209,7 +216,47 @@ function getMoscowMinutesNow() {
   return getMoscowMinutesFromIso(new Date().toISOString())
 }
 
-const SCHEDULED_SEND_DEADLINE_MIN = 8 * 60 + 30
+// Окно, в котором принимается автоматическая рассылка относительно настроенного времени (МСК).
+const SCHEDULE_WINDOW_BEFORE_MIN = 15
+const SCHEDULE_WINDOW_AFTER_MIN = 120
+
+type ReportScheduleRow = {
+  daily_enabled: boolean
+  daily_hour: number
+  daily_minute: number
+  weekly_enabled: boolean
+  weekly_dow: number
+  weekly_hour: number
+  weekly_minute: number
+}
+
+// deno-lint-ignore no-explicit-any
+async function loadReportSchedule(supabase: any): Promise<ReportScheduleRow | null> {
+  try {
+    const { data } = await supabase.rpc('get_report_schedule')
+    return (data as ReportScheduleRow) ?? null
+  } catch {
+    return null
+  }
+}
+
+function validateSchedulePayload(body: Record<string, unknown>): string | null {
+  const intFields: Array<[string, number, number]> = [
+    ['daily_hour', 0, 23],
+    ['daily_minute', 0, 59],
+    ['weekly_hour', 0, 23],
+    ['weekly_minute', 0, 59],
+    ['weekly_dow', 1, 7],
+  ]
+  for (const [key, min, max] of intFields) {
+    if (body[key] === undefined || body[key] === null) continue
+    const value = Number(body[key])
+    if (!Number.isInteger(value) || value < min || value > max) {
+      return `Некорректное значение поля ${key}`
+    }
+  }
+  return null
+}
 
 function isKppMetricMinuteAt(eventAt: string) {
   const minutes = getMoscowMinutesFromIso(eventAt)
@@ -1392,18 +1439,33 @@ function kppBlock(rows: KppRow[]) {
   </details>`
 }
 
-async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date: string) {
+function filterRowsByBrigade<T extends { supervisor_name: string }>(rows: T[], brigadeFilter?: string) {
+  if (!brigadeFilter) return rows
+  return rows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeFilter))
+}
+
+function brigadeReportLabel(brigadeFilter?: string) {
+  if (!brigadeFilter) return ''
+  return ` — бригада ${brigadeFilter}`
+}
+
+async function buildDailyHtml(
+  supabase: ReturnType<typeof getAdminClient>,
+  date: string,
+  options: ReportBuildOptions = {},
+) {
+  const { brigadeFilter } = options
   const { data: brigadesData, error: brigadesError } = await supabase!
     .from('brigade_daily_metrics')
     .select('*')
     .eq('report_date', date)
     .order('supervisor_name', { ascending: true })
   if (brigadesError) throw brigadesError
-  const brigades = (brigadesData ?? []) as BrigadeDailyRow[]
+  const brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter)
 
-  const dynamics = await loadBrigadeActivityDynamics(supabase, date)
+  const dynamics = filterRowsByBrigade(await loadBrigadeActivityDynamics(supabase, date), brigadeFilter)
   const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, date, date)
-  const idleEpisodes = await loadIdleEpisodes(supabase, date, date)
+  const idleEpisodes = filterRowsByBrigade(await loadIdleEpisodes(supabase, date, date), brigadeFilter)
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
   const zoneSections = brigades.map((brigade) => {
     const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
@@ -1433,15 +1495,18 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
   const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
+  const brigadeLabel = brigadeReportLabel(brigadeFilter)
+  const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам'
+
   const html = `${EMAIL_WRAP_START}
     <tr><td style="padding:24px 24px 8px;">
       <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Ежедневный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}</h1>
+      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}${brigadeLabel}</h1>
     </td></tr>
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
         [
-          metricCell('Вышло на смену', formatShiftHeadcount(totals.workers)),
+          metricCell('Вышло на смену', brigadeFilter ? formatBrigadeShiftHeadcount(brigadeFilter, totals.workers) : formatShiftHeadcount(totals.workers)),
           metricCell('Активность', pct(activity)),
           metricCell('Слабая активность', pct(weakActivity)),
         ],
@@ -1450,7 +1515,7 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
           metricCell('Ходьба между зонами', pct(go)),
         ],
       ])}
-      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам</h3>
+      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
       ${brigadeCardsEmailDaily(brigades)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За день',
@@ -1470,15 +1535,18 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
 
   const pdfPayload: ReportPdfPayload = {
     title: 'Ежедневный отчёт',
-    subtitle: `Смена за ${ru(date)}`,
+    subtitle: `Смена за ${ru(date)}${brigadeLabel}`,
     metrics: [
-      { label: 'Вышло на смену', value: formatShiftHeadcount(totals.workers) },
+      {
+        label: 'Вышло на смену',
+        value: brigadeFilter ? formatBrigadeShiftHeadcount(brigadeFilter, totals.workers) : formatShiftHeadcount(totals.workers),
+      },
       { label: 'Активность', value: pct(activity) },
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
     ],
-    brigadeSectionTitle: 'По бригадам',
+    brigadeSectionTitle,
     brigadeCards: brigades.map(brigadeCardPayloadDaily),
     dynamicsTitle: 'Динамика показателей активности',
     dynamicsPeriodLabel: 'За день',
@@ -1499,30 +1567,35 @@ async function buildDailyHtml(supabase: ReturnType<typeof getAdminClient>, date:
     }),
   }
 
-  const subject = `Ежедневный отчёт Legenda — ${ruShort(date)}`
+  const subject = `Ежедневный отчёт Legenda — ${ruShort(date)}${brigadeLabel}`
   return {
     html,
     subject,
     periodKey: date,
     hasData: brigades.length > 0,
     pdfPayload,
-    pdfFilename: dailyPdfFilename(date),
+    pdfFilename: brigadeFilter ? `legenda-daily-${date}-${brigadeFilter.replace(/\s+/g, '-').toLowerCase()}.pdf` : dailyPdfFilename(date),
   }
 }
 
-async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, weekStart: string) {
+async function buildWeeklyHtml(
+  supabase: ReturnType<typeof getAdminClient>,
+  weekStart: string,
+  options: ReportBuildOptions = {},
+) {
+  const { brigadeFilter } = options
   const { data, error } = await supabase!
     .from('brigade_weekly_metrics')
     .select('*')
     .eq('week_start', weekStart)
     .order('supervisor_name', { ascending: true })
   if (error) throw error
-  const brigades = (data ?? []) as BrigadeWeeklyRow[]
+  const brigades = filterRowsByBrigade((data ?? []) as BrigadeWeeklyRow[], brigadeFilter)
   const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
 
-  const dynamics = await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd)
+  const dynamics = filterRowsByBrigade(await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd), brigadeFilter)
   const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, weekStart, weekEnd)
-  const idleEpisodes = await loadIdleEpisodes(supabase, weekStart, weekEnd)
+  const idleEpisodes = filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEnd), brigadeFilter)
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
   const zoneSections = brigades.map((brigade) => {
     const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
@@ -1551,10 +1624,13 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
   const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
 
+  const brigadeLabel = brigadeReportLabel(brigadeFilter)
+  const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам за неделю'
+
   const html = `${EMAIL_WRAP_START}
     <tr><td style="padding:24px 24px 8px;">
       <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Еженедельный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}</h1>
+      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}</h1>
     </td></tr>
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
@@ -1565,7 +1641,7 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
           metricCell('Ходьба между зонами', pct(go), false, '25%'),
         ],
       ])}
-      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">По бригадам за неделю</h3>
+      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
       ${brigadeCardsEmailWeekly(brigades)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За неделю',
@@ -1585,14 +1661,14 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
 
   const pdfPayload: ReportPdfPayload = {
     title: 'Еженедельный отчёт',
-    subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+    subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`,
     metrics: [
       { label: 'Активность', value: pct(activity) },
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
     ],
-    brigadeSectionTitle: 'По бригадам за неделю',
+    brigadeSectionTitle,
     brigadeCards: brigades.map(brigadeCardPayloadWeekly),
     dynamicsTitle: 'Динамика показателей активности',
     dynamicsPeriodLabel: 'За неделю',
@@ -1613,27 +1689,47 @@ async function buildWeeklyHtml(supabase: ReturnType<typeof getAdminClient>, week
     }),
   }
 
-  const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}`
+  const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}${brigadeLabel}`
   return {
     html,
     subject,
     periodKey: weekStart,
     hasData: brigades.length > 0,
     pdfPayload,
-    pdfFilename: weeklyPdfFilename(weekStart),
+    pdfFilename: brigadeFilter
+      ? `legenda-weekly-${weekStart}-${brigadeFilter.replace(/\s+/g, '-').toLowerCase()}.pdf`
+      : weeklyPdfFilename(weekStart),
   }
 }
 
-async function listRecipients(supabase: ReturnType<typeof getAdminClient>) {
-  const { data, error } = await supabase!
+async function listRecipients(
+  supabase: ReturnType<typeof getAdminClient>,
+  audience?: ReportAudience,
+  brigadeName?: string | null,
+) {
+  let query = supabase!
     .from('email_recipients')
-    .select('id, email, label, daily, weekly, active')
+    .select('id, email, label, daily, weekly, active, audience, brigade_name')
     .order('email', { ascending: true })
+
+  if (audience) query = query.eq('audience', audience)
+  if (audience === 'foremen' && brigadeName) query = query.eq('brigade_name', brigadeName)
+
+  const { data, error } = await query
   if (error) throw error
   return data ?? []
 }
 
-async function replaceRecipients(supabase: ReturnType<typeof getAdminClient>, recipients: Recipient[]) {
+async function replaceRecipients(
+  supabase: ReturnType<typeof getAdminClient>,
+  recipients: Recipient[],
+  audience: ReportAudience,
+  brigadeName: string | null,
+) {
+  if (audience === 'foremen' && !brigadeName) {
+    throw new Error('Для рассылки бригадирам нужно указать бригаду')
+  }
+
   const cleaned = recipients
     .map((row) => ({
       email: String(row.email ?? '').trim().toLowerCase(),
@@ -1641,10 +1737,18 @@ async function replaceRecipients(supabase: ReturnType<typeof getAdminClient>, re
       daily: row.daily !== false,
       weekly: row.weekly !== false,
       active: row.active !== false,
+      audience,
+      brigade_name: audience === 'foremen' ? brigadeName : null,
     }))
     .filter((row) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email))
 
-  const { error: deleteError } = await supabase!.from('email_recipients').delete().gte('id', 0)
+  let deleteQuery = supabase!.from('email_recipients').delete().eq('audience', audience)
+  if (audience === 'foremen') {
+    deleteQuery = deleteQuery.eq('brigade_name', brigadeName)
+  } else {
+    deleteQuery = deleteQuery.is('brigade_name', null)
+  }
+  const { error: deleteError } = await deleteQuery
   if (deleteError) throw deleteError
 
   if (cleaned.length > 0) {
@@ -1652,7 +1756,124 @@ async function replaceRecipients(supabase: ReturnType<typeof getAdminClient>, re
     if (insertError) throw insertError
   }
 
-  return listRecipients(supabase)
+  return listRecipients(supabase, audience, brigadeName)
+}
+
+type SendBatch = {
+  audience: ReportAudience
+  brigadeName: string | null
+  recipients: string[]
+}
+
+function buildSendBatches(recipients: Recipient[], type: ReportType): SendBatch[] {
+  const active = recipients.filter((row) => row.active && (type === 'daily' ? row.daily : row.weekly))
+  const batches: SendBatch[] = []
+
+  const managerEmails = active.filter((row) => (row.audience ?? 'managers') === 'managers').map((row) => row.email)
+  if (managerEmails.length > 0) {
+    batches.push({ audience: 'managers', brigadeName: null, recipients: managerEmails })
+  }
+
+  for (const brigadeName of TRACKED_BRIGADES) {
+    const emails = active
+      .filter(
+        (row) =>
+          row.audience === 'foremen' &&
+          row.brigade_name &&
+          brigadeNamesMatch(row.brigade_name, brigadeName),
+      )
+      .map((row) => row.email)
+    if (emails.length > 0) {
+      batches.push({ audience: 'foremen', brigadeName, recipients: emails })
+    }
+  }
+
+  return batches
+}
+
+async function wasReportAlreadySent(
+  supabase: ReturnType<typeof getAdminClient>,
+  type: ReportType,
+  periodKey: string,
+  audience: ReportAudience,
+  brigadeName: string | null,
+) {
+  let query = supabase!
+    .from('email_log')
+    .select('id')
+    .eq('report_type', type)
+    .eq('period_key', periodKey)
+    .eq('status', 'sent')
+    .eq('audience', audience)
+
+  query = brigadeName ? query.eq('brigade_name', brigadeName) : query.is('brigade_name', null)
+
+  const { data } = await query.limit(1).maybeSingle()
+  return Boolean(data)
+}
+
+async function sendReportBatch(
+  supabase: ReturnType<typeof getAdminClient>,
+  type: ReportType,
+  periodKey: string,
+  batch: SendBatch,
+  buildOptions: { date?: string; weekStart?: string },
+  triggeredBy: string,
+) {
+  const report =
+    type === 'daily'
+      ? await buildDailyHtml(
+          supabase,
+          buildOptions.date ?? yesterdayMoscowIso(),
+          batch.audience === 'foremen' && batch.brigadeName ? { brigadeFilter: batch.brigadeName } : {},
+        )
+      : await buildWeeklyHtml(
+          supabase,
+          buildOptions.weekStart ?? previousWeekStartIso(),
+          batch.audience === 'foremen' && batch.brigadeName ? { brigadeFilter: batch.brigadeName } : {},
+        )
+
+  if (!report.hasData) {
+    return { skipped: true as const, reason: 'no_data', recipients: batch.recipients, periodKey: report.periodKey }
+  }
+
+  let pdfAttachment: { filename: string; content: Uint8Array } | undefined
+  let pdfAttached = false
+  let pdfError: string | null = null
+
+  try {
+    const { renderReportPdf } = await import('./pdf.ts')
+    const pdfBytes = await renderReportPdf(report.pdfPayload)
+    if (pdfBytes.byteLength < 100) {
+      throw new Error(`PDF слишком маленький (${pdfBytes.byteLength} байт)`)
+    }
+    pdfAttachment = { filename: report.pdfFilename, content: pdfBytes }
+    pdfAttached = true
+  } catch (error) {
+    pdfError = getErrorMessage(error)
+    console.error('PDF generation failed:', pdfError)
+    throw new Error(`Письмо не отправлено: не удалось создать PDF (${pdfError})`)
+  }
+
+  await sendEmails(report.subject, report.html, batch.recipients, pdfAttachment)
+  await supabase!.from('email_log').insert({
+    report_type: type,
+    period_key: report.periodKey,
+    recipients: batch.recipients,
+    status: 'sent',
+    audience: batch.audience,
+    brigade_name: batch.brigadeName,
+    triggered_by: triggeredBy,
+    error_message: pdfAttached ? null : pdfError ? `PDF не создан: ${pdfError}` : null,
+  })
+
+  return {
+    skipped: false as const,
+    recipients: batch.recipients,
+    periodKey: report.periodKey,
+    pdfAttached,
+    pdfError,
+  }
 }
 
 async function sendEmails(
@@ -1721,15 +1942,52 @@ Deno.serve(async (request) => {
 
   try {
     if (resource === 'recipients') {
+      const audienceParam = url.searchParams.get('audience')
+      const brigadeName = url.searchParams.get('brigade_name')
+      const audience =
+        audienceParam === 'managers' || audienceParam === 'foremen' ? (audienceParam as ReportAudience) : undefined
+
       if (request.method === 'GET') {
-        return jsonResponse({ recipients: await listRecipients(supabase) })
+        return jsonResponse({ recipients: await listRecipients(supabase, audience, brigadeName) })
       }
       if (request.method === 'PUT') {
-        const payload = (await request.json().catch(() => null)) as { recipients?: Recipient[] } | null
+        const payload = (await request.json().catch(() => null)) as {
+          recipients?: Recipient[]
+          audience?: ReportAudience
+          brigade_name?: string | null
+        } | null
         if (!Array.isArray(payload?.recipients)) {
           return jsonResponse({ error: 'Ожидается массив recipients' }, 400)
         }
-        return jsonResponse({ recipients: await replaceRecipients(supabase, payload!.recipients) })
+        const saveAudience = payload?.audience ?? audience
+        if (saveAudience !== 'managers' && saveAudience !== 'foremen') {
+          return jsonResponse({ error: 'audience должен быть managers или foremen' }, 400)
+        }
+        const saveBrigadeName = saveAudience === 'foremen' ? payload?.brigade_name ?? brigadeName ?? null : null
+        if (saveAudience === 'foremen' && !saveBrigadeName) {
+          return jsonResponse({ error: 'Для бригадиров нужно указать brigade_name' }, 400)
+        }
+        return jsonResponse({
+          recipients: await replaceRecipients(supabase, payload!.recipients, saveAudience, saveBrigadeName),
+        })
+      }
+      return jsonResponse({ error: 'Method not allowed' }, 405)
+    }
+
+    if (resource === 'schedule') {
+      if (request.method === 'GET') {
+        const { data, error } = await supabase.rpc('get_report_schedule')
+        if (error) return jsonResponse({ error: error.message }, 500)
+        return jsonResponse({ schedule: data })
+      }
+      if (request.method === 'PUT') {
+        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+        if (!body) return jsonResponse({ error: 'Ожидается объект расписания' }, 400)
+        const invalid = validateSchedulePayload(body)
+        if (invalid) return jsonResponse({ error: invalid }, 400)
+        const { data, error } = await supabase.rpc('set_report_schedule', { p: body })
+        if (error) return jsonResponse({ error: error.message }, 500)
+        return jsonResponse({ schedule: data })
       }
       return jsonResponse({ error: 'Method not allowed' }, 405)
     }
@@ -1743,6 +2001,8 @@ Deno.serve(async (request) => {
       date?: string
       weekStart?: string
       preview?: boolean
+      audience?: ReportAudience
+      brigadeName?: string
     } | null
 
     const type = payload?.type
@@ -1750,12 +2010,25 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: 'type должен быть daily или weekly' }, 400)
     }
 
-    const report =
-      type === 'daily'
-        ? await buildDailyHtml(supabase, payload?.date?.trim() || yesterdayMoscowIso())
-        : await buildWeeklyHtml(supabase, payload?.weekStart?.trim() || previousWeekStartIso())
+    const date = payload?.date?.trim() || yesterdayMoscowIso()
+    const weekStart = payload?.weekStart?.trim() || previousWeekStartIso()
+    const previewAudience = payload?.audience
+    const previewBrigadeName = payload?.brigadeName?.trim() || undefined
 
     if (payload?.preview) {
+      const report =
+        type === 'daily'
+          ? await buildDailyHtml(
+              supabase,
+              date,
+              previewAudience === 'foremen' && previewBrigadeName ? { brigadeFilter: previewBrigadeName } : {},
+            )
+          : await buildWeeklyHtml(
+              supabase,
+              weekStart,
+              previewAudience === 'foremen' && previewBrigadeName ? { brigadeFilter: previewBrigadeName } : {},
+            )
+
       return jsonResponse({
         ok: true,
         reportType: type,
@@ -1765,99 +2038,87 @@ Deno.serve(async (request) => {
       })
     }
 
-    if (!report.hasData) {
-      return jsonResponse({ error: `Нет данных за период ${report.periodKey}` }, 400)
-    }
-
     const triggeredBy = request.headers.get('x-triggered-by') ?? 'manual'
     if (triggeredBy === 'schedule') {
-      if (getMoscowMinutesNow() > SCHEDULED_SEND_DEADLINE_MIN) {
+      const schedule = await loadReportSchedule(supabase)
+      const scheduledMin =
+        type === 'daily'
+          ? (schedule?.daily_hour ?? 8) * 60 + (schedule?.daily_minute ?? 0)
+          : (schedule?.weekly_hour ?? 8) * 60 + (schedule?.weekly_minute ?? 0)
+      const nowMin = getMoscowMinutesNow()
+
+      if (nowMin < scheduledMin - SCHEDULE_WINDOW_BEFORE_MIN || nowMin > scheduledMin + SCHEDULE_WINDOW_AFTER_MIN) {
         return jsonResponse({
           ok: true,
           skipped: true,
-          reason: 'after_send_window',
+          reason: 'outside_send_window',
           reportType: type,
-          periodKey: report.periodKey,
-        })
-      }
-
-      const { data: existing } = await supabase
-        .from('email_log')
-        .select('id')
-        .eq('report_type', type)
-        .eq('period_key', report.periodKey)
-        .eq('status', 'sent')
-        .limit(1)
-        .maybeSingle()
-
-      if (existing) {
-        return jsonResponse({
-          ok: true,
-          skipped: true,
-          reason: 'already_sent',
-          reportType: type,
-          periodKey: report.periodKey,
+          periodKey: type === 'daily' ? date : weekStart,
         })
       }
     }
 
     const allRecipients = await listRecipients(supabase)
-    const targets = allRecipients
-      .filter((row) => row.active && (type === 'daily' ? row.daily : row.weekly))
-      .map((row) => row.email as string)
+    const batches = buildSendBatches(allRecipients, type)
 
-    if (targets.length === 0) {
-      return jsonResponse({ ok: true, reportType: type, periodKey: report.periodKey, recipients: [] })
-    }
-
-    try {
-      let pdfAttachment: { filename: string; content: Uint8Array } | undefined
-      let pdfAttached = false
-      let pdfError: string | null = null
-
-      try {
-        const { renderReportPdf } = await import('./pdf.ts')
-        const pdfBytes = await renderReportPdf(report.pdfPayload)
-        if (pdfBytes.byteLength < 100) {
-          throw new Error(`PDF слишком маленький (${pdfBytes.byteLength} байт)`)
-        }
-        pdfAttachment = { filename: report.pdfFilename, content: pdfBytes }
-        pdfAttached = true
-      } catch (error) {
-        pdfError = getErrorMessage(error)
-        console.error('PDF generation failed:', pdfError)
-        throw new Error(`Письмо не отправлено: не удалось создать PDF (${pdfError})`)
-      }
-
-      await sendEmails(report.subject, report.html, targets, pdfAttachment)
-      await supabase.from('email_log').insert({
-        report_type: type,
-        period_key: report.periodKey,
-        recipients: targets,
-        status: 'sent',
-        triggered_by: request.headers.get('x-triggered-by') ?? 'manual',
-        error_message: pdfAttached ? null : pdfError ? `PDF не создан: ${pdfError}` : null,
-      })
-
+    if (batches.length === 0) {
       return jsonResponse({
         ok: true,
         reportType: type,
-        periodKey: report.periodKey,
-        recipients: targets,
-        pdfAttached,
-        pdfError,
+        periodKey: type === 'daily' ? date : weekStart,
+        recipients: [],
       })
-    } catch (sendError) {
-      await supabase.from('email_log').insert({
-        report_type: type,
-        period_key: report.periodKey,
-        recipients: targets,
-        status: 'failed',
-        error_message: getErrorMessage(sendError),
-        triggered_by: request.headers.get('x-triggered-by') ?? 'manual',
-      })
-      throw sendError
     }
+
+    const sentRecipients: string[] = []
+    let pdfAttached: boolean | undefined
+    let pdfError: string | null | undefined
+    let periodKey = type === 'daily' ? date : weekStart
+
+    for (const batch of batches) {
+      if (triggeredBy === 'schedule') {
+        const alreadySent = await wasReportAlreadySent(supabase, type, periodKey, batch.audience, batch.brigadeName)
+        if (alreadySent) continue
+      }
+
+      try {
+        const result = await sendReportBatch(
+          supabase,
+          type,
+          periodKey,
+          batch,
+          { date, weekStart },
+          triggeredBy,
+        )
+        periodKey = result.periodKey
+        if (!result.skipped) {
+          sentRecipients.push(...result.recipients)
+          pdfAttached = result.pdfAttached
+          pdfError = result.pdfError
+        }
+      } catch (sendError) {
+        await supabase.from('email_log').insert({
+          report_type: type,
+          period_key: periodKey,
+          recipients: batch.recipients,
+          status: 'failed',
+          audience: batch.audience,
+          brigade_name: batch.brigadeName,
+          error_message: getErrorMessage(sendError),
+          triggered_by: triggeredBy,
+        })
+        throw sendError
+      }
+    }
+
+    return jsonResponse({
+      ok: true,
+      reportType: type,
+      periodKey,
+      recipients: sentRecipients,
+      pdfAttached,
+      pdfError,
+    })
   } catch (error) {
     return jsonResponse({ error: getErrorMessage(error) }, 500)
   }

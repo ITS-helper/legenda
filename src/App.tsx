@@ -85,7 +85,7 @@ function AppContent() {
             Дашборд
           </a>
           <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
-            Настройки
+            Рассылка
           </a>
           <button type="button" className="topbar-link topbar-logout" onClick={logout}>
             Выйти
