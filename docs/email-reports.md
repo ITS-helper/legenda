@@ -17,7 +17,8 @@
 ```mermaid
 flowchart TD
   site["Дашборд / Settings"] -->|"x-settings-password"| fn["Edge function send-report"]
-  cron["GitHub Actions cron"] -->|"schedule"| fn
+  gha["GitHub Actions"] -->|"schedule"| fn
+  dbcron["Supabase pg_cron"] -->|"pg_net HTTP"| fn
   fn --> views["Supabase views (brigade daily/weekly, КПП)"]
   fn --> smtp["SMTP"]
   fn --> log["analytics.email_log"]
@@ -49,6 +50,10 @@ supabase secrets set SMTP_HOST=... SMTP_PORT=465 SMTP_USER=... SMTP_PASSWORD=...
 
 ## Расписание
 
+Два независимых канала (дубликаты отсекаются через `email_log`):
+
+### 1. GitHub Actions
+
 Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-reports.yml) (после импорта из Drive в **07:50 МСК**, см. [drive-sync.md](drive-sync.md)):
 
 - сразу после успешного **Sync Drive Reports** — дневной отчёт, как только данные в БД;
@@ -56,7 +61,26 @@ Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-report
 - `05:20 UTC` (**08:20 МСК**) — резерв daily (дедлайн 08:30);
 - `05:25 UTC` по понедельникам (**08:25 МСК**) — weekly за прошлую неделю.
 
-Автоматическая рассылка **не позднее 08:30 МСК** (поздние запуски GitHub Actions пропускаются).
+### 2. Supabase pg_cron (резерв, если GitHub задержался)
+
+Миграция [`20260714_report_send_pg_cron.sql`](../supabase/migrations/20260714_report_send_pg_cron.sql) + секреты в Vault
+([`supabase/scripts/setup-report-cron-secrets.sql`](../supabase/scripts/setup-report-cron-secrets.sql)):
+
+| Задача | Cron (UTC) | МСК | Действие |
+|--------|------------|-----|----------|
+| `legenda-send-daily-early` | `52,55,58 4 * * *` | 07:52–07:58 | daily |
+| `legenda-send-daily-watchdog` | `0,5,10,15,20,25,30 5 * * *` | 08:00–08:30 | daily каждые 5 мин |
+| `legenda-send-weekly-mon` | `25,30 5 * * 1` | 08:25–08:30 пн | weekly |
+
+Планировщик в Postgres обычно срабатывает точнее, чем GitHub Actions cron.
+
+**Настройка (один раз):**
+
+1. Применить миграцию `20260714_report_send_pg_cron.sql` в SQL Editor.
+2. Подставить URL, anon key и пароль админки в `setup-report-cron-secrets.sql` и выполнить.
+3. Убедиться, что в `cron.job` есть три задачи `legenda-send-*`.
+
+Автоматическая рассылка **не позднее 08:30 МСК** (поздние запуски GitHub Actions и pg_cron пропускаются в `send-report`).
 
 Повторная отправка за тот же период по расписанию пропускается (см. `email_log`, `skipped: already_sent`).
 

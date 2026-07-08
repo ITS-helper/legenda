@@ -235,6 +235,7 @@ Google Drive (LEGENDA/)
 | [`deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | push в `main` | `npm run build` → GitHub Pages |
 | [`sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) | 04:50 UTC (07:50 МСК) | Импорт вчера (МСК) из Drive (файлы не позднее 08:00) |
 | [`send-reports.yml`](../.github/workflows/send-reports.yml) | после sync, 05:00/05:20 UTC, пн 05:25 | Вызов `send-report` (дедлайн 08:30 МСК) |
+| `pg_cron` в Postgres | 04:52–05:30 UTC, пн 05:25–05:30 | Резервный вызов `send-report` через `pg_net` |
 
 При сбое deploy с сообщением *«Deployment failed, try again later»* — временный сбой
 GitHub Pages; помогает **Re-run failed jobs**.
