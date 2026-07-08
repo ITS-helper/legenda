@@ -2,9 +2,12 @@ name: Send Reports
 
 on:
   schedule:
-    - cron: '0 5 * * *'   # 08:00 МСК — первая попытка daily (после импорта 07:50)
-    - cron: '30 5 * * 1'  # 08:30 МСК понедельник — недельный отчёт
-    - cron: '10 5 * * *'   # 08:10 МСК — резервная попытка (дубликаты отсекаются в send-report)
+    - cron: '30 5 * * *'  # 08:30 МСК — daily (пн + weekly)
+    - cron: '0 6 * * *'   # 09:00 МСК — резерв, если импорт/первый запуск задержались
+  workflow_run:
+    workflows: [Sync Drive Reports]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       type:
@@ -19,6 +22,10 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - name: Send reports
         env:
@@ -52,6 +59,13 @@ jobs:
             fi
           }
 
+          wait_until_send_window() {
+            while [ "$(TZ=Europe/Moscow date +%H%M)" -lt 830 ]; do
+              echo "Ждём окно рассылки 08:30 МСК, сейчас $(TZ=Europe/Moscow date '+%H:%M %Z')"
+              sleep 60
+            done
+          }
+
           SEND_DAILY=false
           SEND_WEEKLY=false
 
@@ -61,16 +75,18 @@ jobs:
             else
               SEND_DAILY=true
             fi
-          elif [ "$SCHEDULE" = "30 5 * * 1" ]; then
-            SEND_WEEKLY=true
-          else
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
             SEND_DAILY=true
-            if [ "$SCHEDULE" = "0 6 * * *" ]; then
-              DOW=$(TZ=Europe/Moscow date +%u)
-              if [ "$DOW" = "1" ]; then
-                SEND_WEEKLY=true
-              fi
+            wait_until_send_window
+          elif [ "$SCHEDULE" = "30 5 * * *" ] || [ "$SCHEDULE" = "0 6 * * *" ]; then
+            SEND_DAILY=true
+            DOW=$(TZ=Europe/Moscow date +%u)
+            if [ "$DOW" = "1" ]; then
+              SEND_WEEKLY=true
             fi
+          else
+            echo "Неизвестное расписание: $SCHEDULE"
+            exit 1
           fi
 
           if [ "$SEND_DAILY" = "true" ]; then
