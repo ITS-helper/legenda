@@ -52,3 +52,11 @@ order by jobname;
 -- Тест (после деплоя send-report с REPORT_CRON_SECRET)
 -- select analytics.invoke_scheduled_send_report('daily');
 -- select id, status_code, content from net._http_response order by id desc limit 3;
+
+-- Диагностика (длина секрета, не сам секрет)
+select
+  name,
+  length(trim(decrypted_secret)) as secret_len
+from vault.decrypted_secrets
+where name like 'report_cron_%'
+order by name;

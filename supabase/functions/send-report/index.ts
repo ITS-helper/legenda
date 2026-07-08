@@ -115,7 +115,10 @@ function getErrorMessage(error: unknown) {
 function isAuthorized(request: Request) {
   const cronSecret = Deno.env.get('REPORT_CRON_SECRET')
   const requestCronSecret = request.headers.get('x-report-cron-secret')
-  if (cronSecret && requestCronSecret && requestCronSecret === cronSecret) {
+  if (requestCronSecret) {
+    if (!cronSecret || requestCronSecret !== cronSecret) {
+      return { ok: false, response: jsonResponse({ error: 'Неверный cron-секрет' }, 401) }
+    }
     return { ok: true as const }
   }
 
