@@ -77,9 +77,12 @@ Workflow [`.github/workflows/send-reports.yml`](../.github/workflows/send-report
 
 **Настройка (один раз):**
 
-1. Применить миграцию `20260714_report_send_pg_cron.sql` в SQL Editor.
-2. Подставить URL, anon key и пароль админки в `setup-report-cron-secrets.sql` и выполнить.
-3. Убедиться, что в `cron.job` есть три задачи `legenda-send-*`.
+```bash
+# .env.local: REPORT_CRON_SECRET, SUPABASE_DB_PASSWORD, VITE_SUPABASE_*
+npm run setup:report-cron
+```
+
+Скрипт применяет миграции, Vault, `supabase secrets set` и тестовый вызов.
 
 Автоматическая рассылка **не позднее 08:30 МСК** (поздние запуски GitHub Actions и pg_cron пропускаются в `send-report`).
 

@@ -12,7 +12,8 @@
     "sync:drive": "node scripts/sync-drive-reports.mjs",
     "backfill:drive": "node scripts/backfill-drive-reports.mjs",
     "inspect:report": "node scripts/inspect-report-headers.mjs",
-    "db:migrate": "node scripts/apply-migration.mjs"
+    "db:migrate": "node scripts/apply-migration.mjs",
+    "setup:report-cron": "node scripts/setup-report-cron.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

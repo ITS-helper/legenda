@@ -54,7 +54,7 @@ That means:
 5. Apply `supabase/migrations/20260710_kpp_exclude_lunch.sql` — КПП без обеда 13:00–14:00 МСК.
 6. Configure Google Drive secrets for `npm run sync:drive` (see [docs/drive-sync.md](./drive-sync.md)).
 7. Import a full day with `npm run import:reports` or wait for the scheduled GitHub Actions workflow.
-8. For reliable email delivery before **08:30 МСК**, apply `supabase/migrations/20260714_report_send_pg_cron.sql` and run `supabase/scripts/setup-report-cron-secrets.sql` (see [email-reports.md](./email-reports.md)).
+8. For reliable email delivery before **08:30 МСК**, add `REPORT_CRON_SECRET` and `SUPABASE_DB_PASSWORD` to `.env.local`, then run `npm run setup:report-cron` (see [email-reports.md](./email-reports.md)).
 
 ### Как применить миграцию
 

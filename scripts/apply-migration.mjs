@@ -19,13 +19,15 @@ if (!dbUrl) {
 
 const url = new URL(dbUrl)
 const projectRef = url.hostname.replace(/^db\./, '').replace(/\.supabase\.co$/, '')
+const dbPassword =
+  process.env.SUPABASE_DB_PASSWORD?.trim() || decodeURIComponent(url.password || '')
 const sql = readFileSync(resolve(migrationFile), 'utf8')
 
 const client = new pg.Client({
   host: 'aws-0-eu-west-1.pooler.supabase.com',
   port: 6543,
   user: `postgres.${projectRef}`,
-  password: decodeURIComponent(url.password),
+  password: dbPassword,
   database: url.pathname.replace(/^\//, '') || 'postgres',
   ssl: { rejectUnauthorized: false },
 })
