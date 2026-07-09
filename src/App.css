@@ -1726,6 +1726,7 @@
 .volumes-panel {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .volumes-panel-hint {
@@ -1756,17 +1757,26 @@
 
 .volumes-brigade-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+@media (min-width: 820px) {
+  .volumes-brigade-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .volumes-brigade-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  min-width: 0;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
+  overflow: hidden;
 }
 
 .volumes-brigade-card-head {
@@ -1774,34 +1784,56 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 
 .volumes-brigade-card-head h4 {
   margin: 0;
   color: var(--text-h);
   font-size: 1.05rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .volumes-brigade-unit {
   color: var(--text-muted);
   font-size: 0.85rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
-.volumes-brigade-field {
-  margin: 0;
+.volumes-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.volumes-field > span {
+  color: var(--text-muted);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .volumes-textarea {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 96px;
+  min-width: 0;
+  min-height: 84px;
+  max-height: 180px;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface-2);
   color: var(--text-h);
   font: inherit;
-  resize: vertical;
+  line-height: 1.45;
+  resize: none;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .volumes-textarea:focus {
@@ -1844,13 +1876,15 @@
 }
 
 .volumes-input {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 16px;
+  padding: 12px 14px;
   font: inherit;
-  color: var(--text);
-  background: var(--surface);
+  color: var(--text-h);
+  background: var(--surface-2);
 }
 
 .volumes-input:focus {

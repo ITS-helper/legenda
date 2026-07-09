@@ -197,7 +197,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                   <span className="volumes-brigade-unit">м³</span>
                 </div>
 
-                <label className="filter-field volumes-brigade-field">
+                <label className="volumes-field">
                   <span>Выполнено</span>
                   <input
                     type="text"
@@ -209,7 +209,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                   />
                 </label>
 
-                <label className="filter-field volumes-brigade-field">
+                <label className="volumes-field">
                   <span>Виды работ</span>
                   <textarea
                     className="volumes-textarea"
@@ -217,7 +217,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                     onChange={(event) => updateDraft(index, { note: event.target.value })}
                     placeholder="Какие работы выполнены за день"
                     maxLength={1000}
-                    rows={4}
+                    rows={3}
                   />
                 </label>
               </article>
