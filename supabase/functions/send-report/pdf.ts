@@ -68,6 +68,8 @@ export type ReportPdfPayload = {
   }>
   zonesTitle: string
   zonesBrigadeSections: BrigadeZonesPdfSection[]
+  dynamicsBeforeBrigades?: boolean
+  singlePage?: boolean
 }
 
 const PAGE_WIDTH = 595.28
@@ -134,12 +136,17 @@ function deltaColor(delta: string): RGB {
 class PdfWriter {
   private page: PDFPage
   private y = MARGIN
+  private pageHeight: number
+  private readonly singlePage: boolean
 
   constructor(
     private readonly doc: PDFDocument,
     private readonly font: PDFFont,
+    options?: { pageHeight?: number; singlePage?: boolean },
   ) {
-    this.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    this.pageHeight = options?.pageHeight ?? PAGE_HEIGHT
+    this.singlePage = options?.singlePage ?? false
+    this.page = doc.addPage([PAGE_WIDTH, this.pageHeight])
     this.paintPageBackground()
   }
 
@@ -148,13 +155,13 @@ class PdfWriter {
       x: 0,
       y: 0,
       width: PAGE_WIDTH,
-      height: PAGE_HEIGHT,
+      height: this.pageHeight,
       color: C.page,
     })
   }
 
   private bottomY(top: number, height: number) {
-    return PAGE_HEIGHT - top - height
+    return this.pageHeight - top - height
   }
 
   private roundedRect(
@@ -169,7 +176,7 @@ class PdfWriter {
     const r = Math.min(radius, width / 2, height / 2)
     const x = left
     // drawSvgPath: y — верхний край фигуры в PDF-координатах (в отличие от drawRectangle).
-    const y = PAGE_HEIGHT - top
+    const y = this.pageHeight - top
     const path = `M ${r} 0 L ${width - r} 0 Q ${width} 0 ${width} ${r} L ${width} ${height - r} Q ${width} ${height} ${width - r} ${height} L ${r} ${height} Q 0 ${height} 0 ${height - r} L 0 ${r} Q 0 0 ${r} 0 Z`
 
     if (stroke) {
@@ -294,14 +301,18 @@ class PdfWriter {
   }
 
   newPage() {
+    if (this.singlePage) return
     this.page = this.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    this.pageHeight = PAGE_HEIGHT
     this.y = MARGIN
     this.paintPageBackground()
   }
 
   private ensureSpace(height: number) {
-    if (this.y + height <= PAGE_HEIGHT - MARGIN) return
+    if (this.singlePage) return
+    if (this.y + height <= this.pageHeight - MARGIN) return
     this.page = this.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    this.pageHeight = PAGE_HEIGHT
     this.y = MARGIN
     this.paintPageBackground()
   }
@@ -666,9 +677,7 @@ class PdfWriter {
   }
 
   private estimateZonePanelHeight(rows: ZonePanelRow[], hasSummary: boolean) {
-    const headerHeight = hasSummary ? 106 : 72
-    const rowsHeight = rows.length > 0 ? rows.length * 30 + 8 : 28
-    return headerHeight + rowsHeight + 20
+    return estimateZonePanelHeight(rows, hasSummary)
   }
 
   private zonePanel(
@@ -932,18 +941,84 @@ function dynamicsBlockHeight(cardCount: number) {
   return rows * (cardHeight + gap) + 20
 }
 
+function estimateZonePanelHeight(rows: ZonePanelRow[], hasSummary: boolean) {
+  const headerHeight = hasSummary ? 106 : 72
+  const rowsHeight = rows.length > 0 ? rows.length * 30 + 8 : 28
+  return headerHeight + rowsHeight + 20
+}
+
+function metricGridHeight(metrics: Array<{ label: string; value: string }>, columns = 3) {
+  const gap = 8
+  const cardHeight = 72
+  const rows = Math.ceil(metrics.length / columns)
+  return rows * (cardHeight + gap)
+}
+
+function sectionTitleHeight(gapAfter: number) {
+  return 16 + 14 + gapAfter
+}
+
+function zonesBrigadeMatrixHeight(sections: BrigadeZonesPdfSection[]) {
+  if (sections.length === 0) return 0
+
+  const introHeight = 28
+  const maxLocationHeight = Math.max(
+    ...sections.map((section) => estimateZonePanelHeight(section.zonesLocationRows, false)),
+    0,
+  )
+  const maxIdleHeight = Math.max(
+    ...sections.map((section) =>
+      estimateZonePanelHeight(section.zonesIdleRows, Boolean(section.zonesIdleSummary))
+    ),
+    0,
+  )
+
+  return introHeight + 18 + maxLocationHeight + 10 + maxIdleHeight + 12
+}
+
+function estimateReportPdfHeight(payload: ReportPdfPayload) {
+  let height = MARGIN + 85 + metricGridHeight(payload.metrics)
+
+  if (payload.dynamicsBeforeBrigades) {
+    height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
+    height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
+  } else {
+    height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
+    height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
+  }
+
+  if (payload.volumeDynamicsCards?.length) {
+    height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.volumeDynamicsCards.length)
+  }
+
+  height += sectionTitleHeight(18) + zonesBrigadeMatrixHeight(payload.zonesBrigadeSections)
+  height += 38 + MARGIN + 24
+
+  return Math.max(PAGE_HEIGHT, Math.ceil(height))
+}
+
 export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
   const font = await doc.embedFont(getRobotoFontBytes())
-  const writer = new PdfWriter(doc, font)
+  const singlePage = payload.singlePage ?? false
+  const pageHeight = singlePage ? estimateReportPdfHeight(payload) : PAGE_HEIGHT
+  const writer = new PdfWriter(doc, font, { pageHeight, singlePage })
 
   writer.brandedHeader(payload.reportEssence, payload.reportObjectName, payload.subtitle)
   writer.metricGrid(payload.metrics, 3)
-  writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
-  writer.brigadeDashboardCards(payload.brigadeCards)
-  writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
-  writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
+
+  if (payload.dynamicsBeforeBrigades) {
+    writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
+    writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
+    writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
+    writer.brigadeDashboardCards(payload.brigadeCards)
+  } else {
+    writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
+    writer.brigadeDashboardCards(payload.brigadeCards)
+    writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
+    writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
+  }
 
   if (payload.volumeDynamicsCards?.length) {
     writer.sectionTitle(
@@ -957,7 +1032,9 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
     )
   }
 
-  writer.newPage()
+  if (!singlePage) {
+    writer.newPage()
+  }
   writer.sectionTitle(payload.zonesTitle, 14)
   writer.zonesBrigadeMatrix(payload.zonesBrigadeSections)
 

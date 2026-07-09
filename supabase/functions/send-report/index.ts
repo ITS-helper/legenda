@@ -1874,6 +1874,8 @@ async function buildDailyHtml(
       },
       `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
     ),
+    dynamicsBeforeBrigades: true,
+    singlePage: true,
     ...zonesPdfPayload({
       periodLabel: 'за день',
       locationDescription: 'Где сотрудники проводили время за день.',
