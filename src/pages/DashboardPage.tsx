@@ -229,7 +229,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries(entries)
       const dates = await loadVolumeDates(password)
       setVolumeDates(dates)
-      if (normalizeReportDate(volumesDate) === normalized) {
+      if (normalizeReportDate(dynamicsDate) === normalized) {
         const cards = await loadBrigadeVolumeDynamics(normalized)
         setVolumeDynamicsCards(cards)
       }
@@ -316,14 +316,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }, [dynamicsDate])
 
   useEffect(() => {
-    if (!volumesDate) return
+    if (!dynamicsDate) return
     let cancelled = false
 
     async function loadVolumeDynamics() {
       setVolumeDynamicsLoading(true)
       setVolumeDynamicsError(null)
       try {
-        const cards = await loadBrigadeVolumeDynamics(volumesDate)
+        const cards = await loadBrigadeVolumeDynamics(dynamicsDate)
         if (cancelled) return
         setVolumeDynamicsCards(cards)
       } catch (error) {
@@ -337,7 +337,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [volumesDate])
+  }, [dynamicsDate])
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
@@ -438,7 +438,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     <>
       <section className="hero-block dashboard-hero reveal-block">
         <p className="hero-copy hero-copy-compact">
-          Дашборд разбит на шесть блоков: ежедневная сводка, еженедельная аналитика, динамика активности, местоположение и простои, объёмы и детализация по сотрудникам.
+          Дашборд разбит на шесть блоков: ежедневная сводка, еженедельная аналитика, динамика активности и выполненных работ, местоположение и простои, объёмы и детализация по сотрудникам.
         </p>
       </section>
 
@@ -743,11 +743,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
 
-      {/* БЛОК 3 — ДИНАМИКА АКТИВНОСТИ */}
+      {/* БЛОК 3 — ДИНАМИКА АКТИВНОСТИ И ВЫПОЛНЕННЫХ РАБОТ */}
       <CollapsibleBlock
         kicker="Блок 3 · Динамика"
-        title="Динамика показателей активности"
-        description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней."
+        title="Динамика активности и выполненных работ"
+        description="Сравнение активности и выполненных объёмов бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней."
       >
         <div className="filter-row">
           <DatePickerField
@@ -769,6 +769,17 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {!dynamicsLoading && !dynamicsError && dynamicsDate ? (
           <ActivityDynamicsPanel referenceDate={dynamicsDate} cards={dynamicsCards} />
         ) : null}
+
+        <div className="volumes-dynamics-section">
+          <h3 className="volumes-dynamics-title">Динамика выполненных объёмов</h3>
+
+          {volumeDynamicsLoading ? <div className="empty-state">Загружаем динамику объёмов...</div> : null}
+          {volumeDynamicsError ? <div className="empty-state error-state">Ошибка: {volumeDynamicsError}</div> : null}
+
+          {!volumeDynamicsLoading && !volumeDynamicsError && dynamicsDate ? (
+            <VolumeDynamicsPanel referenceDate={dynamicsDate} cards={volumeDynamicsCards} />
+          ) : null}
+        </div>
       </CollapsibleBlock>
 
       {/* БЛОК 4 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
@@ -921,17 +932,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
-
-        <div className="volumes-dynamics-section">
-          <h3 className="volumes-dynamics-title">Динамика выполненных объёмов</h3>
-
-          {volumeDynamicsLoading ? <div className="empty-state">Загружаем динамику объёмов...</div> : null}
-          {volumeDynamicsError ? <div className="empty-state error-state">Ошибка: {volumeDynamicsError}</div> : null}
-
-          {!volumeDynamicsLoading && !volumeDynamicsError && volumesDate ? (
-            <VolumeDynamicsPanel referenceDate={volumesDate} cards={volumeDynamicsCards} />
-          ) : null}
-        </div>
       </CollapsibleBlock>
 
       {/* БЛОК 6 — ДЕТАЛИЗАЦИЯ */}
