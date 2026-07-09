@@ -1,19 +1,16 @@
-import { Resvg } from '@resvg/resvg-js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
-const svgPath = path.join(root, '../public/brand/legenda-logo.svg')
+const sourcePath = path.join(root, '../public/brand/legenda-wordmark.png')
 const pngPath = path.join(root, '../supabase/functions/send-report/assets/legenda-logo.png')
 const outPath = path.join(root, '../supabase/functions/send-report/legenda-logo.ts')
 
-const svg = fs.readFileSync(svgPath)
-const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: 216 } })
-const png = resvg.render().asPng()
-fs.writeFileSync(pngPath, png)
+const source = fs.readFileSync(sourcePath)
+fs.writeFileSync(pngPath, source)
 
-const b64 = png.toString('base64')
+const b64 = source.toString('base64')
 const out = `let cachedLogo: Uint8Array | null = null
 
 export const LEGENDA_LOGO_BASE64 = '${b64}'
@@ -38,5 +35,5 @@ export function legendaLogoDataUri(): string {
 `
 
 fs.writeFileSync(outPath, out)
-console.log(`Wrote ${pngPath} (${png.length} bytes)`)
+console.log(`Wrote ${pngPath} (${source.length} bytes)`)
 console.log(`Wrote ${outPath} (${b64.length} base64 chars)`)

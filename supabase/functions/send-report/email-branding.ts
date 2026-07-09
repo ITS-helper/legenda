@@ -25,7 +25,7 @@ function escapeHtml(value: string) {
 
 export function emailLogoImg(useCid = true) {
   const source = useCid ? `cid:${LEGENDA_LOGO_CID}` : legendaLogoDataUri()
-  return `<img src="${source}" width="108" height="28" alt="LEGENDA" style="display:block;width:108px;max-width:108px;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;margin:0 0 14px;" />`
+  return `<img src="${source}" width="108" height="54" alt="LEGENDA" style="display:block;width:108px;max-width:108px;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;margin:0 0 14px;" />`
 }
 
 export function emailBrandingHeader(
