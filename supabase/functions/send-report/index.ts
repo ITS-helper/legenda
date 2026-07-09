@@ -1218,6 +1218,114 @@ type BrigadeDynamicsPoint = {
 }
 
 const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = 14
+const ACTIVITY_DYNAMICS_CHART_MAX = 60
+const VOLUME_DYNAMICS_CHART_MAX = 200
+const SPARKLINE_CHART_HEIGHT = 56
+const SPARKLINE_BAR_SOFT = 'rgba(0, 78, 207, 0.35)'
+const SPARKLINE_AXIS_MIN_SPAN = 10
+const SPARKLINE_AXIS_PADDING_RATIO = 0.15
+const SPARKLINE_AXIS_PADDING_MIN = 3
+
+function computeSparklineAxisRange(values: number[], floor: number, ceiling: number) {
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  const span = dataMax - dataMin
+  const padding = Math.max(span * SPARKLINE_AXIS_PADDING_RATIO, SPARKLINE_AXIS_PADDING_MIN)
+
+  let min = Math.floor(dataMin - padding)
+  let max = Math.ceil(dataMax + padding)
+
+  min = Math.max(floor, min)
+  max = Math.min(ceiling, max)
+
+  if (max - min < SPARKLINE_AXIS_MIN_SPAN) {
+    const mid = (dataMin + dataMax) / 2
+    min = Math.max(floor, Math.floor(mid - SPARKLINE_AXIS_MIN_SPAN / 2))
+    max = Math.min(ceiling, Math.ceil(mid + SPARKLINE_AXIS_MIN_SPAN / 2))
+  }
+
+  return { min, max }
+}
+
+function sparklineBarHeightPx(
+  value: number | null,
+  axisMin: number,
+  axisMax: number,
+  chartHeight: number,
+) {
+  if (value == null) return 0
+  const range = axisMax - axisMin
+  if (range <= 0) return chartHeight
+  const heightPct = Math.min(Math.max(((value - axisMin) / range) * 100, 0), 100)
+  if (heightPct <= 0) return 0
+  return Math.max(3, Math.round((heightPct / 100) * chartHeight))
+}
+
+type DynamicsSparklineEmailPoint = {
+  report_date: string
+  value: number | null
+}
+
+function buildDynamicsSparklineEmail(
+  points: DynamicsSparklineEmailPoint[],
+  options: {
+    maxValue: number
+    minValue?: number
+    formatAxisValue?: (value: number) => string
+    fewDataLabel: string
+  },
+) {
+  const values = points.flatMap((point) => (point.value != null ? [point.value] : []))
+  if (values.length < 2) {
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${options.fewDataLabel}</div>`
+  }
+
+  const formatAxisValue = options.formatAxisValue ?? String
+  const minValue = options.minValue ?? 0
+  const { min: axisMin, max: axisMax } = computeSparklineAxisRange(values, minValue, options.maxValue)
+  const chartHeight = SPARKLINE_CHART_HEIGHT
+  const referenceIndex = points.length - 1
+  const columnWidth = Math.floor(100 / points.length)
+
+  const bars = points
+    .map((point, index) => {
+      const isReference = index === referenceIndex
+      const barHeight = sparklineBarHeightPx(point.value, axisMin, axisMax, chartHeight)
+      const spacerHeight = Math.max(0, chartHeight - barHeight)
+      const barColor =
+        point.value == null
+          ? STRUCTURE_COLORS.track
+          : isReference
+            ? COLORS.brand
+            : SPARKLINE_BAR_SOFT
+
+      return `<td align="center" valign="bottom" style="padding:0 3px;vertical-align:bottom;width:${columnWidth}%;">
+        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%" style="width:100%;max-width:28px;margin:0 auto;">
+          <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+          <tr><td height="${barHeight}" style="height:${barHeight}px;background-color:${barColor};border-radius:4px 4px 0 0;font-size:0;line-height:0;mso-line-height-rule:exactly;overflow:hidden;">&nbsp;</td></tr>
+        </table>
+        <div style="font-size:9px;line-height:1.2;color:${isReference ? COLORS.brand : COLORS.textMuted};${isReference ? 'font-weight:700;' : ''}margin-top:5px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
+      </td>`
+    })
+    .join('')
+
+  const axisMaxLabel = escapeHtml(formatAxisValue(axisMax))
+  const axisMinLabel = escapeHtml(formatAxisValue(axisMin))
+
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%">
+    <tr>
+      <td width="36" valign="top" style="padding-right:8px;">
+        <table cellpadding="0" cellspacing="0" border="0" role="presentation" height="${chartHeight}" style="height:${chartHeight}px;">
+          <tr><td valign="top" style="font-size:9px;line-height:1;color:${COLORS.textMuted};font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${axisMaxLabel}</td></tr>
+          <tr><td valign="bottom" style="font-size:9px;line-height:1;color:${COLORS.textMuted};font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${axisMinLabel}</td></tr>
+        </table>
+      </td>
+      <td style="border-top:1px solid ${COLORS.border};border-bottom:1px solid ${COLORS.border};padding:0 2px;">
+        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr valign="bottom">${bars}</tr></table>
+      </td>
+    </tr>
+  </table>`
+}
 
 type BrigadeDynamicsCard = {
   supervisor_name: string
@@ -1244,40 +1352,15 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? COLORS.work : COLORS.alert
 }
 
-const SPARKLINE_BAR_SOFT = '#9bb8e8'
-
 function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
-  const numeric = points.map((point) => point.activity_pct).filter((value): value is number => value != null)
-  if (numeric.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Мало данных за ${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней</div>`
-  }
-
-  const chartHeight = 44
-  const barWidth = 8
-  const min = Math.min(...numeric)
-  const max = Math.max(...numeric)
-  const range = max - min || 1
-
-  const bars = points
-    .map((point, index) => {
-      const isLast = index === points.length - 1
-      const value = point.activity_pct
-      const barHeight =
-        value == null ? 2 : Math.max(6, Math.round(((value - min) / range) * (chartHeight - 8)) + 6)
-      const spacerHeight = Math.max(0, chartHeight - barHeight)
-      const barColor = value == null ? STRUCTURE_COLORS.track : isLast ? COLORS.brand : SPARKLINE_BAR_SOFT
-
-      return `<td align="center" valign="bottom" style="padding:0 1px;vertical-align:bottom;">
-        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="${barWidth}">
-          <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
-          <tr><td height="${barHeight}" width="${barWidth}" bgcolor="${barColor}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
-        </table>
-        <div style="font-size:8px;line-height:1.2;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
-      </td>`
-    })
-    .join('')
-
-  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr valign="bottom">${bars}</tr></table>`
+  return buildDynamicsSparklineEmail(
+    points.map((point) => ({ report_date: point.report_date, value: point.activity_pct })),
+    {
+      maxValue: ACTIVITY_DYNAMICS_CHART_MAX,
+      formatAxisValue: (value) => `${value}%`,
+      fewDataLabel: `Мало данных за ${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней`,
+    },
+  )
 }
 
 function dynamicsCardHtml(
@@ -1343,37 +1426,13 @@ function activityDynamicsBlock(
 }
 
 function buildVolumeSparklineEmail(points: BrigadeVolumeDynamicsPoint[]) {
-  const numeric = points.map((point) => point.volume_m3).filter((value): value is number => value != null)
-  if (numeric.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Мало данных за период</div>`
-  }
-
-  const chartHeight = 44
-  const barWidth = 8
-  const min = Math.min(...numeric)
-  const max = Math.max(...numeric)
-  const range = max - min || 1
-
-  const bars = points
-    .map((point, index) => {
-      const isLast = index === points.length - 1
-      const value = point.volume_m3
-      const barHeight =
-        value == null ? 2 : Math.max(6, Math.round(((value - min) / range) * (chartHeight - 8)) + 6)
-      const spacerHeight = Math.max(0, chartHeight - barHeight)
-      const barColor = value == null ? STRUCTURE_COLORS.track : isLast ? COLORS.brand : SPARKLINE_BAR_SOFT
-
-      return `<td align="center" valign="bottom" style="padding:0 1px;vertical-align:bottom;">
-        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="${barWidth}">
-          <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
-          <tr><td height="${barHeight}" width="${barWidth}" bgcolor="${barColor}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
-        </table>
-        <div style="font-size:8px;line-height:1.2;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
-      </td>`
-    })
-    .join('')
-
-  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr valign="bottom">${bars}</tr></table>`
+  return buildDynamicsSparklineEmail(
+    points.map((point) => ({ report_date: point.report_date, value: point.volume_m3 })),
+    {
+      maxValue: VOLUME_DYNAMICS_CHART_MAX,
+      fewDataLabel: 'Мало данных за период',
+    },
+  )
 }
 
 function volumeDynamicsCardHtml(
