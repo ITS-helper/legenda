@@ -5,7 +5,6 @@ import type { ReportPdfPayload } from './pdf.ts'
 import {
   emailBrandingHeader,
   emailHtmlForPreview,
-  inlineLogoAttachment,
   REPORT_ESSENCE_DAILY,
   REPORT_ESSENCE_WEEKLY,
   REPORT_OBJECT_NAME,
@@ -2193,7 +2192,6 @@ async function sendEmails(
   const fullHtml = wrapEmailHtml(html)
 
   try {
-    const logoAttachment = inlineLogoAttachment()
     for (const to of recipients) {
       await transporter.sendMail({
         from,
@@ -2201,13 +2199,6 @@ async function sendEmails(
         subject,
         html: fullHtml,
         attachments: [
-          {
-            filename: logoAttachment.filename,
-            content: Buffer.from(logoAttachment.content),
-            cid: logoAttachment.cid,
-            contentDisposition: logoAttachment.contentDisposition,
-            contentType: logoAttachment.contentType,
-          },
           ...(pdfAttachment
             ? [
                 {

@@ -1,7 +1,7 @@
-import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
+import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1'
 import { getRobotoFontBytes } from './roboto-font.ts'
-import { getLegendaLogoBytes } from './legenda-logo.ts'
+import { REPORT_LOGO_TEXT } from './email-branding.ts'
 import { formatEpisodeCount } from './zones.ts'
 
 export type BrigadeCardPayload = {
@@ -318,18 +318,12 @@ class PdfWriter {
     this.y += 28
   }
 
-  brandedHeader(logoImage: PDFImage, essence: string, objectName: string, headline: string) {
-    const logoHeight = 20
-    const logoWidth = logoImage.width * (logoHeight / logoImage.height)
-    this.ensureSpace(logoHeight + 78)
+  brandedHeader(essence: string, objectName: string, headline: string) {
+    const logoSize = 22
+    this.ensureSpace(logoSize + 78)
 
-    this.page.drawImage(logoImage, {
-      x: MARGIN,
-      y: this.bottomY(this.y, logoHeight),
-      width: logoWidth,
-      height: logoHeight,
-    })
-    this.y += logoHeight + 12
+    this.text(REPORT_LOGO_TEXT, MARGIN, this.y, logoSize, rgb(0, 0, 0))
+    this.y += logoSize + 12
     this.text(essence.toUpperCase(), MARGIN, this.y, 8, C.kicker)
     this.y += 11
     this.text(objectName.toUpperCase(), MARGIN, this.y, 7, C.textMuted)
@@ -942,10 +936,9 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
   const font = await doc.embedFont(getRobotoFontBytes())
-  const logoImage = await doc.embedPng(getLegendaLogoBytes())
   const writer = new PdfWriter(doc, font)
 
-  writer.brandedHeader(logoImage, payload.reportEssence, payload.reportObjectName, payload.subtitle)
+  writer.brandedHeader(payload.reportEssence, payload.reportObjectName, payload.subtitle)
   writer.metricGrid(payload.metrics, 3)
   writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
   writer.brigadeDashboardCards(payload.brigadeCards)
