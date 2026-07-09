@@ -2128,6 +2128,22 @@ type SendBatch = {
   recipients: string[]
 }
 
+function filterSendBatches(
+  batches: SendBatch[],
+  audience?: ReportAudience,
+  brigadeName?: string,
+): SendBatch[] {
+  if (!audience) return batches
+
+  return batches.filter((batch) => {
+    if (batch.audience !== audience) return false
+    if (audience === 'foremen' && brigadeName) {
+      return batch.brigadeName != null && brigadeNamesMatch(batch.brigadeName, brigadeName)
+    }
+    return true
+  })
+}
+
 function buildSendBatches(recipients: Recipient[], type: ReportType): SendBatch[] {
   const active = recipients.filter((row) => row.active && (type === 'daily' ? row.daily : row.weekly))
   const batches: SendBatch[] = []
@@ -2423,8 +2439,17 @@ Deno.serve(async (request) => {
       }
     }
 
+    const manualAudience =
+      triggeredBy !== 'schedule' && (payload?.audience === 'managers' || payload?.audience === 'foremen')
+        ? payload.audience
+        : undefined
+    const manualBrigadeName = manualAudience === 'foremen' ? payload?.brigadeName?.trim() || undefined : undefined
+    if (manualAudience === 'foremen' && !manualBrigadeName) {
+      return jsonResponse({ error: 'Для рассылки бригадирам нужно указать brigadeName' }, 400)
+    }
+
     const allRecipients = await listRecipients(supabase)
-    const batches = buildSendBatches(allRecipients, type)
+    const batches = filterSendBatches(buildSendBatches(allRecipients, type), manualAudience, manualBrigadeName)
 
     if (batches.length === 0) {
       return jsonResponse({

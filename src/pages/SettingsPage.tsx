@@ -251,8 +251,8 @@ export function SettingsPage() {
         date: type === 'daily' ? selectedDate : undefined,
         weekStart: type === 'weekly' ? selectedWeek : undefined,
         preview,
-        audience: preview ? previewAudience : undefined,
-        brigadeName: preview && previewAudience === 'foremen' ? previewBrigade : undefined,
+        audience: previewAudience,
+        brigadeName: previewAudience === 'foremen' ? previewBrigade : undefined,
       })
 
       if (preview && result.previewHtml) {
@@ -516,13 +516,13 @@ export function SettingsPage() {
             <div>
               <p className="panel-kicker">Отправка</p>
               <h3>Ручная рассылка</h3>
-              <p>Отправка идёт всем активным получателям: руководителям и каждому бригадиру отдельно.</p>
+              <p>Ручная отправка и предпросмотр — только для выбранного типа. Автоматическая рассылка по расписанию уходит всем получателям.</p>
             </div>
           </div>
 
           <div className="settings-send-grid settings-preview-filters">
             <div className="settings-send-block">
-              <p className="settings-send-caption">Предпросмотр</p>
+              <p className="settings-send-caption">Тип рассылки</p>
               <label className="filter-field settings-filter-field">
                 <span>Тип рассылки</span>
                 <select
