@@ -2,6 +2,7 @@
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
+import { DatePickerField } from '../components/DatePickerField'
 import { AttentionPanel } from '../components/AttentionPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
@@ -418,16 +419,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         description="Сколько человек вышло на смену по бригадам, активность, слабая активность, длительный простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
       >
         <div className="filter-row">
-          <label className="filter-field">
-            <span>Дата</span>
-            <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
-              {availableDates.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </label>
+          <DatePickerField
+            label="Дата"
+            value={selectedDate}
+            dates={availableDates}
+            onChange={setSelectedDate}
+            disabled={!availableDates.length}
+          />
           <div className="filter-caption">
             <span>Выбранный день</span>
             <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>
@@ -718,16 +716,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         description="Сравнение активности бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней."
       >
         <div className="filter-row">
-          <label className="filter-field">
-            <span>Дата</span>
-            <select value={dynamicsDate} onChange={(event) => setDynamicsDate(event.target.value)}>
-              {availableDates.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </label>
+          <DatePickerField
+            label="Дата"
+            value={dynamicsDate}
+            dates={availableDates}
+            onChange={setDynamicsDate}
+            disabled={!availableDates.length}
+          />
           <div className="filter-caption">
             <span>Выбранный день</span>
             <strong>{dynamicsDate ? formatFullDate(dynamicsDate) : '—'}</strong>
@@ -749,16 +744,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         description="Где сотрудники каждой бригады проводили время за день и эпизоды длительного бездействия от 10 минут с привязкой к зоне."
       >
         <div className="filter-row">
-          <label className="filter-field">
-            <span>Дата</span>
-            <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>
-              {availableDates.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </label>
+          <DatePickerField
+            label="Дата"
+            value={selectedDate}
+            dates={availableDates}
+            onChange={setSelectedDate}
+            disabled={!availableDates.length}
+          />
           <div className="filter-caption">
             <span>Выбранный день</span>
             <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>

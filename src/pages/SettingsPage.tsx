@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
+import { DatePickerField } from '../components/DatePickerField'
 import { useAuth } from '../context/AuthContext'
 import {
   formatWeekRange,
@@ -357,7 +358,7 @@ export function SettingsPage() {
                 />
                 <span>Недельный отчёт</span>
               </label>
-              <label className="settings-password-field">
+              <label className="filter-field settings-filter-field">
                 <span>День недели</span>
                 <select
                   value={schedule.weekly_dow}
@@ -416,17 +417,17 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="settings-audience-tabs">
+          <div className="segmented-nav settings-audience-tabs">
             <button
               type="button"
-              className={recipientAudience === 'managers' ? 'settings-audience-tab settings-audience-tab-active' : 'settings-audience-tab'}
+              className={recipientAudience === 'managers' ? 'segmented-link segmented-link-active' : 'segmented-link'}
               onClick={() => setRecipientAudience('managers')}
             >
               Руководители
             </button>
             <button
               type="button"
-              className={recipientAudience === 'foremen' ? 'settings-audience-tab settings-audience-tab-active' : 'settings-audience-tab'}
+              className={recipientAudience === 'foremen' ? 'segmented-link segmented-link-active' : 'segmented-link'}
               onClick={() => setRecipientAudience('foremen')}
             >
               Бригадиры
@@ -434,7 +435,7 @@ export function SettingsPage() {
           </div>
 
           {recipientAudience === 'foremen' ? (
-            <label className="settings-password-field settings-brigade-picker">
+            <label className="filter-field settings-filter-field">
               <span>Бригадир</span>
               <select value={selectedBrigade} onChange={(event) => setSelectedBrigade(event.target.value)}>
                 {TRACKED_BRIGADES.map((brigade) => (
@@ -522,7 +523,7 @@ export function SettingsPage() {
           <div className="settings-send-grid settings-preview-filters">
             <div className="settings-send-block">
               <p className="settings-send-caption">Предпросмотр</p>
-              <label className="settings-password-field">
+              <label className="filter-field settings-filter-field">
                 <span>Тип рассылки</span>
                 <select
                   value={previewAudience}
@@ -533,7 +534,7 @@ export function SettingsPage() {
                 </select>
               </label>
               {previewAudience === 'foremen' ? (
-                <label className="settings-password-field">
+                <label className="filter-field settings-filter-field">
                   <span>Бригадир</span>
                   <select value={previewBrigade} onChange={(event) => setPreviewBrigade(event.target.value)}>
                     {TRACKED_BRIGADES.map((brigade) => (
@@ -549,16 +550,13 @@ export function SettingsPage() {
 
           <div className="settings-send-grid">
             <div className="settings-send-block">
-              <label className="settings-password-field">
-                <span>День</span>
-                <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} disabled={!availableDates.length}>
-                  {availableDates.map((date) => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <DatePickerField
+                label="День"
+                value={selectedDate}
+                dates={availableDates}
+                onChange={setSelectedDate}
+                disabled={!availableDates.length}
+              />
               <div className="settings-inline-actions">
                 <button
                   type="button"
@@ -580,7 +578,7 @@ export function SettingsPage() {
             </div>
 
             <div className="settings-send-block">
-              <label className="settings-password-field">
+              <label className="filter-field settings-filter-field">
                 <span>Неделя</span>
                 <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)} disabled={!availableWeeks.length}>
                   {availableWeeks.map((week) => (

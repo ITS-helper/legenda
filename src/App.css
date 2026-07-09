@@ -145,7 +145,9 @@
   text-transform: uppercase;
 }
 
-.filter-field select {
+.filter-field select,
+.settings-password-field select,
+.settings-password-field input[type='time'] {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -153,6 +155,13 @@
   background: var(--surface);
   color: var(--text-h);
   font: inherit;
+}
+
+.filter-field select:disabled,
+.settings-password-field select:disabled,
+.settings-password-field input[type='time']:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .hero-compare {
@@ -936,34 +945,160 @@
 }
 
 .settings-audience-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin-top: 28px;
   margin-bottom: 16px;
 }
 
-.settings-audience-tab {
-  border: 1px solid var(--surface-3);
-  background: var(--surface-2);
-  color: var(--text);
+.segmented-nav {
+  display: inline-flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.segmented-link {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 8px 16px;
-  font-weight: 600;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segmented-link-active {
+  color: var(--text-h);
+  background: var(--brand-soft);
+  border-color: var(--brand-soft-2);
+}
+
+.settings-filter-field {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-send-block .filter-field,
+.settings-send-block .date-picker {
+  min-width: 0;
+  width: 100%;
+}
+
+.date-picker {
+  position: relative;
+  min-width: 220px;
+}
+
+.date-picker-field {
+  margin: 0;
+}
+
+.date-picker-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.date-picker-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.date-picker-chevron {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.date-picker-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(320px, calc(100vw - 48px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(15, 27, 45, 0.12);
+}
+
+.date-picker-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.date-picker-popover-head strong {
+  color: var(--text-h);
+  font-size: 15px;
+}
+
+.date-picker-nav {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
   cursor: pointer;
 }
 
-.settings-audience-tab-active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+.date-picker-weekdays,
+.date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.date-picker-weekdays {
+  margin-bottom: 6px;
+}
+
+.date-picker-weekdays span {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.date-picker-day {
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
   color: var(--text-h);
+  font: inherit;
+  cursor: pointer;
 }
 
-.settings-brigade-picker {
-  margin-bottom: 16px;
+.date-picker-day:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border);
 }
 
-.settings-preview-filters {
-  margin-bottom: 8px;
+.date-picker-day-selected {
+  background: var(--brand-soft);
+  border-color: var(--brand-soft-2);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.date-picker-day-disabled,
+.date-picker-day-empty {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .settings-send-caption {
@@ -1271,6 +1406,14 @@
   background:
     radial-gradient(circle at top right, rgba(143, 183, 255, 0.12), transparent 26%),
     var(--surface-2);
+}
+
+.settings-upload-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  flex-wrap: wrap;
 }
 
 .settings-upload-head p:last-child {
@@ -1675,10 +1818,10 @@
 
 .filter-field input[type='date'] {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 16px;
+  padding: 12px 14px;
   font: inherit;
-  color: var(--text);
+  color: var(--text-h);
   background: var(--surface);
   min-width: 180px;
 }
