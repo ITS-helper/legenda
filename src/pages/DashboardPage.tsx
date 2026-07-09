@@ -481,7 +481,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <span className="metric-label">Объёмы</span>
                 <p className="metric-note">
                   {volumeEntries.length > 0
-                    ? `${volumeEntries.length} ${volumeEntries.length === 1 ? 'показатель' : volumeEntries.length < 5 ? 'показателя' : 'показателей'} за день`
+                    ? 'сумма по бригадам за день'
                     : dailyLoading
                       ? 'загрузка...'
                       : 'добавьте значения в блоке 5'}
