@@ -1,10 +1,11 @@
 import {
+  VOLUME_DYNAMICS_CHART_MAX,
   VOLUME_DYNAMICS_SPARKLINE_DAYS,
   formatFullDate,
-  formatShortDate,
   type BrigadeVolumeDynamicsCard,
 } from '../lib/reports'
 import { formatVolumeDelta, formatVolumeM3 } from '../lib/volumes'
+import { DynamicsBarChart } from './DynamicsBarChart'
 
 type VolumeDynamicsPanelProps = {
   referenceDate: string
@@ -14,62 +15,6 @@ type VolumeDynamicsPanelProps = {
 function deltaClass(delta: number | null) {
   if (delta == null || delta === 0) return 'dynamics-delta-neutral'
   return delta > 0 ? 'dynamics-delta-up' : 'dynamics-delta-down'
-}
-
-function Sparkline({
-  points,
-  referenceDate,
-}: {
-  points: BrigadeVolumeDynamicsCard['sparkline']
-  referenceDate: string
-}) {
-  const numericValues = points
-    .map((point) => point.volume_m3)
-    .filter((value): value is number => value != null)
-
-  if (numericValues.length < 2) {
-    return (
-      <div className="dynamics-sparkline dynamics-sparkline-empty">
-        Мало данных за {VOLUME_DYNAMICS_SPARKLINE_DAYS} дней
-      </div>
-    )
-  }
-
-  const min = Math.min(...numericValues)
-  const max = Math.max(...numericValues)
-  const range = max - min || 1
-
-  return (
-    <div className="dynamics-sparkline dynamics-sparkline-bars">
-      <div
-        className="dynamics-sparkline-chart"
-        style={{ gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))` }}
-      >
-        {points.map((point) => {
-          const isReference = point.report_date === referenceDate
-          const hasValue = point.volume_m3 != null
-          const heightPct = hasValue ? ((point.volume_m3! - min) / range) * 100 : 0
-
-          return (
-            <div
-              className={`dynamics-sparkline-day${isReference ? ' dynamics-sparkline-day-ref' : ''}`}
-              key={point.report_date}
-            >
-              <div className="dynamics-sparkline-bar-track">
-                <div
-                  className={`dynamics-sparkline-bar${hasValue ? '' : ' dynamics-sparkline-bar-empty'}`}
-                  style={{ height: hasValue ? `${Math.max(heightPct, 10)}%` : '0%' }}
-                />
-              </div>
-              <span className={`dynamics-sparkline-date${isReference ? ' dynamics-sparkline-date-ref' : ''}`}>
-                {formatShortDate(point.report_date)}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
 }
 
 function DynamicsCard({ card, referenceDate }: { card: BrigadeVolumeDynamicsCard; referenceDate: string }) {
@@ -101,7 +46,15 @@ function DynamicsCard({ card, referenceDate }: { card: BrigadeVolumeDynamicsCard
         <span className="dynamics-sparkline-title">
           {VOLUME_DYNAMICS_SPARKLINE_DAYS} дней до {formatFullDate(referenceDate)}
         </span>
-        <Sparkline points={card.sparkline} referenceDate={referenceDate} />
+        <DynamicsBarChart
+          points={card.sparkline.map((point) => ({
+            report_date: point.report_date,
+            value: point.volume_m3,
+          }))}
+          referenceDate={referenceDate}
+          maxValue={VOLUME_DYNAMICS_CHART_MAX}
+          fewDataLabel={`Мало данных за ${VOLUME_DYNAMICS_SPARKLINE_DAYS} дней`}
+        />
       </div>
     </article>
   )

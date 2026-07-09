@@ -324,6 +324,7 @@ export type BrigadeDynamicsPoint = {
 }
 
 export const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = 14
+export const ACTIVITY_DYNAMICS_CHART_MAX = 60
 
 export function listDatesInclusive(startIso: string, endIso: string) {
   const dates: string[] = []
@@ -394,6 +395,7 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
 }
 
 export const VOLUME_DYNAMICS_SPARKLINE_DAYS = 14
+export const VOLUME_DYNAMICS_CHART_MAX = 200
 
 export type BrigadeVolumeDynamicsPoint = {
   report_date: string
