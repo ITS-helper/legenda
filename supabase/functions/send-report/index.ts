@@ -713,7 +713,7 @@ function wrapEmailHtml(innerHtml: string) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="x-apple-disable-message-reformatting" />
 <meta name="format-detection" content="telephone=no,date=no,address=no,email=no" />
-<title>Work Watch Analytics</title>
+<title>LEGENDA</title>
 <style type="text/css">
   body { margin: 0 !important; padding: 0 !important; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
   table { border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
@@ -751,8 +751,7 @@ const EMAIL_WRAP_START = `<table width="100%" cellpadding="0" cellspacing="0" bo
 <tr><td align="center" style="padding:12px;">
 <div class="email-scroll" style="overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;width:100%;max-width:100%;">
 <table class="email-canvas" width="${EMAIL_LAYOUT_WIDTH}" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:${EMAIL_LAYOUT_WIDTH}px;min-width:${EMAIL_LAYOUT_WIDTH}px;background:${COLORS.surface};border-radius:20px;border:1px solid ${COLORS.border};border-collapse:separate;box-shadow:0 8px 24px rgba(15,27,45,0.06);">`
-const EMAIL_WRAP_END = `<tr><td style="padding:16px 24px;background:${COLORS.surface2};color:${COLORS.textMuted};font-size:12px;border-top:1px solid ${COLORS.border};">Work Watch Analytics</td></tr>
-</table>
+const EMAIL_WRAP_END = `</table>
 </div>
 </td></tr></table>`
 
@@ -1363,13 +1362,18 @@ function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
   )
 }
 
+function capitalizeCompareLabel(text: string) {
+  if (!text) return text
+  return text.toLocaleUpperCase('ru-RU')
+}
+
 function dynamicsCardHtml(
   card: BrigadeDynamicsCard,
   options: { periodLabel: string; comparePrefix: string; emptyCompare: string; sparklineTitle?: string },
 ) {
   const compareText =
     card.prior_pct != null
-      ? `${options.comparePrefix} (${pct(card.prior_pct)})`
+      ? capitalizeCompareLabel(`${options.comparePrefix} (${pct(card.prior_pct)})`)
       : options.emptyCompare
 
   const sparkline = card.sparkline ?? []
@@ -1387,12 +1391,14 @@ function dynamicsCardHtml(
       <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
         <tr>
           <td valign="top" style="padding:16px 12px 16px 16px;">
-            <div style="color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</div>
+            <div style="color:${COLORS.textMuted};font-size:12px;letter-spacing:0.06em;margin-bottom:6px;">
+              <div style="text-transform:uppercase;">${options.periodLabel}</div>
+              <div style="text-transform:uppercase;margin-top:4px;">${compareText}</div>
+            </div>
             <div style="font-size:32px;line-height:1;font-weight:700;color:${COLORS.textH};">${card.today_pct != null ? pct(card.today_pct) : '—'}</div>
           </td>
           <td align="right" valign="top" style="padding:16px 16px 16px 12px;">
             <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatDeltaPercent(card.delta)}</div>
-            <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
           </td>
         </tr>
       </table>
@@ -1441,7 +1447,7 @@ function volumeDynamicsCardHtml(
 ) {
   const compareText =
     card.prior_m3 != null
-      ? `${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`
+      ? capitalizeCompareLabel(`${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`)
       : options.emptyCompare
 
   const sparkline = card.sparkline ?? []
@@ -1459,12 +1465,14 @@ function volumeDynamicsCardHtml(
       <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
         <tr>
           <td valign="top" style="padding:16px 12px 16px 16px;">
-            <div style="color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</div>
+            <div style="color:${COLORS.textMuted};font-size:12px;letter-spacing:0.06em;margin-bottom:6px;">
+              <div style="text-transform:uppercase;">${options.periodLabel}</div>
+              <div style="text-transform:uppercase;margin-top:4px;">${compareText}</div>
+            </div>
             <div style="font-size:32px;line-height:1;font-weight:700;color:${COLORS.textH};">${card.today_m3 != null ? formatVolumeM3(card.today_m3) : '—'}</div>
           </td>
           <td align="right" valign="top" style="padding:16px 16px 16px 12px;">
             <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatVolumeDelta(card.delta)}</div>
-            <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
           </td>
         </tr>
       </table>
@@ -1679,7 +1687,7 @@ function dynamicsPdfCards(
     delta: formatDeltaPercent(card.delta),
     compare:
       card.prior_pct != null
-        ? `${options.comparePrefix} (${pct(card.prior_pct)})`
+        ? capitalizeCompareLabel(`${options.comparePrefix} (${pct(card.prior_pct)})`)
         : options.emptyCompare,
     sparkline: (card.sparkline ?? []).map((point) => ({
       label: ruShort(point.report_date),
@@ -1701,7 +1709,7 @@ function volumeDynamicsPdfCards(
     delta: formatVolumeDelta(card.delta),
     compare:
       card.prior_m3 != null
-        ? `${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`
+        ? capitalizeCompareLabel(`${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`)
         : options.emptyCompare,
     sparkline: (card.sparkline ?? []).map((point) => ({
       label: ruShort(point.report_date),
@@ -1874,7 +1882,6 @@ async function buildDailyHtml(
       },
       `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
     ),
-    dynamicsBeforeBrigades: true,
     singlePage: true,
     ...zonesPdfPayload({
       periodLabel: 'за день',
@@ -1971,13 +1978,13 @@ async function buildWeeklyHtml(
       ${brigadeCardsEmailWeekly(brigades, volumeDynamics)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За неделю',
-        comparePrefix: 'к прошлой неделе',
+        comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
       ${volumeDynamicsBlock(volumeDynamics, {
         periodLabel: 'За неделю',
-        comparePrefix: 'к прошлой неделе',
+        comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
@@ -2002,7 +2009,7 @@ async function buildWeeklyHtml(
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
       {
-        label: 'Выполненный объём',
+        label: 'Объём',
         value: totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
       },
     ],
@@ -2015,7 +2022,7 @@ async function buildWeeklyHtml(
     dynamicsCards: dynamicsPdfCards(
       dynamics,
       {
-        comparePrefix: 'к прошлой неделе',
+        comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
       },
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
@@ -2025,7 +2032,7 @@ async function buildWeeklyHtml(
     volumeDynamicsCards: volumeDynamicsPdfCards(
       volumeDynamics,
       {
-        comparePrefix: 'к прошлой неделе',
+        comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
       },
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
@@ -2037,6 +2044,7 @@ async function buildWeeklyHtml(
       idleSummaryLabel: 'Всего за неделю',
       sections: zoneSections,
     }),
+    singlePage: true,
   }
 
   const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}${brigadeLabel}`

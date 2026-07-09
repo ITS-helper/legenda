@@ -81,6 +81,7 @@ const RADIUS = {
   sm: 10,
   md: 14,
   lg: 16,
+  xl: 20,
 }
 
 function hex(value: string): RGB {
@@ -200,6 +201,18 @@ class PdfWriter {
 
   private rect(left: number, top: number, width: number, height: number, fill: RGB, stroke = C.border, radius = RADIUS.md) {
     this.roundedRect(left, top, width, height, fill, stroke, radius)
+  }
+
+  private card(
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    fill: RGB = C.surface,
+    stroke = C.border,
+    radius = RADIUS.lg,
+  ) {
+    this.rect(left, top, width, height, fill, stroke, radius)
   }
 
   private dot(left: number, top: number, color: RGB) {
@@ -341,6 +354,7 @@ class PdfWriter {
     this.y += 12
     this.text(headline, MARGIN, this.y, 20, C.textH)
     this.y += 28
+    this.gap(24)
   }
 
   sectionTitle(title: string, gapAfter = 18, followingContentHeight = 0) {
@@ -353,26 +367,54 @@ class PdfWriter {
   }
 
   metricGrid(metrics: Array<{ label: string; value: string }>, columns = 3) {
-    const gap = 8
+    const gap = 16
     const cardWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns
-    const cardHeight = 72
+    const cardHeight = 88
     const rows = Math.ceil(metrics.length / columns)
+    const lastRowCount = metrics.length % columns || columns
     this.ensureSpace(rows * (cardHeight + gap))
 
     for (let index = 0; index < metrics.length; index += 1) {
       const column = index % columns
       const row = Math.floor(index / columns)
-      const left = MARGIN + column * (cardWidth + gap)
+      const isLastRow = row === rows - 1
+      const rowCount = isLastRow ? lastRowCount : columns
+      const rowWidth = rowCount * cardWidth + Math.max(0, rowCount - 1) * gap
+      const rowOffset = rowCount < columns ? (CONTENT_WIDTH - rowWidth) / 2 : 0
+      const left = MARGIN + rowOffset + column * (cardWidth + gap)
       const top = this.y + row * (cardHeight + gap)
       const metric = metrics[index]
+      const labelSize = 7
+      const labelWidth = Math.max(cardWidth - 24, 1)
+      const labelLines = Math.ceil(
+        this.font.widthOfTextAtSize(metric.label.toUpperCase(), labelSize) / labelWidth,
+      )
+      const labelBlockHeight = labelSize + Math.max(0, labelLines - 1) * (labelSize + 2)
+      const valueSize = metric.value.length > 9 ? 18 : 22
+      const contentHeight = 14 + labelBlockHeight + 8 + valueSize + 14
+      const contentTop = top + Math.max(12, (cardHeight - contentHeight) / 2)
 
-      this.rect(left, top, cardWidth, cardHeight, C.surface2, C.border, RADIUS.md)
-      this.textBlockCentered(metric.label.toUpperCase(), top + 14, 7, C.textMuted, left, cardWidth)
-      this.textCentered(metric.value, top + 38, 20, C.textH, left, cardWidth)
+      this.card(left, top, cardWidth, cardHeight, C.surface, C.border, RADIUS.xl)
+      this.textBlockCentered(
+        metric.label.toUpperCase(),
+        contentTop,
+        labelSize,
+        C.textMuted,
+        left,
+        cardWidth,
+      )
+      this.textCentered(
+        metric.value,
+        contentTop + labelBlockHeight + 8,
+        valueSize,
+        C.textH,
+        left,
+        cardWidth,
+      )
     }
 
     this.y += rows * (cardHeight + gap)
-    this.gap(6)
+    this.gap(8)
   }
 
   private structureBar(left: number, top: number, width: number, card: BrigadeCardPayload, height = 16) {
@@ -429,16 +471,19 @@ class PdfWriter {
     compact = false,
     alert = false,
   ) {
-    const height = compact ? 48 : 60
     const labelSize = compact ? 6 : 7
     const valueSize = compact ? 12 : 15
     const valueColor = alert ? C.alert : C.textH
-    const labelLines = Math.ceil(this.font.widthOfTextAtSize(label.toUpperCase(), labelSize) / Math.max(width - 16, 1))
+    const labelWidth = Math.max(width - 20, 1)
+    const labelLines = Math.ceil(this.font.widthOfTextAtSize(label.toUpperCase(), labelSize) / labelWidth)
     const labelBlockHeight = labelSize + Math.max(0, labelLines - 1) * (labelSize + 2)
     const contentHeight = labelBlockHeight + 6 + valueSize
+    const height = compact
+      ? Math.max(52, contentHeight + 16)
+      : Math.max(60, contentHeight + 20)
     const contentTop = top + Math.max(8, (height - contentHeight) / 2)
 
-    this.rect(left, top, width, height, C.surface, C.border, RADIUS.sm)
+    this.card(left, top, width, height, C.surface, C.border, RADIUS.sm)
     this.textBlockCentered(label.toUpperCase(), contentTop, labelSize, C.textMuted, left, width)
     this.textCentered(value, contentTop + labelBlockHeight + 5, valueSize, valueColor, left, width)
     return height
@@ -449,7 +494,7 @@ class PdfWriter {
     const statGap = compact ? 8 : 8
     const statWidth = (cardWidth - innerPad * 2 - statGap) / 2
     const statRows = 3
-    const statHeight = compact ? 48 : 60
+    const statHeight = compact ? 54 : 60
     const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
     const legendBlock = 28
@@ -458,7 +503,7 @@ class PdfWriter {
       innerPad + headerBlock + barHeight + legendBlock + statHeight * statRows + statGap * (statRows - 1) + bottomPad
     const warn = card.activity_pct < 40
 
-    this.rect(left, top, cardWidth, cardHeight, C.surface2, C.border, RADIUS.lg)
+    this.card(left, top, cardWidth, cardHeight, C.surface2, C.border, RADIUS.xl)
 
     const badgeText = pct(card.activity_pct)
     const badgeWidth = this.font.widthOfTextAtSize(badgeText, compact ? 9 : 11) + (compact ? 14 : 20)
@@ -527,7 +572,7 @@ class PdfWriter {
         left + innerPad + statWidth + statGap,
         statTop,
         statWidth,
-        'Выполненный объём',
+        'Объём',
         card.volume_total,
         compact,
       )
@@ -538,12 +583,12 @@ class PdfWriter {
 
   brigadeDashboardCards(cards: BrigadeCardPayload[]) {
     const compact = cards.length >= 2
-    const gap = 10
+    const gap = 16
     const columns = compact ? 2 : 1
     const cardWidth = compact ? (CONTENT_WIDTH - gap) / 2 : CONTENT_WIDTH
     const innerPad = compact ? 14 : 18
     const statGap = compact ? 8 : 8
-    const statHeight = compact ? 48 : 60
+    const statHeight = compact ? 54 : 60
     const headerBlock = compact ? 40 : 44
     const barHeight = compact ? 10 : 16
     const legendBlock = 28
@@ -600,7 +645,7 @@ class PdfWriter {
         y: this.bottomY(top + chartHeight - barHeight, barHeight),
         width: barWidth,
         height: barHeight,
-        color: point.empty ? S.track : isLast ? C.brand : hex('#9eb8ea'),
+        color: point.empty ? S.track : isLast ? C.brand : rgb(0 / 255, 78 / 255, 207 / 255, 0.35),
         borderWidth: 0,
       })
 
@@ -626,9 +671,10 @@ class PdfWriter {
     }>,
     periodLabel: string,
   ) {
-    const gap = 10
+    const gap = 16
     const cardWidth = (CONTENT_WIDTH - gap) / 2
-    const cardHeight = 148
+    const innerPad = 16
+    const cardHeight = 190
     const rows = Math.ceil(cards.length / 2)
     const blockHeight = rows * (cardHeight + gap)
 
@@ -641,21 +687,53 @@ class PdfWriter {
       const left = MARGIN + column * (cardWidth + gap)
       const top = blockTop + row * (cardHeight + gap)
       const card = cards[index]
+      const dayBoxTop = top + 52
+      const dayBoxHeight = 54
+      const periodText = periodLabel.toUpperCase()
 
-      this.rect(left, top, cardWidth, cardHeight, C.surface, C.border, RADIUS.lg)
-      this.text(card.name, left + 12, top + 12, 11, C.textH, cardWidth - 24)
-      this.text(periodLabel.toUpperCase(), left + 12, top + 30, 6, C.textMuted)
-      this.text(card.value, left + 12, top + 44, 20, C.textH)
+      this.card(left, top, cardWidth, cardHeight, C.surface, C.border, RADIUS.xl)
+      this.text(card.name, left + innerPad, top + innerPad, 12, C.textH, cardWidth - innerPad * 2)
+      this.text('Активность', left + innerPad, top + innerPad + 16, 6, C.textMuted)
 
-      const deltaWidth = this.font.widthOfTextAtSize(pdfText(card.delta), 10)
-      this.text(card.delta, left + cardWidth - deltaWidth - 12, top + 34, 10, deltaColor(card.delta))
-      this.text(card.compare, left + cardWidth - 118, top + 48, 6, C.textMuted, 106)
+      this.roundedRect(
+        left + innerPad,
+        dayBoxTop,
+        cardWidth - innerPad * 2,
+        dayBoxHeight,
+        C.surface2,
+        undefined,
+        RADIUS.md,
+      )
+      this.text(periodText, left + innerPad + 12, dayBoxTop + 10, 6, C.textMuted)
+      this.text(
+        card.compare,
+        left + innerPad + 12,
+        dayBoxTop + 18,
+        6,
+        C.textMuted,
+        cardWidth - innerPad * 2 - 24,
+      )
+      this.text(card.value, left + innerPad + 12, dayBoxTop + 32, 22, C.textH)
 
-      const sparkTop = top + 68
+      const deltaWidth = this.font.widthOfTextAtSize(pdfText(card.delta), 11)
+      this.text(
+        card.delta,
+        left + cardWidth - innerPad - deltaWidth - 12,
+        dayBoxTop + 10,
+        11,
+        deltaColor(card.delta),
+      )
+
+      const sparkTop = dayBoxTop + dayBoxHeight + 12
       if (card.sparklineTitle) {
-        this.text(card.sparklineTitle, left + 12, sparkTop, 6, C.textMuted, cardWidth - 24)
+        this.text(card.sparklineTitle, left + innerPad, sparkTop, 6, C.textMuted, cardWidth - innerPad * 2)
       }
-      this.sparklineBars(left + 12, sparkTop + (card.sparklineTitle ? 10 : 0), cardWidth - 24, card.sparkline)
+      this.sparklineBars(
+        left + innerPad,
+        sparkTop + (card.sparklineTitle ? 10 : 0),
+        cardWidth - innerPad * 2,
+        card.sparkline,
+      )
     }
 
     this.y = blockTop + blockHeight + 20
@@ -699,7 +777,7 @@ class PdfWriter {
     const rowsHeight = options.rows.length > 0 ? options.rows.length * rowHeight + 8 : 28
     const panelHeight = Math.max(headerHeight + rowsHeight + 20, options.minHeight ?? 0)
 
-    this.rect(left, top, width, panelHeight, C.surface, C.border, RADIUS.lg)
+    this.card(left, top, width, panelHeight, C.surface, C.border, RADIUS.lg)
 
     this.text(options.kicker.toUpperCase(), left + 12, top + 12, 7, C.textMuted)
 
@@ -906,24 +984,15 @@ class PdfWriter {
 
     this.y = top + listHeight + 12
   }
-
-  footer(label: string) {
-    this.ensureSpace(36)
-    this.gap(12)
-    const top = this.y
-    this.rect(MARGIN, top, CONTENT_WIDTH, 26, C.surface2, C.border, RADIUS.md)
-    this.text(label, MARGIN + 14, top + 9, 8, C.textMuted)
-    this.y = top + 26
-  }
 }
 
 function brigadeBlockHeight(cardCount: number) {
   const compact = cardCount >= 2
-  const gap = 10
+  const gap = 16
   const columns = compact ? 2 : 1
   const innerPad = compact ? 14 : 18
   const statGap = 8
-  const statHeight = compact ? 48 : 60
+  const statHeight = compact ? 54 : 60
   const headerBlock = compact ? 40 : 44
   const barHeight = compact ? 10 : 16
   const legendBlock = 28
@@ -935,8 +1004,8 @@ function brigadeBlockHeight(cardCount: number) {
 }
 
 function dynamicsBlockHeight(cardCount: number) {
-  const gap = 10
-  const cardHeight = 148
+  const gap = 16
+  const cardHeight = 190
   const rows = Math.ceil(cardCount / 2)
   return rows * (cardHeight + gap) + 20
 }
@@ -948,10 +1017,10 @@ function estimateZonePanelHeight(rows: ZonePanelRow[], hasSummary: boolean) {
 }
 
 function metricGridHeight(metrics: Array<{ label: string; value: string }>, columns = 3) {
-  const gap = 8
-  const cardHeight = 72
+  const gap = 16
+  const cardHeight = 88
   const rows = Math.ceil(metrics.length / columns)
-  return rows * (cardHeight + gap)
+  return rows * (cardHeight + gap) + 8
 }
 
 function sectionTitleHeight(gapAfter: number) {
@@ -977,7 +1046,7 @@ function zonesBrigadeMatrixHeight(sections: BrigadeZonesPdfSection[]) {
 }
 
 function estimateReportPdfHeight(payload: ReportPdfPayload) {
-  let height = MARGIN + 85 + metricGridHeight(payload.metrics)
+  let height = MARGIN + 85 + 24 + metricGridHeight(payload.metrics)
 
   if (payload.dynamicsBeforeBrigades) {
     height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
@@ -992,7 +1061,7 @@ function estimateReportPdfHeight(payload: ReportPdfPayload) {
   }
 
   height += sectionTitleHeight(18) + zonesBrigadeMatrixHeight(payload.zonesBrigadeSections)
-  height += 38 + MARGIN + 24
+  height += MARGIN + 24
 
   return Math.max(PAGE_HEIGHT, Math.ceil(height))
 }
@@ -1037,8 +1106,6 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
   }
   writer.sectionTitle(payload.zonesTitle, 14)
   writer.zonesBrigadeMatrix(payload.zonesBrigadeSections)
-
-  writer.footer('Work Watch Analytics')
 
   return new Uint8Array(await doc.save())
 }
