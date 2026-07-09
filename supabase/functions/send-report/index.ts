@@ -782,6 +782,30 @@ function formatDeltaPercent(delta: number | null) {
   return `${sign}${rounded}%`
 }
 
+function parseVolumeM3(valueText: string) {
+  const normalized = valueText.trim().replace(',', '.')
+  const match = normalized.match(/(\d+(?:\.\d+)?)/)
+  if (!match) return 0
+  const parsed = Number(match[1])
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatVolumeM3(value: number) {
+  if (value <= 0) return '—'
+  const rounded = Math.round(value * 10) / 10
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
+  return `${text} м³`
+}
+
+function formatVolumeDelta(delta: number | null) {
+  if (delta == null || Number.isNaN(delta)) return '—'
+  const rounded = Math.round(delta * 10) / 10
+  if (rounded === 0) return '0 м³'
+  const sign = rounded > 0 ? '+' : ''
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
+  return `${sign}${text} м³`
+}
+
 const SHIFT_TARGET_WORKERS = 50
 
 function getBrigadeShiftTarget(supervisorName: string) {
@@ -1281,6 +1305,98 @@ function activityDynamicsBlock(
   </table>`
 }
 
+function buildVolumeSparklineEmail(points: BrigadeVolumeDynamicsPoint[]) {
+  const numeric = points.map((point) => point.volume_m3).filter((value): value is number => value != null)
+  if (numeric.length < 2) {
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за период</div>`
+  }
+
+  const chartHeight = 44
+  const barGap = 2
+  const barWidth = Math.max(6, Math.floor((560 - barGap * (points.length - 1)) / points.length))
+  const min = Math.min(...numeric)
+  const max = Math.max(...numeric)
+  const range = max - min || 1
+
+  const bars = points
+    .map((point, index) => {
+      const isLast = index === points.length - 1
+      const value = point.volume_m3
+      const heightPct = value == null ? 0 : (value - min) / range
+      const barHeight = value == null ? 2 : Math.max(6, Math.round(heightPct * (chartHeight - 10)) + 6)
+      const opacity = value == null ? 0.12 : 1
+      return `<td valign="bottom" style="padding:0 ${barGap / 2}px;height:${chartHeight + 18}px;text-align:center;">
+        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};opacity:${opacity};border-radius:4px 4px 0 0;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
+        <div style="font-size:8px;line-height:1.1;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;white-space:nowrap;font-weight:${isLast ? 700 : 400};">${ruShort(point.report_date)}</div>
+      </td>`
+    })
+    .join('')
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;table-layout:fixed;"><tr>${bars}</tr></table>`
+}
+
+function volumeDynamicsCardHtml(
+  card: BrigadeVolumeDynamicsCard,
+  options: { periodLabel: string; comparePrefix: string; emptyCompare: string; sparklineTitle?: string },
+) {
+  const compareText =
+    card.prior_m3 != null
+      ? `${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`
+      : options.emptyCompare
+
+  const sparkline = card.sparkline ?? []
+  const sparklineSection = options.sparklineTitle
+    ? `<div>
+      <div style="color:${COLORS.textMuted};font-size:12px;margin-bottom:8px;">${options.sparklineTitle}</div>
+      ${buildVolumeSparklineEmail(sparkline)}
+    </div>`
+    : ''
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface};border-collapse:separate;">
+    <tr><td style="padding:20px;">
+      <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-bottom:4px;">${escapeHtml(card.supervisor_name)}</div>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};margin-bottom:16px;">Выполненный объём</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-radius:16px;background:${COLORS.surface2};${sparklineSection ? 'margin-bottom:16px;' : ''}">
+        <tr>
+          <td valign="top" style="padding:16px 12px 16px 16px;">
+            <div style="color:${COLORS.textMuted};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${options.periodLabel}</div>
+            <div style="font-size:32px;line-height:1;font-weight:700;color:${COLORS.textH};">${card.today_m3 != null ? formatVolumeM3(card.today_m3) : '—'}</div>
+          </td>
+          <td align="right" valign="top" style="padding:16px 16px 16px 12px;">
+            <div style="font-weight:700;font-size:18px;color:${deltaColor(card.delta)};">${formatVolumeDelta(card.delta)}</div>
+            <div style="color:${COLORS.textMuted};font-size:12px;margin-top:4px;">${compareText}</div>
+          </td>
+        </tr>
+      </table>
+      ${sparklineSection}
+    </td></tr>
+  </table>`
+}
+
+function volumeDynamicsBlock(
+  cards: BrigadeVolumeDynamicsCard[],
+  options: {
+    periodLabel: string
+    comparePrefix: string
+    emptyCompare: string
+    sparklineTitle?: string
+  },
+) {
+  const cells = cards
+    .map(
+      (card) =>
+        `<td width="50%" valign="top" style="padding:0 6px;">${volumeDynamicsCardHtml(card, options)}</td>`,
+    )
+    .join('')
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+    <tr><td>
+      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика выполненных объёмов</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>
+    </td></tr>
+  </table>`
+}
+
 async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
   const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
   const priorDate = addDaysIso(referenceDate, -1)
@@ -1373,6 +1489,85 @@ async function loadBrigadeWeeklyActivityDynamics(
   })
 }
 
+type BrigadeVolumeDynamicsPoint = {
+  report_date: string
+  volume_m3: number | null
+}
+
+type BrigadeVolumeDynamicsCard = {
+  supervisor_name: string
+  today_m3: number | null
+  prior_m3: number | null
+  delta: number | null
+  sparkline?: BrigadeVolumeDynamicsPoint[]
+}
+
+type VolumeEntryRow = {
+  report_date: string
+  label: string
+  value_text: string
+}
+
+function sumBrigadeVolumeM3(rows: VolumeEntryRow[], brigadeName: string, reportDate: string) {
+  const total = rows
+    .filter((row) => row.report_date === reportDate && brigadeNamesMatch(row.label, brigadeName))
+    .reduce((sum, row) => sum + parseVolumeM3(row.value_text), 0)
+  return total > 0 ? total : null
+}
+
+function sumBrigadeVolumeForDates(rows: VolumeEntryRow[], brigadeName: string, dates: string[]) {
+  const dailyTotals = dates
+    .map((date) => sumBrigadeVolumeM3(rows, brigadeName, date))
+    .filter((value): value is number => value != null)
+  if (dailyTotals.length === 0) return null
+  return dailyTotals.reduce((sum, value) => sum + value, 0)
+}
+
+async function loadBrigadeWeeklyVolumeDynamics(
+  supabase: ReturnType<typeof getAdminClient>,
+  weekStart: string,
+  weekEnd: string,
+) {
+  const priorWeekStart = addDaysIso(weekStart, -7)
+  const priorWeekEnd = addDaysIso(weekStart, -1)
+  const weekDates = listDatesInclusive(weekStart, weekEnd)
+  const priorWeekDates = listDatesInclusive(priorWeekStart, priorWeekEnd)
+
+  const { data, error } = await supabase!
+    .from('volume_entries')
+    .select('report_date, label, value_text')
+    .gte('report_date', priorWeekStart)
+    .lte('report_date', weekEnd)
+    .order('report_date', { ascending: true })
+  if (error) throw error
+
+  const rows = (data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+
+  return TRACKED_BRIGADES.map((brigadeName) => {
+    const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
+    const weekM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, weekDates)
+    const priorM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, priorWeekDates)
+    const dailyByDate = new Map(
+      weekDates.map((date) => [date, sumBrigadeVolumeM3(brigadeRows, brigadeName, date)] as const),
+    )
+
+    return {
+      supervisor_name: brigadeName,
+      today_m3: weekM3,
+      prior_m3: priorM3,
+      delta: weekM3 != null && priorM3 != null ? weekM3 - priorM3 : null,
+      sparkline: weekDates.map((report_date) => ({
+        report_date,
+        volume_m3: dailyByDate.get(report_date) ?? null,
+      })),
+    } satisfies BrigadeVolumeDynamicsCard
+  })
+}
+
 function dynamicsPdfCards(
   cards: BrigadeDynamicsCard[],
   options: { comparePrefix: string; emptyCompare: string },
@@ -1390,6 +1585,28 @@ function dynamicsPdfCards(
       label: ruShort(point.report_date),
       value: point.activity_pct ?? 0,
       empty: point.activity_pct == null,
+    })),
+    sparklineTitle,
+  }))
+}
+
+function volumeDynamicsPdfCards(
+  cards: BrigadeVolumeDynamicsCard[],
+  options: { comparePrefix: string; emptyCompare: string },
+  sparklineTitle?: string,
+) {
+  return cards.map((card) => ({
+    name: card.supervisor_name,
+    value: card.today_m3 != null ? formatVolumeM3(card.today_m3) : '—',
+    delta: formatVolumeDelta(card.delta),
+    compare:
+      card.prior_m3 != null
+        ? `${options.comparePrefix} (${formatVolumeM3(card.prior_m3)})`
+        : options.emptyCompare,
+    sparkline: (card.sparkline ?? []).map((point) => ({
+      label: ruShort(point.report_date),
+      value: point.volume_m3 ?? 0,
+      empty: point.volume_m3 == null,
     })),
     sparklineTitle,
   }))
@@ -1594,6 +1811,10 @@ async function buildWeeklyHtml(
   const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
 
   const dynamics = filterRowsByBrigade(await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd), brigadeFilter)
+  const volumeDynamics = filterRowsByBrigade(
+    await loadBrigadeWeeklyVolumeDynamics(supabase, weekStart, weekEnd),
+    brigadeFilter,
+  )
   const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, weekStart, weekEnd)
   const idleEpisodes = filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEnd), brigadeFilter)
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
@@ -1649,6 +1870,12 @@ async function buildWeeklyHtml(
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       })}
+      ${volumeDynamicsBlock(volumeDynamics, {
+        periodLabel: 'За неделю',
+        comparePrefix: 'к прошлой неделе',
+        emptyCompare: 'нет данных за прошлую неделю',
+        sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+      })}
       ${zonesBlockEmail({
         periodLabel: 'за неделю',
         locationDescription: 'Где сотрудники проводили время за неделю.',
@@ -1674,6 +1901,16 @@ async function buildWeeklyHtml(
     dynamicsPeriodLabel: 'За неделю',
     dynamicsCards: dynamicsPdfCards(
       dynamics,
+      {
+        comparePrefix: 'к прошлой неделе',
+        emptyCompare: 'нет данных за прошлую неделю',
+      },
+      `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
+    ),
+    volumeDynamicsTitle: 'Динамика выполненных объёмов',
+    volumeDynamicsPeriodLabel: 'За неделю',
+    volumeDynamicsCards: volumeDynamicsPdfCards(
+      volumeDynamics,
       {
         comparePrefix: 'к прошлой неделе',
         emptyCompare: 'нет данных за прошлую неделю',

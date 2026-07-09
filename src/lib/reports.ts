@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { parseVolumeM3 } from './volumes'
 import { zoneName, isHiddenZone } from './zones'
 
 export type BrigadeDailyRow = {
@@ -389,6 +390,81 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
       day_delta: todayPct != null && yesterdayPct != null ? todayPct - yesterdayPct : null,
       sparkline: buildBrigadeSparkline(brigadeDaily, referenceDate),
     } satisfies BrigadeDynamicsCard
+  })
+}
+
+export const VOLUME_DYNAMICS_SPARKLINE_DAYS = 14
+
+export type BrigadeVolumeDynamicsPoint = {
+  report_date: string
+  volume_m3: number | null
+}
+
+export type BrigadeVolumeDynamicsCard = {
+  supervisor_name: string
+  today_m3: number | null
+  yesterday_m3: number | null
+  day_delta: number | null
+  sparkline: BrigadeVolumeDynamicsPoint[]
+}
+
+type VolumeEntryRow = {
+  report_date: string
+  label: string
+  value_text: string
+}
+
+function sumBrigadeVolumeM3(rows: VolumeEntryRow[], brigadeName: string, reportDate: string) {
+  const total = rows
+    .filter((row) => row.report_date === reportDate && brigadeNamesMatch(row.label, brigadeName))
+    .reduce((sum, row) => sum + parseVolumeM3(row.value_text), 0)
+  return total > 0 ? total : null
+}
+
+function buildBrigadeVolumeSparkline(
+  brigadeRows: VolumeEntryRow[],
+  brigadeName: string,
+  referenceDate: string,
+) {
+  const sparklineStart = addDaysIso(referenceDate, -(VOLUME_DYNAMICS_SPARKLINE_DAYS - 1))
+  return listDatesInclusive(sparklineStart, referenceDate).map((report_date) => ({
+    report_date,
+    volume_m3: sumBrigadeVolumeM3(brigadeRows, brigadeName, report_date),
+  }))
+}
+
+export async function loadBrigadeVolumeDynamics(referenceDate: string) {
+  const sparklineStart = addDaysIso(referenceDate, -(VOLUME_DYNAMICS_SPARKLINE_DAYS - 1))
+  const yesterday = addDaysIso(referenceDate, -1)
+
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('volume_entries')
+    .select('report_date, label, value_text')
+    .gte('report_date', sparklineStart)
+    .lte('report_date', referenceDate)
+    .order('report_date', { ascending: true })
+
+  if (error) throw error
+
+  const rows = (data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+
+  return TRACKED_BRIGADES.map((brigadeName) => {
+    const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
+    const todayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, referenceDate)
+    const yesterdayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, yesterday)
+
+    return {
+      supervisor_name: brigadeName,
+      today_m3: todayM3,
+      yesterday_m3: yesterdayM3,
+      day_delta: todayM3 != null && yesterdayM3 != null ? todayM3 - yesterdayM3 : null,
+      sparkline: buildBrigadeVolumeSparkline(brigadeRows, brigadeName, referenceDate),
+    } satisfies BrigadeVolumeDynamicsCard
   })
 }
 

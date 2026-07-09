@@ -53,7 +53,7 @@ export function normalizeReportDate(value: string | null | undefined) {
   return value.slice(0, 10)
 }
 
-function parseVolumeM3(valueText: string) {
+export function parseVolumeM3(valueText: string) {
   const normalized = valueText.trim().replace(',', '.')
   const match = normalized.match(/(\d+(?:\.\d+)?)/)
   if (!match) return 0
@@ -61,11 +61,20 @@ function parseVolumeM3(valueText: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function formatVolumeM3Total(value: number) {
+export function formatVolumeM3(value: number) {
   if (value <= 0) return '—'
   const rounded = Math.round(value * 10) / 10
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
   return `${text} м³`
+}
+
+export function formatVolumeDelta(delta: number | null) {
+  if (delta == null || Number.isNaN(delta)) return '—'
+  const rounded = Math.round(delta * 10) / 10
+  if (rounded === 0) return '0 м³'
+  const sign = rounded > 0 ? '+' : ''
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
+  return `${sign}${text} м³`
 }
 
 export function formatVolumeCardSummary(entries: VolumeEntry[]) {
@@ -74,7 +83,7 @@ export function formatVolumeCardSummary(entries: VolumeEntry[]) {
   const total = entries.reduce((sum, entry) => sum + parseVolumeM3(entry.value_text), 0)
   if (total <= 0) return '—'
 
-  return formatVolumeM3Total(total)
+  return formatVolumeM3(total)
 }
 
 function mapVolumeEntry(row: VolumeEntry): VolumeEntry {

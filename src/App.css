@@ -1755,6 +1755,18 @@
   font-weight: 600;
 }
 
+.volumes-dynamics-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.volumes-dynamics-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: var(--text-h);
+}
+
 .volumes-brigade-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

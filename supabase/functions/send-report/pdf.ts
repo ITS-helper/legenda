@@ -52,6 +52,16 @@ export type ReportPdfPayload = {
     sparkline: Array<{ label: string; value: number; empty?: boolean }>
     sparklineTitle?: string
   }>
+  volumeDynamicsTitle?: string
+  volumeDynamicsPeriodLabel?: string
+  volumeDynamicsCards?: Array<{
+    name: string
+    value: string
+    delta: string
+    compare: string
+    sparkline: Array<{ label: string; value: number; empty?: boolean }>
+    sparklineTitle?: string
+  }>
   zonesTitle: string
   zonesBrigadeSections: BrigadeZonesPdfSection[]
 }
@@ -906,6 +916,18 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
   writer.brigadeDashboardCards(payload.brigadeCards)
   writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
   writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
+
+  if (payload.volumeDynamicsCards?.length) {
+    writer.sectionTitle(
+      payload.volumeDynamicsTitle ?? 'Динамика выполненных объёмов',
+      16,
+      dynamicsBlockHeight(payload.volumeDynamicsCards.length),
+    )
+    writer.dynamicsCards(
+      payload.volumeDynamicsCards,
+      payload.volumeDynamicsPeriodLabel ?? 'За неделю',
+    )
+  }
 
   writer.newPage()
   writer.sectionTitle(payload.zonesTitle, 14)

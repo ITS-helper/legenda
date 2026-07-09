@@ -5,6 +5,7 @@ import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
 import { DatePickerField } from '../components/DatePickerField'
 import { AttentionPanel } from '../components/AttentionPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
+import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -20,6 +21,7 @@ import {
   loadAvailableDates,
   loadAvailableWeeks,
   loadBrigadeActivityDynamics,
+  loadBrigadeVolumeDynamics,
   loadBrigadeDaily,
   loadBrigadeWeekly,
   loadIdleEpisodes,
@@ -36,6 +38,7 @@ import {
   type BrigadeZoneDaily,
   type BrigadeDailyRow,
   type BrigadeDynamicsCard,
+  type BrigadeVolumeDynamicsCard,
   type BrigadeWeeklyRow,
   type IdleEpisode,
   type KppEmployee,
@@ -120,6 +123,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
   const [weeklyShiftRows, setWeeklyShiftRows] = useState<ShiftMetricRow[]>([])
   const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
+  const [volumeDynamicsCards, setVolumeDynamicsCards] = useState<BrigadeVolumeDynamicsCard[]>([])
   const [volumeEntries, setVolumeEntries] = useState<VolumeEntry[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
@@ -129,6 +133,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [dynamicsLoading, setDynamicsLoading] = useState(false)
   const [dynamicsError, setDynamicsError] = useState<string | null>(null)
+  const [volumeDynamicsLoading, setVolumeDynamicsLoading] = useState(false)
+  const [volumeDynamicsError, setVolumeDynamicsError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(true)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
@@ -223,6 +229,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries(entries)
       const dates = await loadVolumeDates(password)
       setVolumeDates(dates)
+      if (normalizeReportDate(volumesDate) === normalized) {
+        const cards = await loadBrigadeVolumeDynamics(normalized)
+        setVolumeDynamicsCards(cards)
+      }
     } catch {
       if (normalizeReportDate(selectedDate) === normalized) setVolumeEntries([])
     }
@@ -304,6 +314,30 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       cancelled = true
     }
   }, [dynamicsDate])
+
+  useEffect(() => {
+    if (!volumesDate) return
+    let cancelled = false
+
+    async function loadVolumeDynamics() {
+      setVolumeDynamicsLoading(true)
+      setVolumeDynamicsError(null)
+      try {
+        const cards = await loadBrigadeVolumeDynamics(volumesDate)
+        if (cancelled) return
+        setVolumeDynamicsCards(cards)
+      } catch (error) {
+        if (!cancelled) setVolumeDynamicsError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setVolumeDynamicsLoading(false)
+      }
+    }
+
+    void loadVolumeDynamics()
+    return () => {
+      cancelled = true
+    }
+  }, [volumesDate])
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
@@ -887,6 +921,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
+
+        <div className="volumes-dynamics-section">
+          <h3 className="volumes-dynamics-title">Динамика выполненных объёмов</h3>
+          <p className="panel-description">
+            Сравнение объёмов бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней.
+          </p>
+
+          {volumeDynamicsLoading ? <div className="empty-state">Загружаем динамику объёмов...</div> : null}
+          {volumeDynamicsError ? <div className="empty-state error-state">Ошибка: {volumeDynamicsError}</div> : null}
+
+          {!volumeDynamicsLoading && !volumeDynamicsError && volumesDate ? (
+            <VolumeDynamicsPanel referenceDate={volumesDate} cards={volumeDynamicsCards} />
+          ) : null}
+        </div>
       </CollapsibleBlock>
 
       {/* БЛОК 6 — ДЕТАЛИЗАЦИЯ */}
