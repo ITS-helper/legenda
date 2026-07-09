@@ -924,9 +924,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
         <div className="volumes-dynamics-section">
           <h3 className="volumes-dynamics-title">Динамика выполненных объёмов</h3>
-          <p className="panel-description">
-            Сравнение объёмов бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней.
-          </p>
 
           {volumeDynamicsLoading ? <div className="empty-state">Загружаем динамику объёмов...</div> : null}
           {volumeDynamicsError ? <div className="empty-state error-state">Ошибка: {volumeDynamicsError}</div> : null}

@@ -1,6 +1,7 @@
-import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
+import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1'
 import { getRobotoFontBytes } from './roboto-font.ts'
+import { getLegendaLogoBytes } from './legenda-logo.ts'
 import { formatEpisodeCount } from './zones.ts'
 
 export type BrigadeCardPayload = {
@@ -16,6 +17,7 @@ export type BrigadeCardPayload = {
   long_idle_pct: number
   go_pct: number
   shift_duration: string
+  volume_total?: string
 }
 
 export type ZonePanelRow = {
@@ -38,6 +40,8 @@ export type BrigadeZonesPdfSection = {
 
 export type ReportPdfPayload = {
   title: string
+  reportEssence: string
+  reportObjectName: string
   subtitle: string
   metrics: Array<{ label: string; value: string }>
   brigadeSectionTitle: string
@@ -314,6 +318,26 @@ class PdfWriter {
     this.y += 28
   }
 
+  brandedHeader(logoImage: PDFImage, essence: string, objectName: string, headline: string) {
+    const logoHeight = 20
+    const logoWidth = logoImage.width * (logoHeight / logoImage.height)
+    this.ensureSpace(logoHeight + 78)
+
+    this.page.drawImage(logoImage, {
+      x: MARGIN,
+      y: this.bottomY(this.y, logoHeight),
+      width: logoWidth,
+      height: logoHeight,
+    })
+    this.y += logoHeight + 12
+    this.text(essence.toUpperCase(), MARGIN, this.y, 8, C.kicker)
+    this.y += 11
+    this.text(objectName.toUpperCase(), MARGIN, this.y, 7, C.textMuted)
+    this.y += 12
+    this.text(headline, MARGIN, this.y, 20, C.textH)
+    this.y += 28
+  }
+
   sectionTitle(title: string, gapAfter = 18, followingContentHeight = 0) {
     const titleSize = 14
     const titleBlockHeight = 16 + titleSize + gapAfter
@@ -493,6 +517,16 @@ class PdfWriter {
 
     statTop += statHeight + statGap
     this.miniStat(left + innerPad, statTop, statWidth, 'Длительность смены', card.shift_duration, compact)
+    if (card.volume_total) {
+      this.miniStat(
+        left + innerPad + statWidth + statGap,
+        statTop,
+        statWidth,
+        'Выполненный объём',
+        card.volume_total,
+        compact,
+      )
+    }
 
     return cardHeight
   }
@@ -908,9 +942,10 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
   const font = await doc.embedFont(getRobotoFontBytes())
+  const logoImage = await doc.embedPng(getLegendaLogoBytes())
   const writer = new PdfWriter(doc, font)
 
-  writer.header(payload.title.toUpperCase(), payload.subtitle)
+  writer.brandedHeader(logoImage, payload.reportEssence, payload.reportObjectName, payload.subtitle)
   writer.metricGrid(payload.metrics, 3)
   writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
   writer.brigadeDashboardCards(payload.brigadeCards)

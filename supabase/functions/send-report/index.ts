@@ -3,6 +3,14 @@ import nodemailer from 'npm:nodemailer@6.9.16'
 import { Buffer } from 'node:buffer'
 import type { ReportPdfPayload } from './pdf.ts'
 import {
+  emailBrandingHeader,
+  emailHtmlForPreview,
+  inlineLogoAttachment,
+  REPORT_ESSENCE_DAILY,
+  REPORT_ESSENCE_WEEKLY,
+  REPORT_OBJECT_NAME,
+} from './email-branding.ts'
+import {
   formatEpisodeCount,
   formatPercent,
   isAlertZone,
@@ -877,23 +885,27 @@ function structureBarEmail(workSec: number, weakSec: number, longIdleSec: number
 }
 
 function structureLegendEmail() {
-  const items = [
+  const items: Array<[string, string]> = [
     [STRUCTURE_COLORS.work, 'Активность'],
     [STRUCTURE_COLORS.weak, 'Слабая активность'],
     [STRUCTURE_COLORS.longIdle, 'Длительный простой'],
     [STRUCTURE_COLORS.go, 'Ходьба между зонами'],
   ]
 
-  const cells = items
-    .map(
-      ([color, label]) =>
-        `<td style="padding:0 12px 10px 0;font-size:11px;color:${COLORS.textMuted};white-space:nowrap;">
-          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};vertical-align:middle;margin-right:6px;"></span>${label}
-        </td>`,
-    )
-    .join('')
+  const cell = ([color, label]: [string, string]) =>
+    `<td width="50%" style="padding:0 4px 8px 0;vertical-align:top;">
+      <table cellpadding="0" cellspacing="0" border="0" role="presentation">
+        <tr>
+          <td width="12" height="12" bgcolor="${color}" style="width:12px;height:12px;font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td>
+          <td style="padding:0 0 0 8px;font-size:11px;line-height:1.35;color:${COLORS.textMuted};font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${label}</td>
+        </tr>
+      </table>
+    </td>`
 
-  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>`
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+    <tr>${cell(items[0])}${cell(items[1])}</tr>
+    <tr>${cell(items[2])}${cell(items[3])}</tr>
+  </table>`
 }
 
 function brigadeStatCellEmail(label: string, value: string, alert = false) {
@@ -926,7 +938,11 @@ function brigadeBadgeEmail(activityPct: number) {
   const warn = activityPct < 40
   const background = warn ? COLORS.alertSoft : COLORS.brandSoft
   const color = warn ? COLORS.alert : COLORS.brand
-  return `<div style="display:inline-block;min-width:64px;padding:8px 12px;border-radius:999px;background:${background};color:${color};font-weight:700;text-align:center;line-height:1.2;">${pct(activityPct)}</div>`
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" align="right">
+    <tr>
+      <td align="center" style="padding:8px 12px;background:${background};color:${color};font-weight:700;font-size:14px;line-height:1.2;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${pct(activityPct)}</td>
+    </tr>
+  </table>`
 }
 
 function brigadeCardsEmailLayout(cardsHtml: string[]) {
@@ -954,6 +970,7 @@ function brigadeCardEmail(card: {
   long_idle_pct: number
   go_pct: number
   shift_duration: string
+  volume_total?: string
 }) {
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-bottom:16px;border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface2};border-collapse:separate;">
     <tr><td style="padding:18px;">
@@ -979,6 +996,7 @@ function brigadeCardEmail(card: {
         </tr>
         <tr>
           ${brigadeStatCellEmail('Длительность смены', card.shift_duration)}
+          ${card.volume_total ? brigadeStatCellEmailRight('Выполненный объём', card.volume_total) : ''}
         </tr>
       </table>
     </td></tr>
@@ -1002,7 +1020,7 @@ function brigadeCardPayloadDaily(row: BrigadeDailyRow) {
   }
 }
 
-function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow) {
+function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow, weekVolumeM3: number | null) {
   return {
     supervisor_name: row.supervisor_name,
     subtitle: `≈ ${row.avg_workers} чел./день · ${row.unique_employees} уникальных`,
@@ -1016,15 +1034,31 @@ function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow) {
     long_idle_pct: row.long_idle_pct,
     go_pct: row.go_pct,
     shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
+    volume_total: weekVolumeM3 != null ? formatVolumeM3(weekVolumeM3) : '—',
   }
+}
+
+function weekVolumeM3ForBrigade(cards: BrigadeVolumeDynamicsCard[], supervisorName: string) {
+  const card = cards.find((row) => brigadeNamesMatch(row.supervisor_name, supervisorName))
+  return card?.today_m3 ?? null
+}
+
+function sumWeekVolumeM3(cards: BrigadeVolumeDynamicsCard[]) {
+  const totals = cards.map((card) => card.today_m3).filter((value): value is number => value != null)
+  if (totals.length === 0) return null
+  return totals.reduce((sum, value) => sum + value, 0)
 }
 
 function brigadeCardsEmailDaily(rows: BrigadeDailyRow[]) {
   return brigadeCardsEmailLayout(rows.map((row) => brigadeCardEmail(brigadeCardPayloadDaily(row))))
 }
 
-function brigadeCardsEmailWeekly(rows: BrigadeWeeklyRow[]) {
-  return brigadeCardsEmailLayout(rows.map((row) => brigadeCardEmail(brigadeCardPayloadWeekly(row))))
+function brigadeCardsEmailWeekly(rows: BrigadeWeeklyRow[], volumeCards: BrigadeVolumeDynamicsCard[]) {
+  return brigadeCardsEmailLayout(
+    rows.map((row) =>
+      brigadeCardEmail(brigadeCardPayloadWeekly(row, weekVolumeM3ForBrigade(volumeCards, row.supervisor_name))),
+    ),
+  )
 }
 
 function shiftActivityPct(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
@@ -1211,17 +1245,16 @@ function deltaColor(delta: number | null) {
   return delta > 0 ? COLORS.work : COLORS.alert
 }
 
-const SPARKLINE_BAR_SOFT = 'rgba(0, 78, 207, 0.35)'
+const SPARKLINE_BAR_SOFT = '#9bb8e8'
 
 function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
   const numeric = points.map((point) => point.activity_pct).filter((value): value is number => value != null)
   if (numeric.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за ${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней</div>`
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Мало данных за ${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней</div>`
   }
 
   const chartHeight = 44
-  const barGap = 2
-  const barWidth = Math.max(6, Math.floor((560 - barGap * (points.length - 1)) / points.length))
+  const barWidth = 8
   const min = Math.min(...numeric)
   const max = Math.max(...numeric)
   const range = max - min || 1
@@ -1230,17 +1263,22 @@ function buildSparklineEmail(points: BrigadeDynamicsPoint[]) {
     .map((point, index) => {
       const isLast = index === points.length - 1
       const value = point.activity_pct
-      const heightPct = value == null ? 0 : (value - min) / range
-      const barHeight = value == null ? 2 : Math.max(6, Math.round(heightPct * (chartHeight - 10)) + 6)
-      const opacity = value == null ? 0.12 : 1
-      return `<td valign="bottom" style="padding:0 ${barGap / 2}px;height:${chartHeight + 18}px;text-align:center;">
-        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};opacity:${opacity};border-radius:4px 4px 0 0;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
-        <div style="font-size:8px;line-height:1.1;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;white-space:nowrap;font-weight:${isLast ? 700 : 400};">${ruShort(point.report_date)}</div>
+      const barHeight =
+        value == null ? 2 : Math.max(6, Math.round(((value - min) / range) * (chartHeight - 8)) + 6)
+      const spacerHeight = Math.max(0, chartHeight - barHeight)
+      const barColor = value == null ? STRUCTURE_COLORS.track : isLast ? COLORS.brand : SPARKLINE_BAR_SOFT
+
+      return `<td align="center" valign="bottom" style="padding:0 1px;vertical-align:bottom;">
+        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="${barWidth}">
+          <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+          <tr><td height="${barHeight}" width="${barWidth}" bgcolor="${barColor}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+        </table>
+        <div style="font-size:8px;line-height:1.2;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
       </td>`
     })
     .join('')
 
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;table-layout:fixed;"><tr>${bars}</tr></table>`
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr valign="bottom">${bars}</tr></table>`
 }
 
 function dynamicsCardHtml(
@@ -1290,17 +1328,17 @@ function activityDynamicsBlock(
     sparklineTitle?: string
   },
 ) {
-  const cells = cards
+  const rows = cards
     .map(
       (card) =>
-        `<td width="50%" valign="top" style="padding:0 6px;">${dynamicsCardHtml(card, options)}</td>`,
+        `<tr><td style="padding:0 0 12px;">${dynamicsCardHtml(card, options)}</td></tr>`,
     )
     .join('')
 
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
     <tr><td>
-      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика показателей активности</h3>
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>
+      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Динамика показателей активности</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">${rows}</table>
     </td></tr>
   </table>`
 }
@@ -1308,12 +1346,11 @@ function activityDynamicsBlock(
 function buildVolumeSparklineEmail(points: BrigadeVolumeDynamicsPoint[]) {
   const numeric = points.map((point) => point.volume_m3).filter((value): value is number => value != null)
   if (numeric.length < 2) {
-    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;">Мало данных за период</div>`
+    return `<div style="font-size:12px;color:${COLORS.textMuted};padding:8px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Мало данных за период</div>`
   }
 
   const chartHeight = 44
-  const barGap = 2
-  const barWidth = Math.max(6, Math.floor((560 - barGap * (points.length - 1)) / points.length))
+  const barWidth = 8
   const min = Math.min(...numeric)
   const max = Math.max(...numeric)
   const range = max - min || 1
@@ -1322,17 +1359,22 @@ function buildVolumeSparklineEmail(points: BrigadeVolumeDynamicsPoint[]) {
     .map((point, index) => {
       const isLast = index === points.length - 1
       const value = point.volume_m3
-      const heightPct = value == null ? 0 : (value - min) / range
-      const barHeight = value == null ? 2 : Math.max(6, Math.round(heightPct * (chartHeight - 10)) + 6)
-      const opacity = value == null ? 0.12 : 1
-      return `<td valign="bottom" style="padding:0 ${barGap / 2}px;height:${chartHeight + 18}px;text-align:center;">
-        <div style="width:${barWidth}px;height:${barHeight}px;background:${isLast ? COLORS.brand : SPARKLINE_BAR_SOFT};opacity:${opacity};border-radius:4px 4px 0 0;font-size:0;line-height:0;margin:0 auto;">&nbsp;</div>
-        <div style="font-size:8px;line-height:1.1;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;white-space:nowrap;font-weight:${isLast ? 700 : 400};">${ruShort(point.report_date)}</div>
+      const barHeight =
+        value == null ? 2 : Math.max(6, Math.round(((value - min) / range) * (chartHeight - 8)) + 6)
+      const spacerHeight = Math.max(0, chartHeight - barHeight)
+      const barColor = value == null ? STRUCTURE_COLORS.track : isLast ? COLORS.brand : SPARKLINE_BAR_SOFT
+
+      return `<td align="center" valign="bottom" style="padding:0 1px;vertical-align:bottom;">
+        <table cellpadding="0" cellspacing="0" border="0" role="presentation" width="${barWidth}">
+          <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+          <tr><td height="${barHeight}" width="${barWidth}" bgcolor="${barColor}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+        </table>
+        <div style="font-size:8px;line-height:1.2;color:${isLast ? COLORS.brand : COLORS.textMuted};margin-top:4px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
       </td>`
     })
     .join('')
 
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;table-layout:fixed;"><tr>${bars}</tr></table>`
+  return `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%"><tr valign="bottom">${bars}</tr></table>`
 }
 
 function volumeDynamicsCardHtml(
@@ -1382,17 +1424,17 @@ function volumeDynamicsBlock(
     sparklineTitle?: string
   },
 ) {
-  const cells = cards
+  const rows = cards
     .map(
       (card) =>
-        `<td width="50%" valign="top" style="padding:0 6px;">${volumeDynamicsCardHtml(card, options)}</td>`,
+        `<tr><td style="padding:0 0 12px;">${volumeDynamicsCardHtml(card, options)}</td></tr>`,
     )
     .join('')
 
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
     <tr><td>
-      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;">Динамика выполненных объёмов</h3>
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr>${cells}</tr></table>
+      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Динамика выполненных объёмов</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">${rows}</table>
     </td></tr>
   </table>`
 }
@@ -1716,10 +1758,7 @@ async function buildDailyHtml(
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам'
 
   const html = `${EMAIL_WRAP_START}
-    <tr><td style="padding:24px 24px 8px;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Ежедневный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Смена за ${ru(date)}${brigadeLabel}</h1>
-    </td></tr>
+    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_DAILY, `Смена за ${ru(date)}${brigadeLabel}`)}
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
         [
@@ -1752,6 +1791,8 @@ async function buildDailyHtml(
 
   const pdfPayload: ReportPdfPayload = {
     title: 'Ежедневный отчёт',
+    reportEssence: REPORT_ESSENCE_DAILY,
+    reportObjectName: REPORT_OBJECT_NAME,
     subtitle: `Смена за ${ru(date)}${brigadeLabel}`,
     metrics: [
       {
@@ -1844,26 +1885,30 @@ async function buildWeeklyHtml(
   const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
   const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
+  const totalWeekVolume = sumWeekVolumeM3(volumeDynamics)
 
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам за неделю'
 
   const html = `${EMAIL_WRAP_START}
-    <tr><td style="padding:24px 24px 8px;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${COLORS.kicker};">Еженедельный отчёт</div>
-      <h1 style="margin:6px 0 0;font-size:22px;color:${COLORS.textH};font-weight:700;">Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}</h1>
-    </td></tr>
+    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_WEEKLY, `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`)}
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
         [
-          metricCell('Активность', pct(activity), false, '25%'),
-          metricCell('Слабая активность', pct(weakActivity), false, '25%'),
-          metricCell('Длительный простой', pct(longIdle), false, '25%'),
-          metricCell('Ходьба между зонами', pct(go), false, '25%'),
+          metricCell('Активность', pct(activity), false, '20%'),
+          metricCell('Слабая активность', pct(weakActivity), false, '20%'),
+          metricCell('Длительный простой', pct(longIdle), false, '20%'),
+          metricCell('Ходьба между зонами', pct(go), false, '20%'),
+          metricCell(
+            'Выполненный объём',
+            totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
+            false,
+            '20%',
+          ),
         ],
       ])}
       <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
-      ${brigadeCardsEmailWeekly(brigades)}
+      ${brigadeCardsEmailWeekly(brigades, volumeDynamics)}
       ${activityDynamicsBlock(dynamics, {
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой неделе',
@@ -1888,15 +1933,23 @@ async function buildWeeklyHtml(
 
   const pdfPayload: ReportPdfPayload = {
     title: 'Еженедельный отчёт',
+    reportEssence: REPORT_ESSENCE_WEEKLY,
+    reportObjectName: REPORT_OBJECT_NAME,
     subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`,
     metrics: [
       { label: 'Активность', value: pct(activity) },
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
+      {
+        label: 'Выполненный объём',
+        value: totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
+      },
     ],
     brigadeSectionTitle,
-    brigadeCards: brigades.map(brigadeCardPayloadWeekly),
+    brigadeCards: brigades.map((row) =>
+      brigadeCardPayloadWeekly(row, weekVolumeM3ForBrigade(volumeDynamics, row.supervisor_name)),
+    ),
     dynamicsTitle: 'Динамика показателей активности',
     dynamicsPeriodLabel: 'За неделю',
     dynamicsCards: dynamicsPdfCards(
@@ -2140,22 +2193,32 @@ async function sendEmails(
   const fullHtml = wrapEmailHtml(html)
 
   try {
+    const logoAttachment = inlineLogoAttachment()
     for (const to of recipients) {
       await transporter.sendMail({
         from,
         to,
         subject,
         html: fullHtml,
-        attachments: pdfAttachment
-          ? [
-              {
-                filename: pdfAttachment.filename,
-                content: Buffer.from(pdfAttachment.content),
-                contentType: 'application/pdf',
-                contentDisposition: 'attachment',
-              },
-            ]
-          : undefined,
+        attachments: [
+          {
+            filename: logoAttachment.filename,
+            content: Buffer.from(logoAttachment.content),
+            cid: logoAttachment.cid,
+            contentDisposition: logoAttachment.contentDisposition,
+            contentType: logoAttachment.contentType,
+          },
+          ...(pdfAttachment
+            ? [
+                {
+                  filename: pdfAttachment.filename,
+                  content: Buffer.from(pdfAttachment.content),
+                  contentType: 'application/pdf',
+                  contentDisposition: 'attachment',
+                },
+              ]
+            : []),
+        ],
       })
     }
   } finally {
@@ -2271,7 +2334,7 @@ Deno.serve(async (request) => {
         reportType: type,
         periodKey: report.periodKey,
         recipients: [],
-        previewHtml: wrapEmailHtml(report.html),
+        previewHtml: wrapEmailHtml(emailHtmlForPreview(report.html)),
       })
     }
 
