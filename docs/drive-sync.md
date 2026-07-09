@@ -33,11 +33,14 @@
 
 Ожидается, что файлы за вчера появляются в Google Drive **не позднее 08:00 МСК**.
 
-GitHub Actions workflow [`.github/workflows/sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) запускается:
+**Основной планировщик (рекомендуется):** Supabase `pg_cron` → edge function `sync-drive` (независимо от GitHub Actions):
 
-- `04:50 UTC` — **07:50 МСК** (импорт в БД, за 10 минут до рассылки)
+- `07:50`, `07:55`, `08:00`, `08:05` МСК — импорт вчерашнего дня
+- Настройка: `npm run setup:report-cron` (применяет миграции, Vault, деплоит `sync-drive`)
 
-Рассылка — workflow [send-reports.yml](../.github/workflows/send-reports.yml): сразу после импорта, **08:00** и **08:20** МСК daily, пн **08:25** weekly (дедлайн **08:30**).
+**Резерв:** GitHub Actions [`.github/workflows/sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) — `04:50 UTC` (07:50 МСК).
+
+Рассылка — `pg_cron` + [send-reports.yml](../.github/workflows/send-reports.yml): после импорта, дедлайн **08:30** МСК.
 
 По умолчанию импортируется **вчерашний день по Europe/Moscow**.
 
