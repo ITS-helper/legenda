@@ -304,9 +304,10 @@ class PdfWriter {
     this.y += 28
   }
 
-  sectionTitle(title: string, gapAfter = 18) {
+  sectionTitle(title: string, gapAfter = 18, followingContentHeight = 0) {
     const titleSize = 14
-    this.ensureSpace(titleSize + gapAfter + 20)
+    const titleBlockHeight = 16 + titleSize + gapAfter
+    this.ensureSpace(titleBlockHeight + followingContentHeight + 8)
     this.gap(16)
     this.text(title, MARGIN, this.y, titleSize, C.textH)
     this.y += titleSize + gapAfter
@@ -869,6 +870,30 @@ class PdfWriter {
   }
 }
 
+function brigadeBlockHeight(cardCount: number) {
+  const compact = cardCount >= 2
+  const gap = 10
+  const columns = compact ? 2 : 1
+  const innerPad = compact ? 14 : 18
+  const statGap = 8
+  const statHeight = compact ? 48 : 60
+  const headerBlock = compact ? 40 : 44
+  const barHeight = compact ? 10 : 16
+  const legendBlock = 28
+  const bottomPad = compact ? 16 : 18
+  const cardHeight =
+    innerPad + headerBlock + barHeight + legendBlock + statHeight * 3 + statGap * 2 + bottomPad
+  const rows = Math.ceil(cardCount / columns)
+  return rows * cardHeight + Math.max(0, rows - 1) * gap + 8
+}
+
+function dynamicsBlockHeight(cardCount: number) {
+  const gap = 10
+  const cardHeight = 148
+  const rows = Math.ceil(cardCount / 2)
+  return rows * (cardHeight + gap) + 20
+}
+
 export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
@@ -877,9 +902,9 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
 
   writer.header(payload.title.toUpperCase(), payload.subtitle)
   writer.metricGrid(payload.metrics, 3)
-  writer.sectionTitle(payload.brigadeSectionTitle, 14)
+  writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
   writer.brigadeDashboardCards(payload.brigadeCards)
-  writer.sectionTitle(payload.dynamicsTitle, 16)
+  writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
   writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
 
   writer.newPage()
