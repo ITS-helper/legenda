@@ -1735,6 +1735,81 @@
   line-height: 1.5;
 }
 
+.volumes-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+
+.volumes-import-input {
+  display: none;
+}
+
+.volumes-day-caption {
+  margin: 0;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.volumes-brigade-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.volumes-brigade-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.volumes-brigade-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.volumes-brigade-card-head h4 {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1.05rem;
+}
+
+.volumes-brigade-unit {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.volumes-brigade-field {
+  margin: 0;
+}
+
+.volumes-textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--text-h);
+  font: inherit;
+  resize: vertical;
+}
+
+.volumes-textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
 .volumes-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

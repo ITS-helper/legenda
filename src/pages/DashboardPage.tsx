@@ -855,7 +855,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         id="block-volumes"
         kicker="Блок 5 · Объёмы"
         title="Объёмы"
-        description="Ручной ввод показателей объёмов за выбранный день: цифры, единицы измерения и пояснения сохраняются в базе данных."
+        description="Показатели объёмов за выбранный день. Загрузка Excel ГПР обновляет все дни из файла; при выборе даты на дашборде показываются сохранённые объёмы."
       >
         <div className="filter-row">
           <label className="filter-field">

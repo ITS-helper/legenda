@@ -1,4 +1,5 @@
 import { getEdgeFunctionHeaders, getEdgeFunctionUrl, readEdgeFunctionJson } from './edgeFunctions'
+import { brigadeNamesMatch, TRACKED_BRIGADES } from './reports'
 
 export type VolumeEntry = {
   id: number
@@ -54,6 +55,18 @@ export function normalizeReportDate(value: string | null | undefined) {
 
 export function formatVolumeCardSummary(entries: VolumeEntry[]) {
   if (entries.length === 0) return '—'
+
+  const brigadeSummary = TRACKED_BRIGADES.map((brigadeName) => {
+    const entry = entries.find((row) => brigadeNamesMatch(row.label, brigadeName))
+    const value = entry?.value_text.trim()
+    if (!value) return null
+    return `${brigadeName}: ${value}`
+  })
+    .filter(Boolean)
+    .join(' · ')
+
+  if (brigadeSummary) return brigadeSummary
+
   const preview = entries
     .slice(0, 2)
     .map((entry) => entry.value_text.trim())
@@ -133,6 +146,27 @@ export async function saveVolumeEntries(password: string, reportDate: string, en
 
   const payload = await readEdgeFunctionJson<SaveVolumeResponse>(response)
   return (payload?.entries ?? []).map((row) => mapVolumeEntry(row as VolumeEntry))
+}
+
+export async function saveVolumeEntriesForDays(
+  password: string,
+  days: Array<{ reportDate: string; entries: VolumeEntryDraft[] }>,
+) {
+  for (const day of days) {
+    await saveVolumeEntries(password, day.reportDate, day.entries)
+  }
+}
+
+export function brigadeVolumeDraftsFromEntries(entries: VolumeEntry[]): VolumeEntryDraft[] {
+  return TRACKED_BRIGADES.map((brigade) => {
+    const match = entries.find((entry) => brigadeNamesMatch(entry.label, brigade))
+    return {
+      id: match?.id,
+      label: brigade,
+      value_text: match?.value_text ?? '',
+      note: match?.note ?? '',
+    }
+  })
 }
 
 export function draftsFromEntries(entries: VolumeEntry[]): VolumeEntryDraft[] {
