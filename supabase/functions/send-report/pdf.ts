@@ -44,6 +44,7 @@ export type ReportPdfPayload = {
   reportObjectName: string
   subtitle: string
   metrics: Array<{ label: string; value: string }>
+  metricsColumns?: number
   brigadeSectionTitle: string
   brigadeCards: BrigadeCardPayload[]
   dynamicsTitle: string
@@ -132,6 +133,12 @@ function deltaColor(delta: string): RGB {
   if (delta.startsWith('+')) return C.work
   if (delta.startsWith('-')) return C.alert
   return C.textMuted
+}
+
+function resolveMetricsColumns(metrics: Array<{ label: string; value: string }>, requested?: number) {
+  if (requested != null && requested > 0) return requested
+  if (metrics.length === 5) return 5
+  return 3
 }
 
 class PdfWriter {
@@ -367,23 +374,60 @@ class PdfWriter {
   }
 
   metricGrid(metrics: Array<{ label: string; value: string }>, columns = 3) {
-    const gap = 16
-    const cardWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns
-    const cardHeight = 88
-    const rows = Math.ceil(metrics.length / columns)
-    const lastRowCount = metrics.length % columns || columns
+    const resolvedColumns = resolveMetricsColumns(metrics, columns)
+    const compactRow = resolvedColumns >= metrics.length && metrics.length >= 4
+    const gap = compactRow ? 8 : 16
+    const cardWidth = (CONTENT_WIDTH - gap * (resolvedColumns - 1)) / resolvedColumns
+    const cardHeight = compactRow ? 74 : 88
+    const rows = Math.ceil(metrics.length / resolvedColumns)
+    const lastRowCount = metrics.length % resolvedColumns || resolvedColumns
     this.ensureSpace(rows * (cardHeight + gap))
 
     for (let index = 0; index < metrics.length; index += 1) {
-      const column = index % columns
-      const row = Math.floor(index / columns)
+      const column = index % resolvedColumns
+      const row = Math.floor(index / resolvedColumns)
       const isLastRow = row === rows - 1
-      const rowCount = isLastRow ? lastRowCount : columns
+      const rowCount = isLastRow ? lastRowCount : resolvedColumns
       const rowWidth = rowCount * cardWidth + Math.max(0, rowCount - 1) * gap
       const rowOffset = rowCount < columns ? (CONTENT_WIDTH - rowWidth) / 2 : 0
       const left = MARGIN + rowOffset + column * (cardWidth + gap)
       const top = this.y + row * (cardHeight + gap)
       const metric = metrics[index]
+
+      if (compactRow) {
+        const pad = 8
+        const labelSize = 5.5
+        const innerGap = 3
+        const valueSize = metric.value.length > 9 ? 13 : 16
+        const labelWidth = Math.max(cardWidth - 8, 1)
+        const labelLines = Math.ceil(
+          this.font.widthOfTextAtSize(metric.label.toUpperCase(), labelSize) / labelWidth,
+        )
+        const labelBlockHeight = labelSize + Math.max(0, labelLines - 1) * (labelSize + 2)
+        const contentHeight = labelBlockHeight + innerGap + valueSize
+        const contentTop = top + pad + Math.max(0, (cardHeight - pad * 2 - contentHeight) / 2)
+
+        this.card(left, top, cardWidth, cardHeight, C.surface2, C.border, RADIUS.lg)
+        this.textBlockCentered(
+          metric.label.toUpperCase(),
+          contentTop,
+          labelSize,
+          C.textMuted,
+          left,
+          cardWidth,
+          2,
+        )
+        this.textCentered(
+          metric.value,
+          contentTop + labelBlockHeight + innerGap,
+          valueSize,
+          C.textH,
+          left,
+          cardWidth,
+        )
+        continue
+      }
+
       const labelSize = 7
       const labelWidth = Math.max(cardWidth - 24, 1)
       const labelLines = Math.ceil(
@@ -1017,9 +1061,11 @@ function estimateZonePanelHeight(rows: ZonePanelRow[], hasSummary: boolean) {
 }
 
 function metricGridHeight(metrics: Array<{ label: string; value: string }>, columns = 3) {
-  const gap = 16
-  const cardHeight = 88
-  const rows = Math.ceil(metrics.length / columns)
+  const resolvedColumns = resolveMetricsColumns(metrics, columns)
+  const compactRow = resolvedColumns >= metrics.length && metrics.length >= 4
+  const gap = compactRow ? 8 : 16
+  const cardHeight = compactRow ? 74 : 88
+  const rows = Math.ceil(metrics.length / resolvedColumns)
   return rows * (cardHeight + gap) + 8
 }
 
@@ -1046,7 +1092,7 @@ function zonesBrigadeMatrixHeight(sections: BrigadeZonesPdfSection[]) {
 }
 
 function estimateReportPdfHeight(payload: ReportPdfPayload) {
-  let height = MARGIN + 85 + 24 + metricGridHeight(payload.metrics)
+  let height = MARGIN + 85 + 24 + metricGridHeight(payload.metrics, payload.metricsColumns ?? 3)
 
   if (payload.dynamicsBeforeBrigades) {
     height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
@@ -1075,7 +1121,7 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
   const writer = new PdfWriter(doc, font, { pageHeight, singlePage })
 
   writer.brandedHeader(payload.reportEssence, payload.reportObjectName, payload.subtitle)
-  writer.metricGrid(payload.metrics, 3)
+  writer.metricGrid(payload.metrics, payload.metricsColumns ?? 3)
 
   if (payload.dynamicsBeforeBrigades) {
     writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))

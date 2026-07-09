@@ -1828,13 +1828,16 @@ async function buildDailyHtml(
     <tr><td style="padding:8px 24px 24px;">
       ${metricsGrid([
         [
-          metricCell('Вышло на смену', brigadeFilter ? formatBrigadeShiftHeadcount(brigadeFilter, totals.workers) : formatShiftHeadcount(totals.workers)),
-          metricCell('Активность', pct(activity)),
-          metricCell('Слабая активность', pct(weakActivity)),
-        ],
-        [
-          metricCell('Длительный простой', pct(longIdle)),
-          metricCell('Ходьба между зонами', pct(go)),
+          metricCell(
+            'Вышло на смену',
+            brigadeFilter ? formatBrigadeShiftHeadcount(brigadeFilter, totals.workers) : formatShiftHeadcount(totals.workers),
+            false,
+            '20%',
+          ),
+          metricCell('Активность', pct(activity), false, '20%'),
+          metricCell('Слабая активность', pct(weakActivity), false, '20%'),
+          metricCell('Длительный простой', pct(longIdle), false, '20%'),
+          metricCell('Ходьба между зонами', pct(go), false, '20%'),
         ],
       ])}
       <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
@@ -1870,6 +1873,7 @@ async function buildDailyHtml(
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
     ],
+    metricsColumns: 5,
     brigadeSectionTitle,
     brigadeCards: brigades.map(brigadeCardPayloadDaily),
     dynamicsTitle: 'Динамика показателей активности',
@@ -2009,10 +2013,11 @@ async function buildWeeklyHtml(
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
       {
-        label: 'Объём',
+        label: 'Выполненный объём',
         value: totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
       },
     ],
+    metricsColumns: 5,
     brigadeSectionTitle,
     brigadeCards: brigades.map((row) =>
       brigadeCardPayloadWeekly(row, weekVolumeM3ForBrigade(volumeDynamics, row.supervisor_name)),
