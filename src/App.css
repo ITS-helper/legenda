@@ -1833,8 +1833,8 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 84px;
-  max-height: 180px;
+  min-height: 168px;
+  max-height: 360px;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 16px;

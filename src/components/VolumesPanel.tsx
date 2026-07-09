@@ -217,7 +217,7 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                     onChange={(event) => updateDraft(index, { note: event.target.value })}
                     placeholder="Какие работы выполнены за день"
                     maxLength={1000}
-                    rows={3}
+                    rows={6}
                   />
                 </label>
               </article>
