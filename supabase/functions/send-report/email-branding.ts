@@ -1,4 +1,9 @@
-import { getLegendaLogoBytes, LEGENDA_LOGO_CID, legendaLogoDataUri } from './legenda-logo.ts'
+import {
+  getLegendaLogoBytes,
+  LEGENDA_LOGO_CID,
+  LEGENDA_LOGO_MIME,
+  legendaLogoDataUri,
+} from './legenda-logo.ts'
 
 export const REPORT_OBJECT_NAME = 'Легенда Васильевского, корпус 2'
 export const REPORT_ESSENCE_DAILY = 'Ежедневный отчёт по интенсивности работы'
@@ -43,7 +48,7 @@ export function inlineLogoAttachment() {
     content: getLegendaLogoBytes(),
     cid: LEGENDA_LOGO_CID,
     contentDisposition: 'inline' as const,
-    contentType: 'image/png',
+    contentType: LEGENDA_LOGO_MIME,
   }
 }
 
