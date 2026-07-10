@@ -332,7 +332,8 @@ async function loadZoneRowsByBrigade(
 
   const totals = new Map<string, Map<number, number>>()
   for (const row of data ?? []) {
-    const supervisorName = (row.supervisor_name as string | null) ?? 'Без начальника'
+    const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
+    if (!isAnalyticsSupervisor(supervisorName)) continue
     const zona = Number(row.zona)
     if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
     const byZone = totals.get(supervisorName) ?? new Map<number, number>()
@@ -371,7 +372,7 @@ async function loadIdleEpisodes(
 
   const supervisorByShift = new Map<number, string>()
   for (const row of shiftData ?? []) {
-    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? 'Без начальника')
+    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? NO_SUPERVISOR)
   }
 
   const { data, error } = await supabase!
@@ -387,8 +388,9 @@ async function loadIdleEpisodes(
       ww_shift_id: Number(row.ww_shift_id),
       duration_min: Number(row.duration_min),
       ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
-      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? 'Без начальника',
+      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? NO_SUPERVISOR,
     }))
+    .filter((episode) => isAnalyticsSupervisor(episode.supervisor_name))
 }
 
 function aggregateIdleByZone(episodes: IdleEpisodeRow[]): IdleZoneRow[] {
@@ -673,7 +675,7 @@ async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: st
     supervisor_name: row.supervisor_name,
     kpp_sec_total: row.kpp_sec_total,
     kpp_time: buildKppTimeLabel(minutesByShift.get(row.ww_shift_id) ?? []),
-  }))
+  })).filter((row) => isAnalyticsSupervisor(row.supervisor_name))
 }
 
 function formatShiftDuration(totalSeconds: number) {
@@ -778,6 +780,21 @@ function brigadeNamesMatch(left: string, right: string) {
   return (
     left.localeCompare(right, 'ru', { sensitivity: 'accent' }) === 0 || left.toUpperCase() === right.toUpperCase()
   )
+}
+
+const NO_SUPERVISOR = 'Без начальника'
+
+function isAnalyticsSupervisor(supervisorName: string | null | undefined) {
+  if (supervisorName == null || supervisorName.trim() === '') return false
+  return !brigadeNamesMatch(supervisorName, NO_SUPERVISOR)
+}
+
+function filterAnalyticsSupervisors<T extends { supervisor_name: string }>(rows: T[]) {
+  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+}
+
+function filterAnalyticsShiftRows<T extends { supervisor_name: string | null }>(rows: T[]) {
+  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
 }
 
 function formatDeltaPercent(delta: number | null) {
@@ -1765,8 +1782,9 @@ function kppBlock(rows: KppRow[]) {
 }
 
 function filterRowsByBrigade<T extends { supervisor_name: string }>(rows: T[], brigadeFilter?: string) {
-  if (!brigadeFilter) return rows
-  return rows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeFilter))
+  const analyticsRows = filterAnalyticsSupervisors(rows)
+  if (!brigadeFilter) return analyticsRows
+  return analyticsRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeFilter))
 }
 
 function brigadeReportLabel(brigadeFilter?: string) {

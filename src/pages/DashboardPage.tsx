@@ -32,6 +32,7 @@ import {
   loadZoneDailyByBrigade,
   pvPercentFromZoneRows,
   ratio,
+  NO_SUPERVISOR,
   sumDaily,
   topActivityDaily,
   topActivityWeekly,
@@ -57,8 +58,6 @@ import { isAlertZone, KPP_ZONE, parseZone } from '../lib/zones'
 
 type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
-
-const NO_SUPERVISOR = 'Без начальника'
 
 function getRowProductivity(row: ShiftMetricRow) {
   return ratio(row.work_sec_total, row.total_sec_total)

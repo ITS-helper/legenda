@@ -168,6 +168,21 @@ export function buildKppTimeLabel(eventTimes: string[]) {
 
 const NO_SUPERVISOR = 'Без начальника'
 
+export { NO_SUPERVISOR }
+
+export function isAnalyticsSupervisor(supervisorName: string | null | undefined) {
+  if (supervisorName == null || supervisorName.trim() === '') return false
+  return !brigadeNamesMatch(supervisorName, NO_SUPERVISOR)
+}
+
+export function filterAnalyticsSupervisors<T extends { supervisor_name: string }>(rows: T[]) {
+  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+}
+
+export function filterAnalyticsShiftRows<T extends { supervisor_name: string | null }>(rows: T[]) {
+  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+}
+
 export function formatSeconds(totalSeconds: number) {
   const safe = Math.max(0, Math.round(totalSeconds))
   const hours = Math.floor(safe / 3600)
@@ -303,7 +318,7 @@ export async function loadBrigadeDaily(reportDate: string) {
     .order('supervisor_name', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as BrigadeDailyRow[]
+  return filterAnalyticsSupervisors((data ?? []) as BrigadeDailyRow[])
 }
 
 export async function loadBrigadeWeekly(weekStart: string) {
@@ -315,7 +330,7 @@ export async function loadBrigadeWeekly(weekStart: string) {
     .order('supervisor_name', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as BrigadeWeeklyRow[]
+  return filterAnalyticsSupervisors((data ?? []) as BrigadeWeeklyRow[])
 }
 
 export type BrigadeDynamicsPoint = {
@@ -510,7 +525,7 @@ export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) 
     .lte('report_date', weekEnd)
 
   if (error) throw error
-  return (data ?? []) as ShiftMetricRow[]
+  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
 }
 
 function aggregateShiftActivity(rows: ShiftMetricRow[]) {
@@ -579,7 +594,7 @@ export async function loadShiftRows(reportDate: string) {
     .eq('report_date', reportDate)
 
   if (error) throw error
-  return (data ?? []) as ShiftMetricRow[]
+  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
 }
 
 export async function loadKppEmployees(reportDate: string) {
@@ -593,13 +608,15 @@ export async function loadKppEmployees(reportDate: string) {
 
   if (error) throw error
 
-  const employees = (data ?? []).map((row) => ({
-    ww_shift_id: Number(row.ww_shift_id),
-    employee_number: String(row.employee_number),
-    full_name: String(row.full_name),
-    supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
-    kpp_sec: Number(row.kpp_sec_total),
-  }))
+  const employees = filterAnalyticsShiftRows(
+    (data ?? []).map((row) => ({
+      ww_shift_id: Number(row.ww_shift_id),
+      employee_number: String(row.employee_number),
+      full_name: String(row.full_name),
+      supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
+      kpp_sec: Number(row.kpp_sec_total),
+    })),
+  )
 
   if (employees.length === 0) return [] satisfies KppEmployee[]
 
@@ -687,6 +704,10 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
 
   const totals = new Map<number, { sec: number; shifts: number }>()
   for (const row of data ?? []) {
+    const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
+    if (!supervisor || supervisor === 'all') {
+      if (!isAnalyticsSupervisor(supervisorName)) continue
+    }
     const zona = Number(row.zona)
     if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
     const current = totals.get(zona) ?? { sec: 0, shifts: 0 }
@@ -712,6 +733,7 @@ export async function loadZoneDailyByBrigade(reportDate: string) {
   const supervisors = new Map<string, Map<number, { sec: number; shifts: number }>>()
   for (const row of data ?? []) {
     const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
+    if (!isAnalyticsSupervisor(supervisorName)) continue
     const zona = Number(row.zona)
     if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
     const supervisorTotals = supervisors.get(supervisorName) ?? new Map<number, { sec: number; shifts: number }>()
@@ -769,5 +791,6 @@ export async function loadIdleEpisodes(reportDate: string) {
       duration_min: Number(row.duration_min),
       ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
       zonaName: zoneName(row.ble_tag_zone as number | null),
-    })) satisfies IdleEpisode[]
+    }))
+    .filter((row) => isAnalyticsSupervisor(row.supervisor_name)) satisfies IdleEpisode[]
 }
