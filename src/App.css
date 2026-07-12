@@ -772,7 +772,7 @@
 
 .dashboard-block-nav {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 30;
   display: flex;
   align-items: center;
@@ -785,6 +785,7 @@
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(15, 27, 45, 0.06);
 }
 
 .dashboard-block-nav-link {
@@ -2337,7 +2338,7 @@
   border: 1px solid var(--border);
   background: var(--surface);
   overflow: hidden;
-  scroll-margin-top: 56px;
+  scroll-margin-top: 72px;
 }
 
 .dash-block-head {
