@@ -566,11 +566,14 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
 
+const WEEKLY_SHIFT_ROW_COLUMNS =
+  'employee_number, full_name, supervisor_name, work_sec_total, total_sec_total'
+
 export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) {
   const { data, error } = await supabase
     .schema('analytics')
     .from('shift_daily_metrics')
-    .select('*')
+    .select(WEEKLY_SHIFT_ROW_COLUMNS)
     .gte('report_date', weekStart)
     .lte('report_date', weekEnd)
 

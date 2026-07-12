@@ -284,13 +284,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setWeeklyLoading(true)
       setWeeklyError(null)
       try {
-        const [brigades, shifts] = await Promise.all([
-          loadBrigadeWeekly(selectedWeek),
-          loadShiftRowsForRange(weekStart, weekEnd),
-        ])
+        const brigades = await loadBrigadeWeekly(selectedWeek)
         if (cancelled) return
         setWeeklyRows(brigades)
-        setWeeklyShiftRows(shifts)
+
+        try {
+          const shifts = await loadShiftRowsForRange(weekStart, weekEnd)
+          if (cancelled) return
+          setWeeklyShiftRows(shifts)
+        } catch (shiftError) {
+          if (!cancelled) {
+            setWeeklyShiftRows([])
+            setWeeklyError(getErrorMessage(shiftError))
+          }
+        }
       } catch (error) {
         if (!cancelled) setWeeklyError(getErrorMessage(error))
       } finally {
