@@ -10,6 +10,7 @@ import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
 import { DASHBOARD_BLOCK_NAV, dashboardBlockDomId, type DashboardBlockId } from '../content/dashboardBlocks'
+import { getErrorMessage } from '../lib/errors'
 import { isBlockEnabled, isSubblockEnabled } from '../lib/metricSettings'
 import {
   aggregateLowActivityWeekly,
@@ -108,7 +109,7 @@ function StructureLegend() {
 }
 
 export function DashboardPage({ uiText }: { uiText: UiText }) {
-  const { settings } = useMetricSettings()
+  const { settings, loaded: metricSettingsLoaded } = useMetricSettings()
   const showBlock1 = isBlockEnabled('block1', settings)
   const showBlock2 = isBlockEnabled('block2', settings)
   const showBlock3 = isBlockEnabled('block3', settings)
@@ -166,7 +167,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dynamicsError, setDynamicsError] = useState<string | null>(null)
   const [volumeDynamicsLoading, setVolumeDynamicsLoading] = useState(false)
   const [volumeDynamicsError, setVolumeDynamicsError] = useState<string | null>(null)
-  const [weeklyLoading, setWeeklyLoading] = useState(true)
+  const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -204,7 +205,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setAvailableWeeks(weeks)
         setSelectedWeek((current) => current || weeks[0]?.week_start || '')
       } catch (error) {
-        if (!cancelled) setBootstrapError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setBootstrapError(getErrorMessage(error))
       }
     }
 
@@ -240,7 +241,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setIdleEpisodes(episodes)
         setVolumeEntries(volumes)
       } catch (error) {
-        if (!cancelled) setDailyError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setDailyError(getErrorMessage(error))
       } finally {
         if (!cancelled) setDailyLoading(false)
       }
@@ -270,23 +271,28 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }
 
   useEffect(() => {
-    if (!selectedWeek) return
+    if (!selectedWeek || availableWeeks.length === 0) return
+
+    const weekMeta = availableWeeks.find((week) => week.week_start === selectedWeek)
+    if (!weekMeta) return
+    const weekStart = weekMeta.week_start
+    const weekEnd = weekMeta.week_end
+
     let cancelled = false
 
     async function loadWeek() {
       setWeeklyLoading(true)
       setWeeklyError(null)
       try {
-        const brigades = await loadBrigadeWeekly(selectedWeek)
-        const weekMeta = availableWeeks.find((week) => week.week_start === selectedWeek)
-        const shifts = weekMeta
-          ? await loadShiftRowsForRange(weekMeta.week_start, weekMeta.week_end)
-          : []
+        const [brigades, shifts] = await Promise.all([
+          loadBrigadeWeekly(selectedWeek),
+          loadShiftRowsForRange(weekStart, weekEnd),
+        ])
         if (cancelled) return
         setWeeklyRows(brigades)
         setWeeklyShiftRows(shifts)
       } catch (error) {
-        if (!cancelled) setWeeklyError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setWeeklyError(getErrorMessage(error))
       } finally {
         if (!cancelled) setWeeklyLoading(false)
       }
@@ -310,7 +316,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         if (cancelled) return
         setDetailShiftRows(shifts)
       } catch (error) {
-        if (!cancelled) setDetailError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setDetailError(getErrorMessage(error))
       } finally {
         if (!cancelled) setDetailLoading(false)
       }
@@ -323,7 +329,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }, [detailDate])
 
   useEffect(() => {
-    if (!dynamicsDate) return
+    if (!dynamicsDate || !metricSettingsLoaded) return
     let cancelled = false
 
     async function loadDynamics() {
@@ -334,7 +340,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         if (cancelled) return
         setDynamicsCards(cards)
       } catch (error) {
-        if (!cancelled) setDynamicsError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setDynamicsError(getErrorMessage(error))
       } finally {
         if (!cancelled) setDynamicsLoading(false)
       }
@@ -344,10 +350,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [dynamicsDate, comparisonBrigades])
+  }, [dynamicsDate, comparisonBrigades, metricSettingsLoaded])
 
   useEffect(() => {
-    if (!dynamicsDate) return
+    if (!dynamicsDate || !metricSettingsLoaded) return
     let cancelled = false
 
     async function loadVolumeDynamics() {
@@ -358,7 +364,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         if (cancelled) return
         setVolumeDynamicsCards(cards)
       } catch (error) {
-        if (!cancelled) setVolumeDynamicsError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setVolumeDynamicsError(getErrorMessage(error))
       } finally {
         if (!cancelled) setVolumeDynamicsLoading(false)
       }
@@ -368,7 +374,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [dynamicsDate, comparisonBrigades])
+  }, [dynamicsDate, comparisonBrigades, metricSettingsLoaded])
 
   const visibleDailyRows = useMemo(
     () => filterComparisonBrigades(dailyRows, comparisonBrigades),
