@@ -357,16 +357,114 @@ export async function loadBrigadeDaily(reportDate: string) {
   return filterAnalyticsSupervisors((data ?? []) as BrigadeDailyRow[])
 }
 
-export async function loadBrigadeWeekly(weekStart: string) {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('brigade_weekly_metrics')
-    .select('*')
-    .eq('week_start', weekStart)
-    .order('supervisor_name', { ascending: true })
+export async function loadBrigadeDailyForRange(weekStart: string, weekEnd: string) {
+  const dates = listDatesInclusive(weekStart, weekEnd)
+  const dayRows = await Promise.all(dates.map((reportDate) => loadBrigadeDaily(reportDate)))
+  return dayRows.flat()
+}
 
-  if (error) throw error
-  return filterAnalyticsSupervisors((data ?? []) as BrigadeWeeklyRow[])
+function roundPct(part: number, total: number) {
+  return total > 0 ? Math.round((1000 * part) / total) / 10 : 0
+}
+
+export function aggregateBrigadeDailyToWeekly(
+  weekStart: string,
+  weekEnd: string,
+  dailyRows: BrigadeDailyRow[],
+): BrigadeWeeklyRow[] {
+  const byBrigade = new Map<string, BrigadeDailyRow[]>()
+
+  for (const row of dailyRows) {
+    const rows = byBrigade.get(row.supervisor_name) ?? []
+    rows.push(row)
+    byBrigade.set(row.supervisor_name, rows)
+  }
+
+  return [...byBrigade.entries()]
+    .map(([supervisor_name, rows]) => {
+      const days = new Set(rows.map((row) => row.report_date)).size
+      const workers = rows.reduce((sum, row) => sum + row.workers, 0)
+      const work_sec = rows.reduce((sum, row) => sum + row.work_sec, 0)
+      const weak_activity_sec = rows.reduce((sum, row) => sum + row.weak_activity_sec, 0)
+      const long_idle_sec = rows.reduce((sum, row) => sum + row.long_idle_sec, 0)
+      const go_sec = rows.reduce((sum, row) => sum + row.go_sec, 0)
+      const total_sec = rows.reduce((sum, row) => sum + row.total_sec, 0)
+      const pv_sec = rows.reduce((sum, row) => sum + row.pv_sec, 0)
+      const kpp_sec = rows.reduce((sum, row) => sum + row.kpp_sec, 0)
+      const kpp_shifts = rows.reduce((sum, row) => sum + row.kpp_workers, 0)
+      const durationRows = rows.filter((row) => row.avg_shift_duration_sec > 0)
+      const durationWorkers = durationRows.reduce((sum, row) => sum + row.workers, 0)
+      const avg_shift_duration_sec =
+        durationWorkers > 0
+          ? Math.round(
+              durationRows.reduce(
+                (sum, row) => sum + row.avg_shift_duration_sec * row.workers,
+                0,
+              ) / durationWorkers,
+            )
+          : 0
+
+      return {
+        week_start: weekStart,
+        week_end: weekEnd,
+        supervisor_name,
+        days,
+        unique_employees: 0,
+        avg_workers: days > 0 ? Math.round((workers / days) * 10) / 10 : 0,
+        work_sec,
+        weak_activity_sec,
+        long_idle_sec,
+        go_sec,
+        total_sec,
+        pv_sec,
+        kpp_sec,
+        kpp_shifts,
+        activity_pct: roundPct(work_sec, total_sec),
+        weak_activity_pct: roundPct(weak_activity_sec, total_sec),
+        long_idle_pct: roundPct(long_idle_sec, total_sec),
+        go_pct: roundPct(go_sec, total_sec),
+        avg_shift_duration_sec,
+      } satisfies BrigadeWeeklyRow
+    })
+    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
+}
+
+export function enrichBrigadeWeeklyWithShiftStats(
+  weeklyRows: BrigadeWeeklyRow[],
+  shifts: ShiftMetricRow[],
+): BrigadeWeeklyRow[] {
+  const uniqueByBrigade = new Map<string, Set<string>>()
+  const shiftCountByBrigade = new Map<string, number>()
+  const kppByBrigade = new Map<string, number>()
+
+  for (const row of shifts) {
+    const supervisorName = row.supervisor_name ?? NO_SUPERVISOR
+    const unique = uniqueByBrigade.get(supervisorName) ?? new Set<string>()
+    unique.add(row.employee_number)
+    uniqueByBrigade.set(supervisorName, unique)
+    shiftCountByBrigade.set(supervisorName, (shiftCountByBrigade.get(supervisorName) ?? 0) + 1)
+    if (row.kpp_sec_total > 0) {
+      kppByBrigade.set(supervisorName, (kppByBrigade.get(supervisorName) ?? 0) + 1)
+    }
+  }
+
+  return weeklyRows.map((row) => {
+    const days = row.days
+    const shiftCount = shiftCountByBrigade.get(row.supervisor_name) ?? 0
+    return {
+      ...row,
+      unique_employees: uniqueByBrigade.get(row.supervisor_name)?.size ?? row.unique_employees,
+      avg_workers: days > 0 ? Math.round((shiftCount / days) * 10) / 10 : row.avg_workers,
+      kpp_shifts: kppByBrigade.get(row.supervisor_name) ?? row.kpp_shifts,
+    }
+  })
+}
+
+/** Агрегирует дневные метрики бригад за неделю — без тяжёлого view brigade_weekly_metrics. */
+export async function loadBrigadeWeekly(weekStart: string, weekEnd?: string) {
+  const end = weekEnd ?? addDaysIso(weekStart, 6)
+  const dailyRows = await loadBrigadeDailyForRange(weekStart, end)
+  return aggregateBrigadeDailyToWeekly(weekStart, end, dailyRows)
 }
 
 export type BrigadeDynamicsPoint = {
@@ -567,7 +665,7 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
 }
 
 const WEEKLY_SHIFT_ROW_COLUMNS =
-  'employee_number, full_name, supervisor_name, work_sec_total, total_sec_total'
+  'employee_number, full_name, supervisor_name, work_sec_total, total_sec_total, kpp_sec_total'
 
 async function loadShiftRowsForDay(reportDate: string) {
   const { data, error } = await supabase

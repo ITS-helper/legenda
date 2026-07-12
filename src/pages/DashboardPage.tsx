@@ -29,6 +29,7 @@ import {
   loadBrigadeActivityDynamics,
   loadBrigadeVolumeDynamics,
   loadBrigadeDaily,
+  enrichBrigadeWeeklyWithShiftStats,
   loadBrigadeWeekly,
   loadIdleEpisodes,
   loadKppEmployees,
@@ -284,20 +285,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setWeeklyLoading(true)
       setWeeklyError(null)
       try {
-        const brigades = await loadBrigadeWeekly(selectedWeek)
+        const [brigades, shifts] = await Promise.all([
+          loadBrigadeWeekly(weekStart, weekEnd),
+          loadShiftRowsForRange(weekStart, weekEnd),
+        ])
         if (cancelled) return
-        setWeeklyRows(brigades)
-
-        try {
-          const shifts = await loadShiftRowsForRange(weekStart, weekEnd)
-          if (cancelled) return
-          setWeeklyShiftRows(shifts)
-        } catch (shiftError) {
-          if (!cancelled) {
-            setWeeklyShiftRows([])
-            setWeeklyError(getErrorMessage(shiftError))
-          }
-        }
+        setWeeklyShiftRows(shifts)
+        setWeeklyRows(enrichBrigadeWeeklyWithShiftStats(brigades, shifts))
       } catch (error) {
         if (!cancelled) setWeeklyError(getErrorMessage(error))
       } finally {
