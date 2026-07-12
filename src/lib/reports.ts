@@ -569,16 +569,27 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
 const WEEKLY_SHIFT_ROW_COLUMNS =
   'employee_number, full_name, supervisor_name, work_sec_total, total_sec_total'
 
-export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) {
+async function loadShiftRowsForDay(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
     .from('shift_daily_metrics')
     .select(WEEKLY_SHIFT_ROW_COLUMNS)
-    .gte('report_date', weekStart)
-    .lte('report_date', weekEnd)
+    .eq('report_date', reportDate)
 
   if (error) throw error
-  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
+  return (data ?? []) as ShiftMetricRow[]
+}
+
+export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) {
+  const dates = listDatesInclusive(weekStart, weekEnd)
+  const rows: ShiftMetricRow[] = []
+
+  for (const reportDate of dates) {
+    const dayRows = await loadShiftRowsForDay(reportDate)
+    rows.push(...dayRows)
+  }
+
+  return filterAnalyticsShiftRows(rows)
 }
 
 function aggregateShiftActivity(rows: ShiftMetricRow[]) {
