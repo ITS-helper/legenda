@@ -21,6 +21,7 @@ import {
   type IdleZoneRow,
   type ZoneRow,
 } from './zones.ts'
+import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
 
 type ReportType = 'daily' | 'weekly'
 type ReportAudience = 'managers' | 'foremen'
@@ -587,6 +588,43 @@ function zonesBlockEmail(options: {
 
   const maxLocationHeight = Math.max(...prepared.map((section) => section.locationHeight), 0)
   const maxIdleHeight = Math.max(...prepared.map((section) => section.idleHeight), 0)
+
+  if (isHorizontalBrigadeLayout(prepared.length)) {
+    const sectionsHtml = prepared
+      .map((section) => {
+        const locationPanel = zonesPanelEmail({
+          kicker: 'Местоположение',
+          title: 'Распределение времени по зонам',
+          description: options.locationDescription,
+          rowsHtml: section.locationRows,
+          emptyText: `Нет данных по зонам ${options.periodLabel}.`,
+        })
+        const idlePanel = zonesPanelEmail({
+          kicker: 'Простои',
+          title: 'Длительные простои',
+          description: options.idleDescription,
+          summaryHtml: section.idleSummary,
+          rowsHtml: section.idleRows,
+          emptyText: `Данные о длительных простоях ${options.periodLabel} не загружены или простоев нет.`,
+        })
+
+        return `<div style="margin-bottom:20px;">
+          <div style="font-size:15px;font-weight:700;color:${COLORS.textH};margin-bottom:12px;">${escapeHtml(section.supervisor_name)}</div>
+          <div style="margin-bottom:12px;">${locationPanel}</div>
+          ${idlePanel}
+        </div>`
+      })
+      .join('')
+
+    return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+      <tr><td>
+        <h3 style="margin:0 0 8px;color:${COLORS.textH};font-size:16px;">Местоположение и простои</h3>
+        <p style="margin:0 0 16px;color:${COLORS.textMuted};font-size:13px;line-height:1.45;">Где сотрудники проводили время ${options.periodLabel} и эпизоды длительного бездействия от 10 минут с привязкой к зоне.</p>
+        ${sectionsHtml}
+      </td></tr>
+    </table>`
+  }
+
   const columnWidth = Math.floor(100 / Math.max(prepared.length, 1))
 
   const headerCells = prepared
@@ -1014,16 +1052,23 @@ function brigadeBadgeEmail(activityPct: number) {
   </table>`
 }
 
-function brigadeCardsEmailLayout(cardsHtml: string[]) {
+function pairedCardsEmailRows(cardsHtml: string[]) {
   if (cardsHtml.length === 2) {
-    return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
-      <tr>
-        <td width="50%" valign="top" style="padding:0 6px 0 0;">${cardsHtml[0]}</td>
-        <td width="50%" valign="top" style="padding:0 0 0 6px;">${cardsHtml[1]}</td>
-      </tr>
-    </table>`
+    return `<tr>
+      <td width="50%" valign="top" style="padding:0 6px 0 0;">${cardsHtml[0]}</td>
+      <td width="50%" valign="top" style="padding:0 0 0 6px;">${cardsHtml[1]}</td>
+    </tr>`
   }
-  return cardsHtml.join('')
+
+  return cardsHtml.map((html) => `<tr><td style="padding:0 0 12px;">${html}</td></tr>`).join('')
+}
+
+function brigadeCardsEmailLayout(cardsHtml: string[]) {
+  const rows = isHorizontalBrigadeLayout(cardsHtml.length)
+    ? cardsHtml.map((html) => `<tr><td style="padding:0 0 12px;">${html}</td></tr>`).join('')
+    : pairedCardsEmailRows(cardsHtml)
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">${rows}</table>`
 }
 
 function brigadeCardEmail(card: {
@@ -1487,12 +1532,9 @@ function activityDynamicsBlock(
     sparklineTitle?: string
   },
 ) {
-  const rows = cards
-    .map(
-      (card) =>
-        `<tr><td style="padding:0 0 12px;">${dynamicsCardHtml(card, options)}</td></tr>`,
-    )
-    .join('')
+  const rows = isHorizontalBrigadeLayout(cards.length)
+    ? cards.map((card) => `<tr><td style="padding:0 0 12px;">${dynamicsCardHtml(card, options)}</td></tr>`).join('')
+    : pairedCardsEmailRows(cards.map((card) => dynamicsCardHtml(card, options)))
 
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
     <tr><td>
@@ -1561,12 +1603,9 @@ function volumeDynamicsBlock(
     sparklineTitle?: string
   },
 ) {
-  const rows = cards
-    .map(
-      (card) =>
-        `<tr><td style="padding:0 0 12px;">${volumeDynamicsCardHtml(card, options)}</td></tr>`,
-    )
-    .join('')
+  const rows = isHorizontalBrigadeLayout(cards.length)
+    ? cards.map((card) => `<tr><td style="padding:0 0 12px;">${volumeDynamicsCardHtml(card, options)}</td></tr>`).join('')
+    : pairedCardsEmailRows(cards.map((card) => volumeDynamicsCardHtml(card, options)))
 
   return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
     <tr><td>

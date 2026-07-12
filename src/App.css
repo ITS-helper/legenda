@@ -2429,7 +2429,48 @@
 /* ===== Brigade grid + structure bar ===== */
 .brigade-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.brigade-grid--vertical,
+.zones-brigade-matrix--vertical,
+.detail-brigade-matrix--vertical,
+.dynamics-grid--vertical,
+.volumes-brigade-grid--vertical {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.brigade-grid--vertical:has(> :only-child),
+.zones-brigade-matrix--vertical:has(> :only-child),
+.detail-brigade-matrix--vertical:has(> :only-child),
+.dynamics-grid--vertical:has(> :only-child),
+.volumes-brigade-grid--vertical:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.brigade-grid--horizontal,
+.zones-brigade-matrix--horizontal,
+.detail-brigade-matrix--horizontal,
+.dynamics-grid--horizontal,
+.volumes-brigade-grid--horizontal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.brigade-grid--horizontal > *,
+.zones-brigade-matrix--horizontal > *,
+.detail-brigade-matrix--horizontal > *,
+.dynamics-grid--horizontal > *,
+.volumes-brigade-grid--horizontal > * {
+  width: 100%;
+  min-width: 0;
+}
+
+.brigade-grid--horizontal {
   gap: 16px;
 }
 
@@ -2464,9 +2505,13 @@
 /* Блок 4: колонка на бригаду — заголовок, местоположение, простои */
 .zones-brigade-matrix {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.zones-brigade-matrix--horizontal {
+  gap: 16px;
 }
 
 .zones-brigade-column {
@@ -2662,10 +2707,8 @@
   gap: 14px;
 }
 
-@media (min-width: 820px) {
-  .volumes-brigade-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.volumes-brigade-grid--horizontal {
+  gap: 14px;
 }
 
 .volumes-brigade-card {
@@ -3134,8 +3177,25 @@
 /* ===== Activity dynamics ===== */
 .dynamics-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.dynamics-grid.dynamics-grid--vertical {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dynamics-grid.dynamics-grid--vertical:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dynamics-grid.dynamics-grid--horizontal {
+  display: flex;
+  flex-direction: column;
+}
+
+.dynamics-grid.dynamics-grid--horizontal > * {
+  width: 100%;
+  min-width: 0;
 }
 
 .dynamics-card {
@@ -3330,8 +3390,17 @@
 }
 
 @media (max-width: 900px) {
-  .dynamics-grid {
-    grid-template-columns: 1fr;
+  .brigade-grid--vertical,
+  .zones-brigade-matrix--vertical,
+  .detail-brigade-matrix--vertical,
+  .dynamics-grid.dynamics-grid--vertical,
+  .volumes-brigade-grid--vertical {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dynamics-grid.dynamics-grid--horizontal {
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -3340,6 +3409,80 @@
   display: grid;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
   gap: 16px;
+}
+
+.detail-sort-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.detail-sort-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.detail-sort-note {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.detail-brigade-matrix {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.detail-brigade-matrix--horizontal {
+  gap: 16px;
+}
+
+.detail-brigade-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--surface-3);
+}
+
+.detail-brigade-matrix-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.detail-brigade-matrix-head strong {
+  font-size: 16px;
+  color: var(--text-h);
+}
+
+.detail-brigade-matrix-head span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.analytics-table-compact th,
+.analytics-table-compact td {
+  padding: 10px 8px;
+  font-size: 13px;
+}
+
+.analytics-table-compact th {
+  font-size: 11px;
 }
 
 .analytics-table tr.row-alert td {

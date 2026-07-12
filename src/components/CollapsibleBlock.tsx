@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react'
 
 type CollapsibleBlockProps = {
   id?: string
-  kicker: string
   title: string
   description?: string
   defaultOpen?: boolean
@@ -12,7 +11,6 @@ type CollapsibleBlockProps = {
 
 export function CollapsibleBlock({
   id,
-  kicker,
   title,
   description,
   defaultOpen = true,
@@ -33,10 +31,7 @@ export function CollapsibleBlock({
           <span className={`dash-block-chevron${open ? ' dash-block-chevron-open' : ''}`} aria-hidden="true">
             ▸
           </span>
-          <span className="dash-block-titles">
-            <span className="dash-block-kicker">{kicker}</span>
-            <span className="dash-block-title">{title}</span>
-          </span>
+          <span className="dash-block-title">{title}</span>
         </button>
         {actions ? <div className="dash-block-actions">{actions}</div> : null}
       </header>

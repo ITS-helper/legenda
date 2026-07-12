@@ -62,12 +62,56 @@ import {
 } from '../lib/volumes'
 import { isAlertZone } from '../lib/zones'
 import { filterDistributionZoneRows } from '../lib/zoneVisibility'
+import { brigadeLayoutClass } from '../lib/brigadeLayout'
 
-type SortKey = 'full_name' | 'profession' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
+type SortKey = 'full_name' | 'profession' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity'
 type SortDirection = 'asc' | 'desc'
 
 function getRowProductivity(row: ShiftMetricRow) {
   return ratio(row.work_sec_total, row.total_sec_total)
+}
+
+const DETAIL_ROW_ACTIVITY_WARN_PCT = 30
+const DETAIL_ROW_LONG_IDLE_WARN_SEC = 2 * 60 * 60
+const DETAIL_ROW_SHIFT_MIN_SEC = 6 * 60 * 60
+
+function isDetailShiftRowAlert(row: ShiftMetricRow) {
+  return (
+    getRowProductivity(row) < DETAIL_ROW_ACTIVITY_WARN_PCT ||
+    row.long_idle_sec_total > DETAIL_ROW_LONG_IDLE_WARN_SEC ||
+    row.total_sec_total < DETAIL_ROW_SHIFT_MIN_SEC
+  )
+}
+
+function getShiftSortValue(row: ShiftMetricRow, sortKey: SortKey) {
+  if (sortKey === 'productivity') return getRowProductivity(row)
+  if (sortKey === 'full_name') return row.full_name
+  if (sortKey === 'profession') return row.profession ?? ''
+  return row[sortKey]
+}
+
+function compareShiftRows(
+  left: ShiftMetricRow,
+  right: ShiftMetricRow,
+  sortKey: SortKey,
+  sortDirection: SortDirection,
+) {
+  const leftValue = getShiftSortValue(left, sortKey)
+  const rightValue = getShiftSortValue(right, sortKey)
+
+  if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+    return sortDirection === 'asc'
+      ? leftValue.localeCompare(rightValue, 'ru')
+      : rightValue.localeCompare(leftValue, 'ru')
+  }
+
+  return sortDirection === 'asc'
+    ? Number(leftValue ?? 0) - Number(rightValue ?? 0)
+    : Number(rightValue ?? 0) - Number(leftValue ?? 0)
+}
+
+function sortShiftRows(rows: ShiftMetricRow[], sortKey: SortKey, sortDirection: SortDirection) {
+  return [...rows].sort((left, right) => compareShiftRows(left, right, sortKey, sortDirection))
 }
 
 function StructureBar({
@@ -130,6 +174,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock4Location = isSubblockEnabled('block4_location', settings)
   const showBlock4Idle = isSubblockEnabled('block4_idle', settings)
   const comparisonBrigades = settings.comparisonBrigades
+  const trackedBrigadeCount = comparisonBrigades.filter((name) => name.trim().length > 0).length || 2
   const comparisonBrigadesLabel =
     comparisonBrigades.length > 0 ? comparisonBrigades.join(', ') : 'выбранные бригады'
   const longIdleLabel = `бездействие от ${settings.longIdleMin} минут, от общего времени`
@@ -455,8 +500,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const filteredDetailRows = useMemo(() => {
     const query = detailSearch.trim().toLowerCase()
-    if (!query) return detailShiftRows
-    return detailShiftRows.filter((row) => {
+    const brigadeRows = detailShiftRows.filter((row) =>
+      comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, name)),
+    )
+    if (!query) return brigadeRows
+    return brigadeRows.filter((row) => {
       const haystack = [
         row.full_name,
         row.employee_number,
@@ -467,40 +515,27 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         .toLowerCase()
       return haystack.includes(query)
     })
-  }, [detailShiftRows, detailSearch])
+  }, [detailShiftRows, detailSearch, comparisonBrigades])
 
-  const sortedShiftRows = useMemo(() => {
-    return [...filteredDetailRows].sort((left, right) => {
-      const leftValue =
-        sortKey === 'productivity'
-          ? getRowProductivity(left)
-          : sortKey === 'supervisor_name'
-            ? left.supervisor_name ?? NO_SUPERVISOR
-            : sortKey === 'full_name'
-              ? left.full_name
-              : sortKey === 'profession'
-                ? left.profession ?? ''
-                : left[sortKey]
-      const rightValue =
-        sortKey === 'productivity'
-          ? getRowProductivity(right)
-          : sortKey === 'supervisor_name'
-            ? right.supervisor_name ?? NO_SUPERVISOR
-            : sortKey === 'full_name'
-              ? right.full_name
-              : sortKey === 'profession'
-                ? right.profession ?? ''
-                : right[sortKey]
+  const sortedShiftRows = useMemo(
+    () => sortShiftRows(filteredDetailRows, sortKey, sortDirection),
+    [filteredDetailRows, sortKey, sortDirection],
+  )
 
-      if (typeof leftValue === 'string' && typeof rightValue === 'string') {
-        return sortDirection === 'asc' ? leftValue.localeCompare(rightValue, 'ru') : rightValue.localeCompare(leftValue, 'ru')
-      }
+  const detailSupervisorGroups = useMemo(() => {
+    const grouped = new Map<string, ShiftMetricRow[]>()
 
-      return sortDirection === 'asc'
-        ? Number(leftValue ?? 0) - Number(rightValue ?? 0)
-        : Number(rightValue ?? 0) - Number(leftValue ?? 0)
-    })
-  }, [filteredDetailRows, sortKey, sortDirection])
+    for (const row of sortedShiftRows) {
+      const supervisorName = row.supervisor_name ?? NO_SUPERVISOR
+      const rows = grouped.get(supervisorName) ?? []
+      rows.push(row)
+      grouped.set(supervisorName, rows)
+    }
+
+    return [...grouped.entries()]
+      .sort(([leftName], [rightName]) => leftName.localeCompare(rightName, 'ru'))
+      .map(([supervisorName, rows]) => ({ supervisorName, rows }))
+  }, [sortedShiftRows])
 
   function toggleSort(key: SortKey, defaultDirection: SortDirection = 'desc') {
     if (sortKey === key) {
@@ -559,7 +594,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock1 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block1')}
-        kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
         description="Сколько человек вышло на смену по бригадам, активность, слабая активность, длительный простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
       >
@@ -636,7 +670,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             ) : null}
 
             {showBlock1Brigades ? (
-            <div className="brigade-grid">
+            <div className={brigadeLayoutClass('brigade-grid', visibleDailyRows.length)}>
               {visibleDailyRows.map((brigade) => (
                 <article className="brigade-card" key={brigade.supervisor_name}>
                   <div className="brigade-card-head">
@@ -762,7 +796,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock2 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block2')}
-        kicker="Блок 2 · Еженедельно"
         title="Еженедельная аналитика"
         description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, слабая активность, длительный простой и ходьба."
       >
@@ -787,7 +820,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
 
         {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Brigades ? (
-          <div className="brigade-grid">
+          <div className={brigadeLayoutClass('brigade-grid', visibleWeeklyRows.length)}>
             {visibleWeeklyRows.map((brigade) => (
               <article className="brigade-card" key={brigade.supervisor_name}>
                 <div className="brigade-card-head">
@@ -868,7 +901,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock3 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block3')}
-        kicker="Блок 3 · Динамика"
         title="Динамика активности и выполненных работ"
         description={`Сравнение активности и выполненных объёмов бригад ${comparisonBrigadesLabel}: выбранный день против вчера и тренд за ${settings.activitySparklineDays} дней.`}
       >
@@ -886,7 +918,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dynamicsError ? <div className="empty-state error-state">Ошибка: {dynamicsError}</div> : null}
 
         {!dynamicsLoading && !dynamicsError && dynamicsDate && showBlock3Activity ? (
-          <ActivityDynamicsPanel referenceDate={dynamicsDate} cards={dynamicsCards} />
+          <ActivityDynamicsPanel
+            referenceDate={dynamicsDate}
+            cards={dynamicsCards}
+            brigadeLayoutCount={trackedBrigadeCount}
+          />
         ) : null}
 
         {showBlock5 && showBlock3Volume ? (
@@ -897,7 +933,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           {volumeDynamicsError ? <div className="empty-state error-state">Ошибка: {volumeDynamicsError}</div> : null}
 
           {!volumeDynamicsLoading && !volumeDynamicsError && dynamicsDate ? (
-            <VolumeDynamicsPanel referenceDate={dynamicsDate} cards={volumeDynamicsCards} />
+            <VolumeDynamicsPanel
+              referenceDate={dynamicsDate}
+              cards={volumeDynamicsCards}
+              brigadeLayoutCount={trackedBrigadeCount}
+            />
           ) : null}
         </div>
         ) : null}
@@ -908,7 +948,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock4 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block4')}
-        kicker="Блок 4 · Зоны"
         title="Местоположение и простои"
         description={`Где сотрудники каждой бригады проводили время за день и эпизоды длительного бездействия ${longIdleBlockNote} с привязкой к зоне.`}
       >
@@ -926,7 +965,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
 
         {!dailyLoading && !dailyError && selectedDate ? (
-          <div className="zones-brigade-matrix">
+          <div className={brigadeLayoutClass('zones-brigade-matrix', visibleDailyRows.length)}>
             {visibleDailyRows.map((brigade) => {
               const brigadeZones = filterDistributionZoneRows(
                 zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? [],
@@ -1025,7 +1064,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock5 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block5')}
-        kicker="Блок 5 · Объёмы"
         title="Объёмы"
         description="Показатели объёмов за выбранный день. Загрузка Excel ГПР обновляет все дни из файла; при выборе даты на дашборде показываются сохранённые объёмы."
       >
@@ -1051,6 +1089,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             password={password}
             reportDate={volumesDate}
             readOnly={!isAdmin}
+            brigadeLayoutCount={visibleVolumeEntries.length || comparisonBrigades.filter((name) => name.trim()).length}
             onSaved={() => void refreshVolumesForBlock(volumesDate)}
           />
         ) : (
@@ -1063,9 +1102,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {showBlock6 ? (
       <CollapsibleBlock
         id={dashboardBlockDomId('block6')}
-        kicker="Блок 6 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день: профессия, работа, слабая активность, длительный простой, всего, активность и КПП."
+        description="Смены по бригадам: профессия, длительный простой, длительность смены и активность."
         defaultOpen={false}
       >
         <div className="filter-row">
@@ -1099,56 +1137,71 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
 
         {!detailLoading && !detailError && sortedShiftRows.length > 0 ? (
-          <article className="panel panel-wide">
-            <div className="panel-head">
-              <div>
-                <p className="panel-kicker">Смены</p>
-                <h2>Сортируемая таблица за день</h2>
-                {detailSearch.trim() ? (
-                  <p className="metric-note">
-                    Показано {sortedShiftRows.length} из {detailShiftRows.length}
-                  </p>
-                ) : null}
-              </div>
+          <>
+            <div className="detail-sort-row">
+              <span className="detail-sort-label">Сортировка</span>
+              <button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>
+                {sortLabel(uiText.table.worker, 'full_name')}
+              </button>
+              <button type="button" className="sort-button" onClick={() => toggleSort('profession', 'asc')}>
+                {sortLabel(uiText.table.profession, 'profession')}
+              </button>
+              <button type="button" className="sort-button" onClick={() => toggleSort('long_idle_sec_total')}>
+                {sortLabel('Длительный простой', 'long_idle_sec_total')}
+              </button>
+              <button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>
+                {sortLabel('Длительность смены', 'total_sec_total')}
+              </button>
+              <button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>
+                {sortLabel(uiText.table.activity, 'productivity')}
+              </button>
+              {detailSearch.trim() ? (
+                <span className="detail-sort-note">
+                  Показано {sortedShiftRows.length} из {detailShiftRows.length}
+                </span>
+              ) : null}
             </div>
-            <div className="table-wrap">
-              <table className="analytics-table">
-                <thead>
-                  <tr>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('profession', 'asc')}>{sortLabel(uiText.table.profession, 'profession')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('weak_activity_sec_total')}>Слабая активность</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('long_idle_sec_total')}>Длительный простой</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('total_sec_total')}>{sortLabel(uiText.table.total, 'total_sec_total')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('productivity')}>{sortLabel(uiText.table.activity, 'productivity')}</button></th>
-                    <th><button type="button" className="sort-button" onClick={() => toggleSort('kpp_sec_total')}>{sortLabel('КПП', 'kpp_sec_total')}</button></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedShiftRows.map((row) => (
-                    <tr key={row.ww_shift_id} className={row.kpp_sec_total > 0 ? 'row-alert' : undefined}>
-                      <td>
-                        <div className="employee-cell">
-                          <strong>{row.full_name}</strong>
-                          <span>#{row.employee_number}</span>
-                        </div>
-                      </td>
-                      <td>{row.profession?.trim() || '—'}</td>
-                      <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
-                      <td>{formatSeconds(row.work_sec_total)}</td>
-                      <td>{formatSeconds(row.weak_activity_sec_total)}</td>
-                      <td>{formatSeconds(row.long_idle_sec_total)}</td>
-                      <td>{formatSeconds(row.total_sec_total)}</td>
-                      <td>{formatPercent(getRowProductivity(row))}</td>
-                      <td>{row.kpp_sec_total > 0 ? 'да' : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className={brigadeLayoutClass('detail-brigade-matrix', detailSupervisorGroups.length)}>
+              {detailSupervisorGroups.map((group) => (
+                <section className="detail-brigade-column" key={group.supervisorName}>
+                  <div className="detail-brigade-matrix-head">
+                    <strong>{group.supervisorName}</strong>
+                    <span>{group.rows.length} чел.</span>
+                  </div>
+                  <div className="table-wrap">
+                    <table className="analytics-table analytics-table-compact">
+                      <thead>
+                        <tr>
+                          <th>{uiText.table.worker}</th>
+                          <th>{uiText.table.profession}</th>
+                          <th>Длительный простой</th>
+                          <th>Длительность смены</th>
+                          <th>{uiText.table.activity}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.rows.map((row) => (
+                          <tr key={row.ww_shift_id} className={isDetailShiftRowAlert(row) ? 'row-alert' : undefined}>
+                            <td>
+                              <div className="employee-cell">
+                                <strong>{row.full_name}</strong>
+                                <span>#{row.employee_number}</span>
+                              </div>
+                            </td>
+                            <td>{row.profession?.trim() || '—'}</td>
+                            <td>{formatSeconds(row.long_idle_sec_total)}</td>
+                            <td>{formatSeconds(row.total_sec_total)}</td>
+                            <td>{formatPercent(getRowProductivity(row))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))}
             </div>
-          </article>
+          </>
         ) : null}
 
         {!detailLoading && !detailError && detailDate && detailShiftRows.length === 0 ? (

@@ -5,11 +5,13 @@ import {
   type BrigadeVolumeDynamicsCard,
 } from '../lib/reports'
 import { formatVolumeDelta, formatVolumeM3 } from '../lib/volumes'
+import { brigadeLayoutClass } from '../lib/brigadeLayout'
 import { DynamicsBarChart } from './DynamicsBarChart'
 
 type VolumeDynamicsPanelProps = {
   referenceDate: string
   cards: BrigadeVolumeDynamicsCard[]
+  brigadeLayoutCount?: number
 }
 
 function deltaClass(delta: number | null) {
@@ -60,9 +62,9 @@ function DynamicsCard({ card, referenceDate }: { card: BrigadeVolumeDynamicsCard
   )
 }
 
-export function VolumeDynamicsPanel({ referenceDate, cards }: VolumeDynamicsPanelProps) {
+export function VolumeDynamicsPanel({ referenceDate, cards, brigadeLayoutCount }: VolumeDynamicsPanelProps) {
   return (
-    <div className="dynamics-grid">
+    <div className={brigadeLayoutClass('dynamics-grid', brigadeLayoutCount ?? cards.length)}>
       {cards.map((card) => (
         <DynamicsCard key={card.supervisor_name} card={card} referenceDate={referenceDate} />
       ))}

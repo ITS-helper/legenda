@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatFullDate } from '../lib/reports'
 import { parseGprVolumeFile } from '../lib/gprVolumeParser'
+import { brigadeLayoutClass } from '../lib/brigadeLayout'
 import {
   brigadeVolumeDraftsFromEntries,
   loadVolumeEntries,
@@ -13,10 +14,17 @@ type VolumesPanelProps = {
   password: string
   reportDate: string
   readOnly?: boolean
+  brigadeLayoutCount?: number
   onSaved?: () => void
 }
 
-export function VolumesPanel({ password, reportDate, readOnly = false, onSaved }: VolumesPanelProps) {
+export function VolumesPanel({
+  password,
+  reportDate,
+  readOnly = false,
+  brigadeLayoutCount,
+  onSaved,
+}: VolumesPanelProps) {
   const [drafts, setDrafts] = useState<VolumeEntryDraft[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -199,7 +207,7 @@ export function VolumesPanel({ password, reportDate, readOnly = false, onSaved }
             Объёмы за {reportDate ? formatFullDate(reportDate) : 'выбранный день'} по бригадам
           </p>
 
-          <div className="volumes-brigade-grid">
+          <div className={brigadeLayoutClass('volumes-brigade-grid', brigadeLayoutCount ?? drafts.length)}>
             {drafts.map((row, index) => (
               <article key={row.label} className="volumes-brigade-card">
                 <div className="volumes-brigade-card-head">

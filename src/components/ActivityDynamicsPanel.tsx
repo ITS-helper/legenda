@@ -6,11 +6,13 @@ import {
   formatPercent,
   type BrigadeDynamicsCard,
 } from '../lib/reports'
+import { brigadeLayoutClass } from '../lib/brigadeLayout'
 import { DynamicsBarChart } from './DynamicsBarChart'
 
 type ActivityDynamicsPanelProps = {
   referenceDate: string
   cards: BrigadeDynamicsCard[]
+  brigadeLayoutCount?: number
 }
 
 function deltaClass(delta: number | null) {
@@ -62,9 +64,9 @@ function DynamicsCard({ card, referenceDate }: { card: BrigadeDynamicsCard; refe
   )
 }
 
-export function ActivityDynamicsPanel({ referenceDate, cards }: ActivityDynamicsPanelProps) {
+export function ActivityDynamicsPanel({ referenceDate, cards, brigadeLayoutCount }: ActivityDynamicsPanelProps) {
   return (
-    <div className="dynamics-grid">
+    <div className={brigadeLayoutClass('dynamics-grid', brigadeLayoutCount ?? cards.length)}>
       {cards.map((card) => (
         <DynamicsCard key={card.supervisor_name} card={card} referenceDate={referenceDate} />
       ))}

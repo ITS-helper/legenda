@@ -3,6 +3,7 @@ import fontkit from 'npm:@pdf-lib/fontkit@1.1.1'
 import { getRobotoFontBytes } from './roboto-font.ts'
 import { REPORT_LOGO_TEXT } from './email-branding.ts'
 import { formatEpisodeCount } from './zones.ts'
+import { brigadeGridColumns, isCompactBrigadeCardLayout, isHorizontalBrigadeLayout } from './brigadeLayout.ts'
 
 export type BrigadeCardPayload = {
   supervisor_name: string
@@ -626,10 +627,10 @@ class PdfWriter {
   }
 
   brigadeDashboardCards(cards: BrigadeCardPayload[]) {
-    const compact = cards.length >= 2
+    const columns = brigadeGridColumns(cards.length)
+    const compact = isCompactBrigadeCardLayout(cards.length)
     const gap = 16
-    const columns = compact ? 2 : 1
-    const cardWidth = compact ? (CONTENT_WIDTH - gap) / 2 : CONTENT_WIDTH
+    const cardWidth = columns === 1 ? CONTENT_WIDTH : (CONTENT_WIDTH - gap) / columns
     const innerPad = compact ? 14 : 18
     const statGap = compact ? 8 : 8
     const statHeight = compact ? 54 : 60
@@ -716,18 +717,19 @@ class PdfWriter {
     periodLabel: string,
   ) {
     const gap = 16
-    const cardWidth = (CONTENT_WIDTH - gap) / 2
+    const columns = brigadeGridColumns(cards.length)
+    const cardWidth = columns === 1 ? CONTENT_WIDTH : (CONTENT_WIDTH - gap) / columns
     const innerPad = 16
     const cardHeight = 190
-    const rows = Math.ceil(cards.length / 2)
+    const rows = Math.ceil(cards.length / columns)
     const blockHeight = rows * (cardHeight + gap)
 
     this.ensureSpace(blockHeight + 8)
     const blockTop = this.y
 
     for (let index = 0; index < cards.length; index += 1) {
-      const column = index % 2
-      const row = Math.floor(index / 2)
+      const column = index % columns
+      const row = Math.floor(index / columns)
       const left = MARGIN + column * (cardWidth + gap)
       const top = blockTop + row * (cardHeight + gap)
       const card = cards[index]
@@ -913,8 +915,71 @@ class PdfWriter {
     if (sections.length === 0) return
 
     const gap = 10
-    const columnWidth = (CONTENT_WIDTH - gap * (sections.length - 1)) / sections.length
     const introHeight = 28
+
+    if (isHorizontalBrigadeLayout(sections.length)) {
+      const sectionGap = 16
+      const blockHeight =
+        introHeight +
+        sections.reduce((sum, section) => {
+          const locationHeight = this.estimateZonePanelHeight(section.zonesLocationRows, false)
+          const idleHeight = this.estimateZonePanelHeight(
+            section.zonesIdleRows,
+            Boolean(section.zonesIdleSummary),
+          )
+          return sum + 18 + locationHeight + 10 + idleHeight + sectionGap
+        }, 0) +
+        8
+
+      this.ensureSpace(blockHeight + 8)
+      const top = this.y
+
+      this.text(
+        'Где сотрудники проводили время и эпизоды длительного бездействия от 10 минут с привязкой к зоне.',
+        MARGIN,
+        top,
+        8,
+        C.textMuted,
+        CONTENT_WIDTH,
+      )
+
+      let currentTop = top + introHeight
+      for (const section of sections) {
+        this.text(section.supervisor_name, MARGIN, currentTop, 10, C.textH, CONTENT_WIDTH)
+
+        const locationTop = currentTop + 18
+        const locationHeight = this.zonePanel(MARGIN, locationTop, CONTENT_WIDTH, {
+          kicker: 'Местоположение',
+          title: 'Распределение времени по зонам',
+          description: section.zonesLocationDescription,
+          rows: section.zonesLocationRows,
+          emptyText: `Нет данных по зонам ${section.zonesPeriodLabel}.`,
+        })
+
+        const idleTop = locationTop + locationHeight + 10
+        const idleHeight = this.zonePanel(MARGIN, idleTop, CONTENT_WIDTH, {
+          kicker: 'Простои',
+          title: 'Длительные простои',
+          description: section.zonesIdleDescription,
+          rows: section.zonesIdleRows,
+          emptyText: `Данные о длительных простоях ${section.zonesPeriodLabel} не загружены или простоев нет.`,
+          summary: section.zonesIdleSummary
+            ? {
+                label: section.zonesIdleSummaryLabel,
+                episodes: section.zonesIdleSummary.episodes,
+                minutes: section.zonesIdleSummary.minutes,
+              }
+            : undefined,
+        })
+
+        currentTop = idleTop + idleHeight + sectionGap
+      }
+
+      this.y = currentTop + 8
+      return
+    }
+
+    const columnWidth = (CONTENT_WIDTH - gap * (sections.length - 1)) / sections.length
     const maxLocationHeight = Math.max(
       ...sections.map((section) => this.estimateZonePanelHeight(section.zonesLocationRows, false)),
       0,
@@ -1031,9 +1096,9 @@ class PdfWriter {
 }
 
 function brigadeBlockHeight(cardCount: number) {
-  const compact = cardCount >= 2
+  const columns = brigadeGridColumns(cardCount)
+  const compact = isCompactBrigadeCardLayout(cardCount)
   const gap = 16
-  const columns = compact ? 2 : 1
   const innerPad = compact ? 14 : 18
   const statGap = 8
   const statHeight = compact ? 54 : 60
@@ -1050,7 +1115,8 @@ function brigadeBlockHeight(cardCount: number) {
 function dynamicsBlockHeight(cardCount: number) {
   const gap = 16
   const cardHeight = 190
-  const rows = Math.ceil(cardCount / 2)
+  const columns = brigadeGridColumns(cardCount)
+  const rows = Math.ceil(cardCount / columns)
   return rows * (cardHeight + gap) + 20
 }
 
@@ -1077,6 +1143,23 @@ function zonesBrigadeMatrixHeight(sections: BrigadeZonesPdfSection[]) {
   if (sections.length === 0) return 0
 
   const introHeight = 28
+
+  if (isHorizontalBrigadeLayout(sections.length)) {
+    const sectionGap = 16
+    return (
+      introHeight +
+      sections.reduce((sum, section) => {
+        const locationHeight = estimateZonePanelHeight(section.zonesLocationRows, false)
+        const idleHeight = estimateZonePanelHeight(
+          section.zonesIdleRows,
+          Boolean(section.zonesIdleSummary),
+        )
+        return sum + 18 + locationHeight + 10 + idleHeight + sectionGap
+      }, 0) +
+      12
+    )
+  }
+
   const maxLocationHeight = Math.max(
     ...sections.map((section) => estimateZonePanelHeight(section.zonesLocationRows, false)),
     0,
