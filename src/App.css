@@ -935,6 +935,183 @@
   margin-left: auto;
 }
 
+.metric-settings-dirty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.metric-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.metric-settings-nav {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #c5dff5;
+  border-radius: 18px;
+  background: #f4faff;
+}
+
+.metric-settings-nav-search {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.metric-settings-nav-search input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.metric-settings-nav-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #1565a8;
+}
+
+.metric-settings-nav-list {
+  display: grid;
+  gap: 6px;
+}
+
+.metric-settings-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-settings-nav-link:hover {
+  background: #e8f4fd;
+  border-color: #b8daf4;
+}
+
+.metric-settings-nav-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dceefb;
+  color: #1565a8;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.metric-settings-nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #c5dff5;
+}
+
+.metric-settings-nav-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1565a8;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.metric-settings-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.metric-settings-block-section {
+  scroll-margin-top: 96px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.metric-settings-block-section.is-collapsed {
+  background: var(--surface-muted, #f8fafc);
+}
+
+.metric-settings-section-body {
+  margin-top: 4px;
+}
+
+.metric-settings-section-lead {
+  margin: 0 0 16px;
+}
+
+.metric-settings-section-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-settings-section-chevron {
+  flex: 0 0 auto;
+  width: 18px;
+  color: #1565a8;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.metric-settings-section-heading {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.metric-settings-section-heading .metric-settings-block-title {
+  display: block;
+}
+
+.metric-settings-section-heading .metric-settings-block-note {
+  display: block;
+  margin: 0;
+}
+
 .metric-settings-block-head {
   display: flex;
   align-items: center;
@@ -999,10 +1176,29 @@
   flex-shrink: 0;
 }
 
-.metric-settings-brigades-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
+.metric-settings-brigades-section,
+.metric-settings-block-section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.metric-settings-block-section {
+  padding: 18px 20px;
+}
+
+@media (max-width: 960px) {
+  .metric-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-settings-nav {
+    position: static;
+  }
+
+  .metric-settings-nav-list {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
 }
 
 .metric-settings-brigades-grid {
@@ -1027,10 +1223,6 @@
 .metric-settings-brigade-toggle input {
   width: 16px;
   height: 16px;
-}
-
-.metric-settings-block-section {
-  margin-top: 28px;
 }
 
 .metric-settings-block-title {

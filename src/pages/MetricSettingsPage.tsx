@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MetricDeepDivePanel } from '../components/MetricDeepDivePanel'
 import { MskTimeInput } from '../components/MskTimeInput'
 import { getMetricDeepDive } from '../content/metricDeepDives'
@@ -20,12 +20,23 @@ import {
   type MetricDefinition,
 } from '../content/metricDefinitions'
 import {
+  areMetricSettingsEqual,
+  cloneMetricSettings,
   DEFAULT_METRIC_SETTINGS,
   saveMetricSettings,
   type BooleanBlockSettingKey,
   type MetricSettings,
   type NumericMetricSettingKey,
 } from '../lib/metricSettings'
+import {
+  brigadesSectionMatchesSearch,
+  buildDefaultOpenSections,
+  CollapsibleMetricSection,
+  METRIC_SETTINGS_BRIGADES_SECTION_ID,
+  metricBlockSectionId,
+  metricBlockDisplayTitle,
+  metricMatchesSearch,
+} from '../lib/metricSettingsPageUi'
 import { brigadeNamesMatch, loadAvailableSupervisorNames } from '../lib/reports'
 import {
   DEFAULT_ZONE_VISIBILITY,
@@ -38,6 +49,8 @@ function getErrorMessage(error: unknown) {
   if (typeof error === 'string') return error
   return String(error)
 }
+
+const LEAVE_CONFIRM_MESSAGE = 'Есть несохранённые изменения. Уйти без сохранения?'
 
 function parseConfigInput(_key: NumericMetricSettingKey, raw: string) {
   const parsed = Number(raw)
@@ -54,7 +67,7 @@ function MetricCard({
   onChange: (key: NumericMetricSettingKey, value: number) => void
 }) {
   return (
-    <article className="metric-settings-card">
+    <article className="metric-settings-card" id={`metric-card-${metric.id}`}>
       <header className="metric-settings-card-head">
         <h4>{metric.title}</h4>
       </header>
@@ -139,6 +152,8 @@ export function MetricSettingsPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [openSections, setOpenSections] = useState(buildDefaultOpenSections)
 
   useEffect(() => {
     setDraft(published)
@@ -161,6 +176,62 @@ export function MetricSettingsPage() {
       cancelled = true
     }
   }, [])
+
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const isSearching = normalizedSearch.length > 0
+  const isDirty = useMemo(() => !areMetricSettingsEqual(draft, published), [draft, published])
+
+  useEffect(() => {
+    if (!isDirty) return
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
+
+  useEffect(() => {
+    if (!isDirty) return
+
+    const handleNavigationClick = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+
+      const link = target.closest('.topbar-link')
+      if (!link) return
+
+      const href = link.getAttribute('href')
+      if (href === '#/metrics') return
+
+      if (!window.confirm(LEAVE_CONFIRM_MESSAGE)) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+
+    document.addEventListener('click', handleNavigationClick, true)
+    return () => document.removeEventListener('click', handleNavigationClick, true)
+  }, [isDirty])
+
+  const visibleMetricsByBlock = useMemo(() => {
+    const map = new Map<string, MetricDefinition[]>()
+    for (const block of METRIC_BLOCKS) {
+      const metrics = METRIC_DEFINITIONS.filter(
+        (metric) => metric.block === block && metricMatchesSearch(metric, normalizedSearch),
+      )
+      map.set(block, metrics)
+    }
+    return map
+  }, [normalizedSearch])
+
+  const visibleMetricCount = useMemo(() => {
+    return [...visibleMetricsByBlock.values()].reduce((sum, metrics) => sum + metrics.length, 0)
+  }, [visibleMetricsByBlock])
+
+  const showBrigadesSection = brigadesSectionMatchesSearch(normalizedSearch)
 
   function updateField(key: NumericMetricSettingKey, value: number) {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -209,6 +280,33 @@ export function MetricSettingsPage() {
     })
   }
 
+  function toggleSection(sectionId: string) {
+    setOpenSections((current) => ({ ...current, [sectionId]: !current[sectionId] }))
+  }
+
+  function expandAllSections() {
+    setOpenSections(() => {
+      const next = buildDefaultOpenSections()
+      for (const key of Object.keys(next)) next[key] = true
+      return next
+    })
+  }
+
+  function collapseAllSections() {
+    setOpenSections(() => {
+      const next = buildDefaultOpenSections()
+      for (const key of Object.keys(next)) next[key] = false
+      return next
+    })
+  }
+
+  function scrollToSection(sectionId: string) {
+    setOpenSections((current) => ({ ...current, [sectionId]: true }))
+    window.requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   const supervisorOptions = [...new Set([...availableSupervisors, ...draft.comparisonBrigades])].sort((left, right) =>
     left.localeCompare(right, 'ru'),
   )
@@ -228,6 +326,12 @@ export function MetricSettingsPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function handleRevert() {
+    setDraft(cloneMetricSettings(published))
+    setStatus('Изменения отменены')
+    setError(false)
   }
 
   function handleReset() {
@@ -253,10 +357,21 @@ export function MetricSettingsPage() {
           </p>
         </div>
         <div className="editor-actions">
+          {isDirty ? (
+            <span className="metric-settings-dirty-badge">Есть несохранённые изменения</span>
+          ) : null}
+          <button type="button" className="editor-action" onClick={handleRevert} disabled={busy || !isDirty}>
+            Отменить изменения
+          </button>
           <button type="button" className="editor-action" onClick={handleReset} disabled={busy}>
             Сбросить
           </button>
-          <button type="button" className="editor-action settings-publish-button" onClick={handleSave} disabled={busy}>
+          <button
+            type="button"
+            className="editor-action settings-publish-button"
+            onClick={handleSave}
+            disabled={busy || !isDirty}
+          >
             {busy ? 'Сохраняем…' : 'Сохранить настройки'}
           </button>
         </div>
@@ -266,105 +381,182 @@ export function MetricSettingsPage() {
         <p className={error ? 'settings-status settings-status-error' : 'settings-status'}>{status}</p>
       ) : null}
 
-      <section className="metric-settings-brigades-section">
-        <div className="metric-settings-block-head">
-          <div>
-            <h3 className="metric-settings-block-title">Бригады для сравнения</h3>
-            <p className="metric-settings-block-note">
-              Выберите бригадиров, чьи карточки и динамика показываются на дашборде и в блоках сравнения рассылки.
+      <div className="metric-settings-layout">
+        <aside className="metric-settings-nav" aria-label="Навигация по разделам">
+          <label className="metric-settings-nav-search">
+            <span>Поиск по метрикам</span>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Активность, КПП, зоны…"
+              autoComplete="off"
+            />
+          </label>
+          {isSearching ? (
+            <p className="metric-settings-nav-hint">
+              {visibleMetricCount > 0 || showBrigadesSection
+                ? `Найдено: ${visibleMetricCount}${showBrigadesSection ? ' + бригады' : ''}`
+                : 'Ничего не найдено'}
             </p>
-          </div>
-        </div>
-        {supervisorOptions.length > 0 ? (
-          <div className="metric-settings-brigades-grid">
-            {supervisorOptions.map((name) => {
-              const checked = draft.comparisonBrigades.some((brigade) => brigadeNamesMatch(brigade, name))
+          ) : null}
+
+          <nav className="metric-settings-nav-list">
+            {showBrigadesSection ? (
+              <button
+                type="button"
+                className="metric-settings-nav-link"
+                onClick={() => scrollToSection(METRIC_SETTINGS_BRIGADES_SECTION_ID)}
+              >
+                Бригады для сравнения
+              </button>
+            ) : null}
+            {METRIC_BLOCKS.map((block) => {
+              const sectionId = metricBlockSectionId(block)
+              const count = visibleMetricsByBlock.get(block)?.length ?? 0
+              if (isSearching && count === 0) return null
               return (
-                <label key={name} className="metric-settings-brigade-toggle">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => toggleComparisonBrigade(name, event.target.checked)}
-                  />
-                  <span>{name}</span>
-                </label>
+                <button
+                  key={block}
+                  type="button"
+                  className="metric-settings-nav-link"
+                  onClick={() => scrollToSection(sectionId)}
+                >
+                  {metricBlockDisplayTitle(block)}
+                  {isSearching ? <span className="metric-settings-nav-count">{count}</span> : null}
+                </button>
               )
             })}
+          </nav>
+
+          <div className="metric-settings-nav-actions">
+            <button type="button" className="metric-settings-nav-action" onClick={expandAllSections}>
+              Развернуть все
+            </button>
+            <button type="button" className="metric-settings-nav-action" onClick={collapseAllSections}>
+              Свернуть все
+            </button>
           </div>
-        ) : (
-          <p className="metric-settings-note">Список бригад появится после первого импорта данных.</p>
-        )}
-      </section>
+        </aside>
 
-      {METRIC_BLOCKS.map((block) => {
-        const blockId = METRIC_BLOCK_ID_BY_TITLE[block]
-        const blockMeta = blockId ? getDashboardBlock(blockId) : null
-        const blockKey = blockId ? blockSettingsKey(blockId) : null
-        const blockEnabled = blockKey ? Boolean(draft[blockKey]) : true
-
-        return (
-          <section key={block} className="metric-settings-block-section">
-            <div className="metric-settings-block-head">
-              <div>
-                <h3 className="metric-settings-block-title">{block}</h3>
-                {blockMeta ? <p className="metric-settings-block-note">{blockMeta.inReports}</p> : null}
-              </div>
-              {blockKey ? (
-                <label className="settings-schedule-toggle metric-settings-block-toggle">
-                  <input
-                    type="checkbox"
-                    checked={blockEnabled}
-                    onChange={(event) => updateBlockEnabled(blockKey, event.target.checked)}
-                  />
-                  <span>{blockEnabled ? 'Блок включён' : 'Блок отключён'}</span>
-                </label>
-              ) : null}
-            </div>
-            {blockId && blockEnabled && getSubblocksForBlock(blockId).length > 0 ? (
-              <div className="metric-settings-subblocks">
-                <p className="metric-settings-label">Подблоки на дашборде</p>
-                <div className="metric-settings-brigades-grid">
-                  {getSubblocksForBlock(blockId).map((subblock) => (
-                    <label key={subblock.id} className="metric-settings-brigade-toggle" title={subblock.note}>
+        <div className="metric-settings-main">
+          <CollapsibleMetricSection
+            id={METRIC_SETTINGS_BRIGADES_SECTION_ID}
+            title="Бригады для сравнения"
+            open={openSections[METRIC_SETTINGS_BRIGADES_SECTION_ID] ?? true}
+            onToggle={() => toggleSection(METRIC_SETTINGS_BRIGADES_SECTION_ID)}
+            hidden={!showBrigadesSection}
+          >
+            <p className="metric-settings-block-note metric-settings-section-lead">
+              Выберите бригадиров, чьи карточки и динамика показываются на дашборде и в блоках сравнения рассылки.
+            </p>
+            {supervisorOptions.length > 0 ? (
+              <div className="metric-settings-brigades-grid">
+                {supervisorOptions.map((name) => {
+                  const checked = draft.comparisonBrigades.some((brigade) => brigadeNamesMatch(brigade, name))
+                  return (
+                    <label key={name} className="metric-settings-brigade-toggle">
                       <input
                         type="checkbox"
-                        checked={draft.subblockVisibility[subblock.id] !== false}
-                        onChange={(event) => updateSubblockEnabled(subblock.id, event.target.checked)}
+                        checked={checked}
+                        onChange={(event) => toggleComparisonBrigade(name, event.target.checked)}
                       />
-                      <span>{subblock.title}</span>
+                      <span>{name}</span>
                     </label>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-            ) : null}
-            {blockId === 'block4' && blockEnabled ? (
-              <div className="metric-settings-subblocks metric-settings-zones">
-                <p className="metric-settings-label">Видимые BLE-зоны</p>
-                <p className="metric-settings-block-note">
-                  Какие зоны показывать в «Распределении по зонам» на дашборде и в рассылке. По умолчанию скрыты зона 0 и КПП (13).
-                </p>
-                <div className="metric-settings-zones-grid">
-                  {ZONE_IDS.map((zoneId) => (
-                    <label key={zoneId} className="metric-settings-zone-toggle">
+            ) : (
+              <p className="metric-settings-note">Список бригад появится после первого импорта данных.</p>
+            )}
+          </CollapsibleMetricSection>
+
+          {METRIC_BLOCKS.map((block) => {
+            const blockId = METRIC_BLOCK_ID_BY_TITLE[block]
+            const blockMeta = blockId ? getDashboardBlock(blockId) : null
+            const blockKey = blockId ? blockSettingsKey(blockId) : null
+            const blockEnabled = blockKey ? Boolean(draft[blockKey]) : true
+            const sectionId = metricBlockSectionId(block)
+            const visibleMetrics = visibleMetricsByBlock.get(block) ?? []
+
+            if (isSearching && visibleMetrics.length === 0) return null
+
+            return (
+              <CollapsibleMetricSection
+                key={block}
+                id={sectionId}
+                title={metricBlockDisplayTitle(block)}
+                subtitle={blockMeta?.inReports}
+                open={openSections[sectionId] ?? false}
+                onToggle={() => toggleSection(sectionId)}
+                headerExtra={
+                  blockKey ? (
+                    <label
+                      className="settings-schedule-toggle metric-settings-block-toggle"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       <input
                         type="checkbox"
-                        checked={draft.zoneVisibility[zoneId] !== false}
-                        onChange={(event) => updateZoneVisibility(zoneId, event.target.checked)}
+                        checked={blockEnabled}
+                        onChange={(event) => updateBlockEnabled(blockKey, event.target.checked)}
                       />
-                      <span>{zoneVisibilityLabel(zoneId)}</span>
+                      <span>{blockEnabled ? 'Блок включён' : 'Блок отключён'}</span>
                     </label>
+                  ) : null
+                }
+              >
+                {blockId && blockEnabled && getSubblocksForBlock(blockId).length > 0 ? (
+                  <div className="metric-settings-subblocks">
+                    <p className="metric-settings-label">Подблоки на дашборде</p>
+                    <div className="metric-settings-brigades-grid">
+                      {getSubblocksForBlock(blockId).map((subblock) => (
+                        <label key={subblock.id} className="metric-settings-brigade-toggle" title={subblock.note}>
+                          <input
+                            type="checkbox"
+                            checked={draft.subblockVisibility[subblock.id] !== false}
+                            onChange={(event) => updateSubblockEnabled(subblock.id, event.target.checked)}
+                          />
+                          <span>{subblock.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {blockId === 'block4' && blockEnabled ? (
+                  <div className="metric-settings-subblocks metric-settings-zones">
+                    <p className="metric-settings-label">Видимые BLE-зоны</p>
+                    <p className="metric-settings-block-note">
+                      Какие зоны показывать в «Распределении по зонам» на дашборде и в рассылке. По умолчанию скрыты
+                      зона 0 и КПП (13).
+                    </p>
+                    <div className="metric-settings-zones-grid">
+                      {ZONE_IDS.map((zoneId) => (
+                        <label key={zoneId} className="metric-settings-zone-toggle">
+                          <input
+                            type="checkbox"
+                            checked={draft.zoneVisibility[zoneId] !== false}
+                            onChange={(event) => updateZoneVisibility(zoneId, event.target.checked)}
+                          />
+                          <span>{zoneVisibilityLabel(zoneId)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="metric-settings-grid">
+                  {visibleMetrics.map((metric) => (
+                    <MetricCard key={metric.id} metric={metric} settings={draft} onChange={updateField} />
                   ))}
                 </div>
-              </div>
-            ) : null}
-            <div className="metric-settings-grid">
-              {METRIC_DEFINITIONS.filter((metric) => metric.block === block).map((metric) => (
-                <MetricCard key={metric.id} metric={metric} settings={draft} onChange={updateField} />
-              ))}
-            </div>
-          </section>
-        )
-      })}
+              </CollapsibleMetricSection>
+            )
+          })}
+
+          {isSearching && visibleMetricCount === 0 && !showBrigadesSection ? (
+            <div className="empty-state">По запросу «{searchQuery.trim()}» ничего не найдено.</div>
+          ) : null}
+        </div>
+      </div>
     </section>
   )
 }

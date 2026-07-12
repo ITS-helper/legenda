@@ -172,6 +172,29 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
   }
 }
 
+export function cloneMetricSettings(settings: MetricSettings): MetricSettings {
+  return {
+    ...settings,
+    comparisonBrigades: [...settings.comparisonBrigades],
+    subblockVisibility: { ...settings.subblockVisibility },
+    zoneVisibility: { ...settings.zoneVisibility },
+  }
+}
+
+function stablePayload(settings: MetricSettings) {
+  const payload = toPayload(settings) as Record<string, unknown>
+  if (Array.isArray(payload.comparison_brigades)) {
+    payload.comparison_brigades = [...payload.comparison_brigades].sort((left, right) =>
+      String(left).localeCompare(String(right), 'ru'),
+    )
+  }
+  return payload
+}
+
+export function areMetricSettingsEqual(left: MetricSettings, right: MetricSettings) {
+  return JSON.stringify(stablePayload(left)) === JSON.stringify(stablePayload(right))
+}
+
 function toPayload(settings: MetricSettings): Record<string, unknown> {
   const zoneVisibilityPayload: Record<string, boolean> = {}
   for (const [zoneId, enabled] of Object.entries(settings.zoneVisibility)) {
