@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { getSettingsAuthRole } from '../_shared/settingsAuth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -65,11 +66,11 @@ Deno.serve(async (request) => {
 
   const url = new URL(request.url)
   if (url.searchParams.get('action') === 'verify' && request.method === 'GET') {
-    const auth = isAuthorized(request)
-    if (!auth.ok) {
-      return auth.response
+    const role = getSettingsAuthRole(request)
+    if (!role) {
+      return jsonResponse({ error: 'Неверный пароль' }, 401)
     }
-    return jsonResponse({ ok: true })
+    return jsonResponse({ ok: true, role })
   }
 
   const scope = getScope(request)

@@ -132,7 +132,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     comparisonBrigades.length > 0 ? comparisonBrigades.join(', ') : 'выбранные бригады'
   const longIdleLabel = `бездействие от ${settings.longIdleMin} минут, от общего времени`
   const longIdleBlockNote = `от ${settings.longIdleMin} минут`
-  const { password } = useAuth()
+  const { password, isAdmin } = useAuth()
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [volumeDates, setVolumeDates] = useState<string[]>([])
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
@@ -1026,6 +1026,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           <VolumesPanel
             password={password}
             reportDate={volumesDate}
+            readOnly={!isAdmin}
             onSaved={() => void refreshVolumesForBlock(volumesDate)}
           />
         ) : (

@@ -18,7 +18,7 @@ function getRouteFromHash(hash: string): AppRoute {
 }
 
 function AppContent() {
-  const { isAuthenticated, isBootstrapping, login, logout } = useAuth()
+  const { isAuthenticated, isBootstrapping, isAdmin, isReadOnly, login, logout } = useAuth()
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash))
   const [uiText, setUiText] = useState<UiText>(defaultUiText)
   const [uiTextLoading, setUiTextLoading] = useState(true)
@@ -34,6 +34,14 @@ function AppContent() {
       window.removeEventListener('hashchange', syncRoute)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isReadOnly) return
+    if (route === 'mailing' || route === 'metrics') {
+      window.location.hash = '#/'
+      setRoute('dashboard')
+    }
+  }, [isReadOnly, route])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -88,20 +96,25 @@ function AppContent() {
           <a className={route === 'dashboard' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/">
             Дашборд
           </a>
-          <a className={route === 'mailing' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
-            Рассылка
-          </a>
-          <a className={route === 'metrics' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/metrics">
-            Настройки
-          </a>
+          {isAdmin ? (
+            <>
+              <a className={route === 'mailing' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
+                Рассылка
+              </a>
+              <a className={route === 'metrics' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/metrics">
+                Настройки
+              </a>
+            </>
+          ) : null}
+          {isReadOnly ? <span className="topbar-readonly-badge">Только просмотр</span> : null}
           <button type="button" className="topbar-link topbar-logout" onClick={logout}>
             Выйти
           </button>
         </nav>
       </header>
 
-      {route === 'mailing' ? <SettingsPage /> : null}
-      {route === 'metrics' ? <MetricSettingsPage /> : null}
+      {isAdmin && route === 'mailing' ? <SettingsPage /> : null}
+      {isAdmin && route === 'metrics' ? <MetricSettingsPage /> : null}
 
       {route === 'dashboard' && uiTextLoading ? <section className="empty-state">Загружаем настройки интерфейса...</section> : null}
       {route === 'dashboard' && uiTextError ? (

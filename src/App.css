@@ -807,6 +807,19 @@
   cursor: pointer;
 }
 
+.topbar-readonly-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #c5dff5;
+  background: #f4faff;
+  color: #1565a8;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .login-shell {
   min-height: 100vh;
   display: grid;

@@ -12,10 +12,11 @@ import {
 type VolumesPanelProps = {
   password: string
   reportDate: string
+  readOnly?: boolean
   onSaved?: () => void
 }
 
-export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProps) {
+export function VolumesPanel({ password, reportDate, readOnly = false, onSaved }: VolumesPanelProps) {
   const [drafts, setDrafts] = useState<VolumeEntryDraft[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -150,33 +151,42 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
 
   return (
     <div className="volumes-panel">
-      <p className="volumes-panel-hint">
-        Загрузите файл ГПР (вкладка «ЛВ2_монолит К2») — объёмы сохранятся по всем дням из файла. Секция СНГ — Джалол, КНДР — ЛИ СОН ХАК.
-      </p>
+      {readOnly ? (
+        <p className="volumes-panel-hint volumes-panel-readonly-note">
+          Режим просмотра: объёмы можно смотреть, но не редактировать.
+        </p>
+      ) : (
+        <p className="volumes-panel-hint">
+          Загрузите файл ГПР (вкладка «ЛВ2_монолит К2») — объёмы сохранятся по всем дням из файла. Секция СНГ — Джалол,
+          КНДР — ЛИ СОН ХАК.
+        </p>
+      )}
 
-      <div className="volumes-import-row">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          className="volumes-import-input"
-          disabled={importing || saving}
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void handleImportGpr(file)
-          }}
-        />
-        <button
-          type="button"
-          className="editor-action"
-          disabled={importing || saving}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {importing ? 'Читаем ГПР...' : 'Загрузить ГПР (Excel)'}
-        </button>
-      </div>
+      {!readOnly ? (
+        <div className="volumes-import-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="volumes-import-input"
+            disabled={importing || saving}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void handleImportGpr(file)
+            }}
+          />
+          <button
+            type="button"
+            className="editor-action"
+            disabled={importing || saving}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importing ? 'Читаем ГПР...' : 'Загрузить ГПР (Excel)'}
+          </button>
+        </div>
+      ) : null}
 
-      {importStatus ? (
+      {!readOnly && importStatus ? (
         <p className={`editor-saved${importError ? ' settings-status-error' : ''}`}>{importStatus}</p>
       ) : null}
 
@@ -206,6 +216,8 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                     onChange={(event) => updateDraft(index, { value_text: event.target.value })}
                     placeholder="0 м³"
                     maxLength={500}
+                    readOnly={readOnly}
+                    disabled={readOnly}
                   />
                 </label>
 
@@ -218,24 +230,28 @@ export function VolumesPanel({ password, reportDate, onSaved }: VolumesPanelProp
                     placeholder="Какие работы выполнены за день"
                     maxLength={1000}
                     rows={6}
+                    readOnly={readOnly}
+                    disabled={readOnly}
                   />
                 </label>
               </article>
             ))}
           </div>
 
-          <div className="volumes-toolbar">
-            <button
-              type="button"
-              className="editor-action settings-publish-button"
-              onClick={() => void handleSave()}
-              disabled={saving || !dirty}
-            >
-              {saving ? 'Сохраняем...' : 'Сохранить'}
-            </button>
-          </div>
+          {!readOnly ? (
+            <div className="volumes-toolbar">
+              <button
+                type="button"
+                className="editor-action settings-publish-button"
+                onClick={() => void handleSave()}
+                disabled={saving || !dirty}
+              >
+                {saving ? 'Сохраняем...' : 'Сохранить'}
+              </button>
+            </div>
+          ) : null}
 
-          {saveStatus ? (
+          {!readOnly && saveStatus ? (
             <p className={`editor-saved${saveError ? ' settings-status-error' : ''}`}>{saveStatus}</p>
           ) : null}
         </>
