@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { MetricDeepDivePanel } from '../components/MetricDeepDivePanel'
 import { MskTimeInput } from '../components/MskTimeInput'
+import { getMetricDeepDive } from '../content/metricDeepDives'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
 import {
@@ -73,6 +75,15 @@ function MetricCard({
       </div>
 
       {metric.notes ? <p className="metric-settings-note">{metric.notes}</p> : null}
+
+      {(() => {
+        const DeepDive = getMetricDeepDive(metric.id)
+        return DeepDive ? (
+          <MetricDeepDivePanel>
+            <DeepDive />
+          </MetricDeepDivePanel>
+        ) : null
+      })()}
 
       {metric.configFields && metric.configFields.length > 0 ? (
         <div className="metric-settings-config">

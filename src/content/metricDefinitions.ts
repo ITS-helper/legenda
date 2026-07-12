@@ -135,7 +135,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     id: 'shift_duration',
     block: 'Блок 1 · Ежедневная аналитика',
     title: 'Длительность смены',
-    description: 'Среднее время «на часах» по сменам бригады.',
+    description: 'Среднее время «в часах» по сменам бригады.',
     sources: ['faceID / LongIDLE → `shifts.on_watch_duration_seconds`'],
     formula: 'avg_shift_duration_sec = AVG(on_watch_duration_seconds) WHERE > 0',
   },
