@@ -22,8 +22,26 @@ export const HIDDEN_ZONES = new Set<number>([0])
 export const ALERT_ZONES = new Set<number>([3, 6, 13])
 export const KPP_ZONE = 13
 
-/** Зоны, которые не показываем в email/PDF-отчётах. */
+/** @deprecated use zone_visibility from metric_settings */
 export const REPORT_EXCLUDED_ZONES = new Set<number>([KPP_ZONE])
+
+const DEFAULT_ZONE_VISIBILITY: Record<number, boolean> = {
+  0: false,
+  1: true,
+  2: true,
+  3: true,
+  4: true,
+  5: true,
+  6: true,
+  7: true,
+  8: true,
+  9: true,
+  10: true,
+  11: true,
+  12: true,
+  13: false,
+  14: true,
+}
 
 export function parseZone(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null
@@ -42,13 +60,33 @@ export function isHiddenZone(value: string | number | null | undefined): boolean
   return zone !== null && HIDDEN_ZONES.has(zone)
 }
 
-export function isReportExcludedZone(value: string | number | null | undefined): boolean {
-  const zone = parseZone(value)
-  return zone !== null && REPORT_EXCLUDED_ZONES.has(zone)
+export function normalizeZoneVisibility(value: unknown): Record<number, boolean> {
+  const result = { ...DEFAULT_ZONE_VISIBILITY }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result
+  for (const [key, enabled] of Object.entries(value as Record<string, boolean>)) {
+    const zone = parseZone(key)
+    if (zone !== null) result[zone] = enabled !== false
+  }
+  return result
 }
 
-export function visibleReportZoneRows(rows: ZoneRow[]): ZoneRow[] {
-  return rows.filter((row) => !isReportExcludedZone(row.zona))
+export function isZoneVisibleInDistribution(
+  value: string | number | null | undefined,
+  zoneVisibility: Record<number, boolean> = DEFAULT_ZONE_VISIBILITY,
+) {
+  const zone = parseZone(value)
+  if (zone === null) return false
+  return zoneVisibility[zone] !== false
+}
+
+/** @deprecated use isZoneVisibleInDistribution */
+export function isReportExcludedZone(value: string | number | null | undefined): boolean {
+  return !isZoneVisibleInDistribution(value)
+}
+
+export function visibleReportZoneRows(rows: ZoneRow[], zoneVisibility?: Record<number, boolean>): ZoneRow[] {
+  const visibility = zoneVisibility ?? DEFAULT_ZONE_VISIBILITY
+  return rows.filter((row) => isZoneVisibleInDistribution(row.zona, visibility))
 }
 
 export function isAlertZone(value: string | number | null | undefined): boolean {

@@ -1,11 +1,12 @@
 ﻿import { useEffect, useState } from 'react'
 import { DatePickerField } from '../components/DatePickerField'
+import { MskTimeInput } from '../components/MskTimeInput'
 import { useAuth } from '../context/AuthContext'
+import { useMetricSettings } from '../context/MetricSettingsContext'
 import {
   formatWeekRange,
   loadAvailableDates,
   loadAvailableWeeks,
-  TRACKED_BRIGADES,
 } from '../lib/reports'
 import {
   loadRecipients,
@@ -17,6 +18,9 @@ import {
   type ReportAudience,
   type ReportSchedule,
 } from '../lib/emailReports'
+import { getComparisonBrigades } from '../lib/metricSettings'
+import { hourMinuteToMinutes, minutesToHourMinute } from '../lib/mskTime'
+import { brigadeNamesMatch } from '../lib/reports'
 
 const WEEKDAYS: { value: number; label: string }[] = [
   { value: 1, label: 'Понедельник' },
@@ -38,18 +42,6 @@ const DEFAULT_SCHEDULE: ReportSchedule = {
   weekly_minute: 0,
 }
 
-function toTimeValue(hour: number, minute: number) {
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-}
-
-function fromTimeValue(value: string) {
-  const [hour, minute] = value.split(':').map((part) => Number(part))
-  return {
-    hour: Number.isFinite(hour) ? hour : 0,
-    minute: Number.isFinite(minute) ? minute : 0,
-  }
-}
-
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
@@ -58,6 +50,8 @@ function getErrorMessage(error: unknown) {
 
 export function SettingsPage() {
   const { password } = useAuth()
+  const { settings } = useMetricSettings()
+  const comparisonBrigades = getComparisonBrigades(settings)
   const [busyAction, setBusyAction] = useState<
     | 'load-recipients'
     | 'save-recipients'
@@ -74,9 +68,9 @@ export function SettingsPage() {
   const [scheduleError, setScheduleError] = useState(false)
   const [recipients, setRecipients] = useState<EmailRecipient[]>([])
   const [recipientAudience, setRecipientAudience] = useState<ReportAudience>('managers')
-  const [selectedBrigade, setSelectedBrigade] = useState(TRACKED_BRIGADES[0] ?? '')
+  const [selectedBrigade, setSelectedBrigade] = useState<string>('')
   const [previewAudience, setPreviewAudience] = useState<ReportAudience>('managers')
-  const [previewBrigade, setPreviewBrigade] = useState(TRACKED_BRIGADES[0] ?? '')
+  const [previewBrigade, setPreviewBrigade] = useState<string>('')
   const [recipientsStatus, setRecipientsStatus] = useState<string | null>(null)
   const [recipientsError, setRecipientsError] = useState(false)
   const [sendStatus, setSendStatus] = useState<string | null>(null)
@@ -87,6 +81,17 @@ export function SettingsPage() {
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
+
+  useEffect(() => {
+    setSelectedBrigade((current) => {
+      if (current && comparisonBrigades.some((name) => brigadeNamesMatch(name, current))) return current
+      return comparisonBrigades[0] ?? ''
+    })
+    setPreviewBrigade((current) => {
+      if (current && comparisonBrigades.some((name) => brigadeNamesMatch(name, current))) return current
+      return comparisonBrigades[0] ?? ''
+    })
+  }, [comparisonBrigades])
 
   useEffect(() => {
     let cancelled = false
@@ -336,13 +341,12 @@ export function SettingsPage() {
                 <span>Ежедневный отчёт</span>
               </label>
               <label className="settings-password-field">
-                <span>Время (МСК)</span>
-                <input
-                  type="time"
-                  value={toTimeValue(schedule.daily_hour, schedule.daily_minute)}
+                <span>Время отправки</span>
+                <MskTimeInput
+                  value={hourMinuteToMinutes(schedule.daily_hour, schedule.daily_minute) ?? 8 * 60}
                   disabled={!schedule.daily_enabled}
-                  onChange={(event) => {
-                    const { hour, minute } = fromTimeValue(event.target.value)
+                  onChange={(minutes) => {
+                    const { hour, minute } = minutesToHourMinute(minutes)
                     setSchedule((s) => ({ ...s, daily_hour: hour, daily_minute: minute }))
                   }}
                 />
@@ -373,13 +377,12 @@ export function SettingsPage() {
                 </select>
               </label>
               <label className="settings-password-field">
-                <span>Время (МСК)</span>
-                <input
-                  type="time"
-                  value={toTimeValue(schedule.weekly_hour, schedule.weekly_minute)}
+                <span>Время отправки</span>
+                <MskTimeInput
+                  value={hourMinuteToMinutes(schedule.weekly_hour, schedule.weekly_minute) ?? 8 * 60}
                   disabled={!schedule.weekly_enabled}
-                  onChange={(event) => {
-                    const { hour, minute } = fromTimeValue(event.target.value)
+                  onChange={(minutes) => {
+                    const { hour, minute } = minutesToHourMinute(minutes)
                     setSchedule((s) => ({ ...s, weekly_hour: hour, weekly_minute: minute }))
                   }}
                 />
@@ -438,7 +441,7 @@ export function SettingsPage() {
             <label className="filter-field settings-filter-field">
               <span>Бригадир</span>
               <select value={selectedBrigade} onChange={(event) => setSelectedBrigade(event.target.value)}>
-                {TRACKED_BRIGADES.map((brigade) => (
+                {comparisonBrigades.map((brigade) => (
                   <option key={brigade} value={brigade}>
                     {brigade}
                   </option>
@@ -537,7 +540,7 @@ export function SettingsPage() {
                 <label className="filter-field settings-filter-field">
                   <span>Бригадир</span>
                   <select value={previewBrigade} onChange={(event) => setPreviewBrigade(event.target.value)}>
-                    {TRACKED_BRIGADES.map((brigade) => (
+                    {comparisonBrigades.map((brigade) => (
                       <option key={brigade} value={brigade}>
                         {brigade}
                       </option>

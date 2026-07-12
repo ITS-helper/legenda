@@ -1,11 +1,13 @@
 ---
 description: После push в main — проверить деплой GitHub Pages
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Завершение задачи: commit, push, проверка деплоя
 
-После **завершения задачи с изменениями в коде** — без лишних вопросов:
+**Применять только когда пользователь явно просит commit/push/deploy.** В режиме песочницы см. rule `local-sandbox-first`.
+
+После **завершения задачи с изменениями в коде** и **явной команды на деплой**:
 
 1. Закоммитьте изменения, `git push origin main`.
 2. **Сразу после push** проверьте GitHub Actions — workflow **Deploy Pages** (`.github/workflows/deploy-pages.yml`):
@@ -20,6 +22,6 @@ alwaysApply: true
    - ссылку на run: `gh run view <run-id> --web` или URL из `gh run list`.
 4. Если менялись файлы в `supabase/functions/` — напомнить про `supabase functions deploy send-report --no-verify-jwt` (это отдельно от GitHub Pages).
 
-Не спрашивать «закоммитить?» / «запушить?» — делать сразу, если пользователь явно не запретил commit/push в этом чате.
+Не спрашивать «закоммитить?» / «запушить?» — делать сразу **только если пользователь явно попросил** commit/push в этом чате.
 
 Не считать задачу завершённой, пока не проверили статус **Deploy Pages** (или не сообщили, что run ещё идёт и как перепроверить).

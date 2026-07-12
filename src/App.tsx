@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { MetricSettingsProvider } from './context/MetricSettingsContext'
 import { defaultUiText, type UiText } from './content/uiText'
 import { loadPublishedUiText } from './lib/siteSettings'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
+import { MetricSettingsPage } from './pages/MetricSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import './App.css'
 
-type AppRoute = 'dashboard' | 'settings'
+type AppRoute = 'dashboard' | 'mailing' | 'metrics'
 
 function getRouteFromHash(hash: string): AppRoute {
-  return hash === '#/settings' ? 'settings' : 'dashboard'
+  if (hash === '#/settings') return 'mailing'
+  if (hash === '#/metrics') return 'metrics'
+  return 'dashboard'
 }
 
 function AppContent() {
@@ -84,8 +88,11 @@ function AppContent() {
           <a className={route === 'dashboard' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/">
             Дашборд
           </a>
-          <a className={route === 'settings' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
+          <a className={route === 'mailing' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/settings">
             Рассылка
+          </a>
+          <a className={route === 'metrics' ? 'topbar-link topbar-link-active' : 'topbar-link'} href="#/metrics">
+            Настройки
           </a>
           <button type="button" className="topbar-link topbar-logout" onClick={logout}>
             Выйти
@@ -93,7 +100,8 @@ function AppContent() {
         </nav>
       </header>
 
-      {route === 'settings' ? <SettingsPage /> : null}
+      {route === 'mailing' ? <SettingsPage /> : null}
+      {route === 'metrics' ? <MetricSettingsPage /> : null}
 
       {route === 'dashboard' && uiTextLoading ? <section className="empty-state">Загружаем настройки интерфейса...</section> : null}
       {route === 'dashboard' && uiTextError ? (
@@ -110,7 +118,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <MetricSettingsProvider>
+        <AppContent />
+      </MetricSettingsProvider>
     </AuthProvider>
   )
 }

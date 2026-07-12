@@ -1,5 +1,5 @@
 import { getEdgeFunctionHeaders, getEdgeFunctionUrl, readEdgeFunctionJson } from './edgeFunctions'
-import { brigadeNamesMatch, TRACKED_BRIGADES } from './reports'
+import { brigadeNamesMatch, getComparisonBrigades } from './reports'
 
 export type VolumeEntry = {
   id: number
@@ -168,7 +168,7 @@ export async function saveVolumeEntriesForDays(
 }
 
 export function brigadeVolumeDraftsFromEntries(entries: VolumeEntry[]): VolumeEntryDraft[] {
-  return TRACKED_BRIGADES.map((brigade) => {
+  return getComparisonBrigades().map((brigade) => {
     const match = entries.find((entry) => brigadeNamesMatch(entry.label, brigade))
     return {
       id: match?.id,

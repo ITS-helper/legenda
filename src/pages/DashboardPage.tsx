@@ -8,8 +8,12 @@ import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
+import { useMetricSettings } from '../context/MetricSettingsContext'
+import { isBlockEnabled, isSubblockEnabled } from '../lib/metricSettings'
 import {
   aggregateLowActivityWeekly,
+  brigadeNamesMatch,
+  filterComparisonBrigades,
   filterLowActivityDaily,
   formatEpisodeCount,
   formatFullDate,
@@ -54,9 +58,10 @@ import {
   normalizeReportDate,
   type VolumeEntry,
 } from '../lib/volumes'
-import { isAlertZone, KPP_ZONE, parseZone } from '../lib/zones'
+import { isAlertZone } from '../lib/zones'
+import { filterDistributionZoneRows } from '../lib/zoneVisibility'
 
-type SortKey = 'full_name' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
+type SortKey = 'full_name' | 'profession' | 'supervisor_name' | 'work_sec_total' | 'weak_activity_sec_total' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity' | 'kpp_sec_total'
 type SortDirection = 'asc' | 'desc'
 
 function getRowProductivity(row: ShiftMetricRow) {
@@ -102,6 +107,31 @@ function StructureLegend() {
 }
 
 export function DashboardPage({ uiText }: { uiText: UiText }) {
+  const { settings } = useMetricSettings()
+  const showBlock1 = isBlockEnabled('block1', settings)
+  const showBlock2 = isBlockEnabled('block2', settings)
+  const showBlock3 = isBlockEnabled('block3', settings)
+  const showBlock4 = isBlockEnabled('block4', settings)
+  const showBlock5 = isBlockEnabled('block5', settings)
+  const showBlock6 = isBlockEnabled('block6', settings)
+  const showBlock1Summary = isSubblockEnabled('block1_summary', settings)
+  const showBlock1Brigades = isSubblockEnabled('block1_brigades', settings)
+  const showBlock1Top = isSubblockEnabled('block1_top_activity', settings)
+  const showBlock1Attention = isSubblockEnabled('block1_attention', settings)
+  const showBlock1Kpp = isSubblockEnabled('block1_kpp_panel', settings)
+  const showBlock1VolumeCard = isSubblockEnabled('block1_volume_card', settings)
+  const showBlock2Brigades = isSubblockEnabled('block2_brigades', settings)
+  const showBlock2Top = isSubblockEnabled('block2_top_activity', settings)
+  const showBlock2Attention = isSubblockEnabled('block2_attention', settings)
+  const showBlock3Activity = isSubblockEnabled('block3_activity_dynamics', settings)
+  const showBlock3Volume = isSubblockEnabled('block3_volume_dynamics', settings)
+  const showBlock4Location = isSubblockEnabled('block4_location', settings)
+  const showBlock4Idle = isSubblockEnabled('block4_idle', settings)
+  const comparisonBrigades = settings.comparisonBrigades
+  const comparisonBrigadesLabel =
+    comparisonBrigades.length > 0 ? comparisonBrigades.join(', ') : 'выбранные бригады'
+  const longIdleLabel = `бездействие от ${settings.longIdleMin} минут, от общего времени`
+  const longIdleBlockNote = `от ${settings.longIdleMin} минут`
   const { password } = useAuth()
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [volumeDates, setVolumeDates] = useState<string[]>([])
@@ -109,6 +139,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedWeek, setSelectedWeek] = useState('')
   const [detailDate, setDetailDate] = useState('')
+  const [detailSearch, setDetailSearch] = useState('')
   const [dynamicsDate, setDynamicsDate] = useState('')
   const [volumesDate, setVolumesDate] = useState('')
 
@@ -312,7 +343,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [dynamicsDate])
+  }, [dynamicsDate, comparisonBrigades])
 
   useEffect(() => {
     if (!dynamicsDate) return
@@ -336,19 +367,38 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [dynamicsDate])
+  }, [dynamicsDate, comparisonBrigades])
+
+  const visibleDailyRows = useMemo(
+    () => filterComparisonBrigades(dailyRows, comparisonBrigades),
+    [dailyRows, comparisonBrigades],
+  )
+  const visibleWeeklyRows = useMemo(
+    () => filterComparisonBrigades(weeklyRows, comparisonBrigades),
+    [weeklyRows, comparisonBrigades],
+  )
+  const visibleVolumeEntries = useMemo(
+    () =>
+      volumeEntries.filter((entry) =>
+        comparisonBrigades.some((name) => brigadeNamesMatch(entry.label, name)),
+      ),
+    [volumeEntries, comparisonBrigades],
+  )
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
   const topWeekly = useMemo(() => topActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
 
-  const dailyTotals = useMemo(() => sumDaily(dailyRows), [dailyRows])
+  const dailyTotals = useMemo(() => sumDaily(visibleDailyRows), [visibleDailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
   const dailyLongIdle = ratio(dailyTotals.long_idle_sec, dailyTotals.total_sec)
   const dailyGo = ratio(dailyTotals.go_sec, dailyTotals.total_sec)
-  const dailyPv = useMemo(() => pvPercentFromZoneRows(zoneRows), [zoneRows])
+  const dailyPv = useMemo(
+    () => pvPercentFromZoneRows(zoneRows),
+    [zoneRows, settings.zoneVisibility],
+  )
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -390,8 +440,24 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
 
+  const filteredDetailRows = useMemo(() => {
+    const query = detailSearch.trim().toLowerCase()
+    if (!query) return detailShiftRows
+    return detailShiftRows.filter((row) => {
+      const haystack = [
+        row.full_name,
+        row.employee_number,
+        row.supervisor_name ?? NO_SUPERVISOR,
+        row.profession ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [detailShiftRows, detailSearch])
+
   const sortedShiftRows = useMemo(() => {
-    return [...detailShiftRows].sort((left, right) => {
+    return [...filteredDetailRows].sort((left, right) => {
       const leftValue =
         sortKey === 'productivity'
           ? getRowProductivity(left)
@@ -399,7 +465,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             ? left.supervisor_name ?? NO_SUPERVISOR
             : sortKey === 'full_name'
               ? left.full_name
-              : left[sortKey]
+              : sortKey === 'profession'
+                ? left.profession ?? ''
+                : left[sortKey]
       const rightValue =
         sortKey === 'productivity'
           ? getRowProductivity(right)
@@ -407,7 +475,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             ? right.supervisor_name ?? NO_SUPERVISOR
             : sortKey === 'full_name'
               ? right.full_name
-              : right[sortKey]
+              : sortKey === 'profession'
+                ? right.profession ?? ''
+                : right[sortKey]
 
       if (typeof leftValue === 'string' && typeof rightValue === 'string') {
         return sortDirection === 'asc' ? leftValue.localeCompare(rightValue, 'ru') : rightValue.localeCompare(leftValue, 'ru')
@@ -417,7 +487,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ? Number(leftValue ?? 0) - Number(rightValue ?? 0)
         : Number(rightValue ?? 0) - Number(leftValue ?? 0)
     })
-  }, [detailShiftRows, sortKey, sortDirection])
+  }, [filteredDetailRows, sortKey, sortDirection])
 
   function toggleSort(key: SortKey, defaultDirection: SortDirection = 'desc') {
     if (sortKey === key) {
@@ -446,6 +516,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       ) : null}
 
       {/* БЛОК 1 — ЕЖЕДНЕВНАЯ АНАЛИТИКА */}
+      {showBlock1 ? (
       <CollapsibleBlock
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
@@ -468,12 +539,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dailyLoading ? <div className="empty-state">Загружаем дневную аналитику...</div> : null}
         {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
 
-        {!dailyLoading && !dailyError && dailyRows.length === 0 ? (
+        {!dailyLoading && !dailyError && visibleDailyRows.length === 0 ? (
           <div className="empty-state">Нет данных за выбранный день.</div>
         ) : null}
 
-        {!dailyLoading && !dailyError && dailyRows.length > 0 ? (
+        {!dailyLoading && !dailyError && visibleDailyRows.length > 0 ? (
           <>
+            {showBlock1Summary ? (
             <div className="metrics-grid">
               <article className="metric-card metric-card-accent">
                 <span className="metric-label">Вышло на смену</span>
@@ -492,7 +564,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               </article>
               <article className="metric-card">
                 <span className="metric-label">Длительный простой</span>
-                <p className="metric-note">бездействие от 10 минут, от общего времени</p>
+                <p className="metric-note">{longIdleLabel}</p>
                 <strong className="metric-value">{formatPercent(dailyLongIdle)}</strong>
               </article>
               <article className="metric-card">
@@ -510,28 +582,32 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="metric-note">рабочая зона, от общего количества времени на смене</p>
                 <strong className="metric-value">{zoneRows.length > 0 ? formatPercent(dailyPv) : '—'}</strong>
               </article>
+              {showBlock5 && showBlock1VolumeCard ? (
               <a className="metric-card metric-card-link" href="#block-volumes">
                 <span className="metric-label">Объёмы</span>
                 <p className="metric-note">
-                  {volumeEntries.length > 0
+                  {visibleVolumeEntries.length > 0
                     ? 'сумма по бригадам за день'
                     : dailyLoading
                       ? 'загрузка...'
                       : 'добавьте значения в блоке 5'}
                 </p>
-                <strong className="metric-value">{formatVolumeCardSummary(volumeEntries)}</strong>
+                <strong className="metric-value">{formatVolumeCardSummary(visibleVolumeEntries)}</strong>
               </a>
+              ) : null}
             </div>
+            ) : null}
 
+            {showBlock1Brigades ? (
             <div className="brigade-grid">
-              {dailyRows.map((brigade) => (
+              {visibleDailyRows.map((brigade) => (
                 <article className="brigade-card" key={brigade.supervisor_name}>
                   <div className="brigade-card-head">
                     <div>
                       <strong>{brigade.supervisor_name}</strong>
                       <p>{formatBrigadeShiftHeadcount(brigade.supervisor_name, brigade.workers)} на смене</p>
                     </div>
-                    <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
+                    <div className={`brigade-badge${brigade.activity_pct < settings.brigadeWarnPct ? ' brigade-badge-warn' : ''}`}>
                       {formatPercent(brigade.activity_pct)}
                     </div>
                   </div>
@@ -576,22 +652,29 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 </article>
               ))}
             </div>
+            ) : null}
 
+            {showBlock1Top ? (
             <TopActivityPanel
               employees={topDaily}
               periodLabel="за день"
               open={topDailyOpen}
               onToggle={() => setTopDailyOpen((current) => !current)}
             />
+            ) : null}
 
+            {showBlock1Attention ? (
             <AttentionPanel
               employees={lowActivityDaily}
               open={attentionOpen}
               onToggle={() => setAttentionOpen((current) => !current)}
-              emptyMessage="Нет сотрудников с активностью ниже 30% за этот день."
+              emptyMessage={`Нет сотрудников с активностью ниже ${settings.lowActivityPct}% за этот день.`}
               periodLabel="за день"
+              lowActivityPct={settings.lowActivityPct}
             />
+            ) : null}
 
+            {showBlock1Kpp ? (
             <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
               <div className="kpp-panel-head">
                 <button
@@ -632,11 +715,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 )
               ) : null}
             </div>
+            ) : null}
           </>
         ) : null}
       </CollapsibleBlock>
+      ) : null}
 
       {/* БЛОК 2 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
+      {showBlock2 ? (
       <CollapsibleBlock
         kicker="Блок 2 · Еженедельно"
         title="Еженедельная аналитика"
@@ -662,20 +748,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
         {weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
 
-        {!weeklyLoading && !weeklyError && weeklyRows.length === 0 ? (
+        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length === 0 ? (
           <div className="empty-state">Нет данных за выбранную неделю.</div>
         ) : null}
 
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Brigades ? (
           <div className="brigade-grid">
-            {weeklyRows.map((brigade) => (
+            {visibleWeeklyRows.map((brigade) => (
               <article className="brigade-card" key={brigade.supervisor_name}>
                 <div className="brigade-card-head">
                   <div>
                     <strong>{brigade.supervisor_name}</strong>
                     <p>≈ {brigade.avg_workers} чел./день · {brigade.unique_employees} уникальных</p>
                   </div>
-                  <div className={`brigade-badge${brigade.activity_pct < 40 ? ' brigade-badge-warn' : ''}`}>
+                  <div className={`brigade-badge${brigade.activity_pct < settings.brigadeWarnPct ? ' brigade-badge-warn' : ''}`}>
                     {formatPercent(brigade.activity_pct)}
                   </div>
                 </div>
@@ -722,7 +808,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           </div>
         ) : null}
 
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Top ? (
           <TopActivityPanel
             employees={topWeekly}
             periodLabel="за неделю"
@@ -731,22 +817,25 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           />
         ) : null}
 
-        {!weeklyLoading && !weeklyError && weeklyRows.length > 0 ? (
+        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Attention ? (
           <AttentionPanel
             employees={lowActivityWeekly}
             open={weeklyAttentionOpen}
             onToggle={() => setWeeklyAttentionOpen((current) => !current)}
-            emptyMessage="Нет сотрудников со средней активностью ниже 30% за неделю."
+            emptyMessage={`Нет сотрудников со средней активностью ниже ${settings.lowActivityPct}% за неделю.`}
             periodLabel="за неделю"
+            lowActivityPct={settings.lowActivityPct}
           />
         ) : null}
       </CollapsibleBlock>
+      ) : null}
 
       {/* БЛОК 3 — ДИНАМИКА АКТИВНОСТИ И ВЫПОЛНЕННЫХ РАБОТ */}
+      {showBlock3 ? (
       <CollapsibleBlock
         kicker="Блок 3 · Динамика"
         title="Динамика активности и выполненных работ"
-        description="Сравнение активности и выполненных объёмов бригад Джалол и ЛИ СОН ХАК: выбранный день против вчера и тренд за 14 дней."
+        description={`Сравнение активности и выполненных объёмов бригад ${comparisonBrigadesLabel}: выбранный день против вчера и тренд за ${settings.activitySparklineDays} дней.`}
       >
         <div className="filter-row">
           <DatePickerField
@@ -765,10 +854,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {dynamicsLoading ? <div className="empty-state">Загружаем динамику активности...</div> : null}
         {dynamicsError ? <div className="empty-state error-state">Ошибка: {dynamicsError}</div> : null}
 
-        {!dynamicsLoading && !dynamicsError && dynamicsDate ? (
+        {!dynamicsLoading && !dynamicsError && dynamicsDate && showBlock3Activity ? (
           <ActivityDynamicsPanel referenceDate={dynamicsDate} cards={dynamicsCards} />
         ) : null}
 
+        {showBlock5 && showBlock3Volume ? (
         <div className="volumes-dynamics-section">
           <h3 className="volumes-dynamics-title">Динамика выполненных объёмов</h3>
 
@@ -779,13 +869,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             <VolumeDynamicsPanel referenceDate={dynamicsDate} cards={volumeDynamicsCards} />
           ) : null}
         </div>
+        ) : null}
       </CollapsibleBlock>
+      ) : null}
 
       {/* БЛОК 4 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
+      {showBlock4 ? (
       <CollapsibleBlock
         kicker="Блок 4 · Зоны"
         title="Местоположение и простои"
-        description="Где сотрудники каждой бригады проводили время за день и эпизоды длительного бездействия от 10 минут с привязкой к зоне."
+        description={`Где сотрудники каждой бригады проводили время за день и эпизоды длительного бездействия ${longIdleBlockNote} с привязкой к зоне.`}
       >
         <div className="filter-row">
           <DatePickerField
@@ -806,9 +899,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
         {!dailyLoading && !dailyError && selectedDate ? (
           <div className="zones-brigade-matrix">
-            {dailyRows.map((brigade) => {
-              const brigadeZones = (zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? []).filter(
-                (zone) => parseZone(zone.zona) !== KPP_ZONE,
+            {visibleDailyRows.map((brigade) => {
+              const brigadeZones = filterDistributionZoneRows(
+                zoneRowsByBrigadeMap.get(brigade.supervisor_name) ?? [],
+                settings.zoneVisibility,
               )
               const brigadeZoneTotalSec = brigadeZones.reduce((sum, row) => sum + row.sec, 0)
               const brigadeIdle = idleByBrigade.get(brigade.supervisor_name)
@@ -819,6 +913,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <strong>{brigade.supervisor_name}</strong>
                   </div>
 
+                  {showBlock4Location ? (
                   <div className="zone-panel zone-panel--location">
                     <div className="panel-head">
                       <div>
@@ -848,7 +943,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <p className="kpp-empty">Нет данных по зонам за выбранный день.</p>
                     )}
                   </div>
+                  ) : null}
 
+                  {showBlock4Idle ? (
                   <div
                     className={`zone-panel zone-panel--idle${(brigadeIdle?.totalEpisodes ?? 0) > 0 ? ' kpp-panel-alert' : ''}`}
                   >
@@ -856,7 +953,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <div>
                         <p className="panel-kicker">Простои</p>
                         <h3>Длительные простои</h3>
-                        <p className="panel-description">Эпизоды бездействия от 10 минут с привязкой к зоне.</p>
+                        <p className="panel-description">Эпизоды бездействия {longIdleBlockNote} с привязкой к зоне.</p>
                       </div>
                       {brigadeIdle && brigadeIdle.totalEpisodes > 0 ? (
                         <div className="zone-summary">
@@ -887,14 +984,17 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <p className="kpp-empty">Данные о длительных простоях за этот день не загружены или простоев нет.</p>
                     )}
                   </div>
+                  ) : null}
                 </div>
               )
             })}
           </div>
         ) : null}
       </CollapsibleBlock>
+      ) : null}
 
       {/* БЛОК 5 — ОБЪЁМЫ */}
+      {showBlock5 ? (
       <CollapsibleBlock
         id="block-volumes"
         kicker="Блок 5 · Объёмы"
@@ -932,12 +1032,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           <div className="empty-state">Выберите дату.</div>
         )}
       </CollapsibleBlock>
+      ) : null}
 
       {/* БЛОК 6 — ДЕТАЛИЗАЦИЯ */}
+      {showBlock6 ? (
       <CollapsibleBlock
         kicker="Блок 6 · Детализация"
         title="Расшифровка по сотрудникам"
-        description="Полная таблица смен за выбранный день: работа, слабая активность, длительный простой, всего, активность и КПП."
+        description="Полная таблица смен за выбранный день: профессия, работа, слабая активность, длительный простой, всего, активность и КПП."
         defaultOpen={false}
       >
         <div className="filter-row">
@@ -955,17 +1057,36 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             <span>Выбранный день</span>
             <strong>{detailDate ? formatFullDate(detailDate) : '—'}</strong>
           </div>
+          <label className="filter-field filter-field-search">
+            <span>Поиск</span>
+            <input
+              type="search"
+              value={detailSearch}
+              onChange={(event) => setDetailSearch(event.target.value)}
+              placeholder="ФИО, табельный, бригада, профессия"
+              autoComplete="off"
+            />
+          </label>
         </div>
 
         {detailLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
         {detailError ? <div className="empty-state error-state">Ошибка: {detailError}</div> : null}
 
-        {!detailLoading && !detailError && detailShiftRows.length > 0 ? (
+        {!detailLoading && !detailError && detailShiftRows.length > 0 && sortedShiftRows.length === 0 ? (
+          <div className="empty-state">По запросу «{detailSearch.trim()}» ничего не найдено.</div>
+        ) : null}
+
+        {!detailLoading && !detailError && sortedShiftRows.length > 0 ? (
           <article className="panel panel-wide">
             <div className="panel-head">
               <div>
                 <p className="panel-kicker">Смены</p>
                 <h2>Сортируемая таблица за день</h2>
+                {detailSearch.trim() ? (
+                  <p className="metric-note">
+                    Показано {sortedShiftRows.length} из {detailShiftRows.length}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="table-wrap">
@@ -973,6 +1094,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <thead>
                   <tr>
                     <th><button type="button" className="sort-button" onClick={() => toggleSort('full_name', 'asc')}>{sortLabel(uiText.table.worker, 'full_name')}</button></th>
+                    <th><button type="button" className="sort-button" onClick={() => toggleSort('profession', 'asc')}>{sortLabel(uiText.table.profession, 'profession')}</button></th>
                     <th><button type="button" className="sort-button" onClick={() => toggleSort('supervisor_name', 'asc')}>{sortLabel(uiText.table.supervisor, 'supervisor_name')}</button></th>
                     <th><button type="button" className="sort-button" onClick={() => toggleSort('work_sec_total')}>{sortLabel(uiText.table.work, 'work_sec_total')}</button></th>
                     <th><button type="button" className="sort-button" onClick={() => toggleSort('weak_activity_sec_total')}>Слабая активность</button></th>
@@ -991,6 +1113,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                           <span>#{row.employee_number}</span>
                         </div>
                       </td>
+                      <td>{row.profession?.trim() || '—'}</td>
                       <td>{row.supervisor_name ?? NO_SUPERVISOR}</td>
                       <td>{formatSeconds(row.work_sec_total)}</td>
                       <td>{formatSeconds(row.weak_activity_sec_total)}</td>
@@ -1010,6 +1133,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           <div className="empty-state">Нет смен за выбранный день.</div>
         ) : null}
       </CollapsibleBlock>
+      ) : null}
     </>
   )
 }

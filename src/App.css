@@ -125,6 +125,11 @@
   margin-top: 28px;
 }
 
+.filter-field-search {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
 .filter-field {
   min-width: 190px;
   display: grid;
@@ -146,6 +151,8 @@
 }
 
 .filter-field select,
+.filter-field input[type='search'],
+.filter-field input[type='text'],
 .settings-password-field select,
 .settings-password-field input[type='time'] {
   width: 100%;
@@ -914,6 +921,269 @@
   display: grid;
   gap: 18px;
 }
+
+.metric-settings-page .editor-panel-head {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.metric-settings-page .editor-actions {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.metric-settings-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: nowrap;
+}
+
+.metric-settings-block-head > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.metric-settings-block-note {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 640px;
+}
+
+.metric-settings-block-toggle {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.metric-settings-subblocks {
+  margin-bottom: 16px;
+}
+
+.metric-settings-subblocks .metric-settings-label {
+  margin-bottom: 10px;
+}
+
+.metric-settings-zones-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.metric-settings-zone-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.metric-settings-zone-toggle input {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.metric-settings-brigades-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.metric-settings-brigades-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.metric-settings-brigade-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.metric-settings-brigade-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.metric-settings-block-section {
+  margin-top: 28px;
+}
+
+.metric-settings-block-title {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-h);
+}
+
+.metric-settings-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.metric-settings-card {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.metric-settings-card-head h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-h);
+}
+
+.metric-settings-desc {
+  margin: 10px 0 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.metric-settings-block {
+  margin-top: 14px;
+}
+
+.metric-settings-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.metric-settings-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.metric-settings-formula {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-muted, #f4f7fb);
+  color: var(--text-h);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.metric-settings-note {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.metric-settings-config {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.metric-settings-config-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.metric-settings-field {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.metric-settings-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msk-time-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.msk-time-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.msk-time-input-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-password-field .msk-time-input {
+  width: 100%;
+}
+
+.metric-settings-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.metric-settings-unit,
+.metric-settings-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-status {
+  margin: 0 0 16px;
+  color: var(--text);
+}
+
+.settings-status-error {
+  color: var(--alert);
+}
+
 
 .settings-send-grid {
   display: grid;

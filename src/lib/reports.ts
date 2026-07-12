@@ -1,6 +1,15 @@
 import { supabase } from './supabase'
 import { parseVolumeM3 } from './volumes'
-import { zoneName, isHiddenZone } from './zones'
+import { zoneName } from './zones'
+import { filterDistributionZoneRows, isZoneVisibleInDistribution } from './zoneVisibility'
+import {
+  DEFAULT_METRIC_SETTINGS,
+  getBrigadeShiftTargets,
+  getComparisonBrigades,
+  getMetricSettings,
+} from './metricSettings'
+
+export { getComparisonBrigades, TRACKED_BRIGADES } from './metricSettings'
 
 export type BrigadeDailyRow = {
   report_date: string
@@ -73,6 +82,7 @@ export type ShiftMetricRow = {
   ww_shift_id: number
   employee_number: string
   full_name: string
+  profession: string | null
   supervisor_name: string | null
   schedule_name: string | null
   on_watch_duration_seconds: number | null
@@ -98,12 +108,17 @@ export type KppEmployee = {
   kpp_time: string
 }
 
-const KPP_LUNCH_START_MIN = 13 * 60
-const KPP_LUNCH_END_MIN = 14 * 60
+import { MSK_TIME_ZONE } from './mskTime'
+
+export function isKppMetricMinuteAt(eventAt: string) {
+  const { kppLunchStartMin, kppLunchEndMin } = getMetricSettings()
+  const minutes = getMoscowMinutesFromIso(eventAt)
+  return !(minutes >= kppLunchStartMin && minutes < kppLunchEndMin)
+}
 
 function getMoscowMinutesFromIso(iso: string) {
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Moscow',
+    timeZone: MSK_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -113,14 +128,9 @@ function getMoscowMinutesFromIso(iso: string) {
   return hour * 60 + minute
 }
 
-export function isKppMetricMinuteAt(eventAt: string) {
-  const minutes = getMoscowMinutesFromIso(eventAt)
-  return !(minutes >= KPP_LUNCH_START_MIN && minutes < KPP_LUNCH_END_MIN)
-}
-
 export function formatMoscowTime(iso: string) {
   return new Intl.DateTimeFormat('ru-RU', {
-    timeZone: 'Europe/Moscow',
+    timeZone: MSK_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -195,29 +205,9 @@ export function formatMinutes(totalSeconds: number) {
   return `${minutes} мин`
 }
 
-const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
-  Джалол: 20,
-  'ЛИ СОН ХАК': 23,
-}
-
-export const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
-
-export function brigadeNamesMatch(left: string, right: string) {
-  return (
-    left.localeCompare(right, 'ru', { sensitivity: 'accent' }) === 0 || left.toUpperCase() === right.toUpperCase()
-  )
-}
-
-export function addDaysIso(dateIso: string, days: number) {
-  const date = new Date(`${dateIso}T00:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-
-export const SHIFT_TARGET_WORKERS = 50
-
 function getBrigadeShiftTarget(supervisorName: string) {
-  const match = Object.entries(BRIGADE_SHIFT_TARGETS).find(([name]) => brigadeNamesMatch(name, supervisorName))
+  const targets = getBrigadeShiftTargets()
+  const match = Object.entries(targets).find(([name]) => brigadeNamesMatch(name, supervisorName))
   return match?.[1] ?? null
 }
 
@@ -227,8 +217,54 @@ export function formatBrigadeShiftHeadcount(supervisorName: string, actual: numb
 }
 
 export function formatShiftHeadcount(actual: number) {
-  return `${actual} / ${SHIFT_TARGET_WORKERS}`
+  return `${actual} / ${getMetricSettings().shiftTargetTotal}`
 }
+
+export function brigadeNamesMatch(left: string, right: string) {
+  return (
+    left.localeCompare(right, 'ru', { sensitivity: 'accent' }) === 0 || left.toUpperCase() === right.toUpperCase()
+  )
+}
+
+export function filterComparisonBrigades<T extends { supervisor_name: string }>(
+  rows: T[],
+  brigades = getComparisonBrigades(),
+): T[] {
+  if (brigades.length === 0) return rows
+  return rows.filter((row) => brigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)))
+}
+
+export function filterComparisonBrigadeLabels<T extends { label: string }>(
+  rows: T[],
+  brigades = getComparisonBrigades(),
+): T[] {
+  if (brigades.length === 0) return rows
+  return rows.filter((row) => brigades.some((name) => brigadeNamesMatch(row.label, name)))
+}
+
+export async function loadAvailableSupervisorNames() {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('brigade_daily_metrics')
+    .select('supervisor_name')
+
+  if (error) throw error
+
+  const names = [...new Set((data ?? []).map((row) => String(row.supervisor_name ?? '').trim()))]
+    .filter((name) => name.length > 0 && isAnalyticsSupervisor(name))
+    .sort((left, right) => left.localeCompare(right, 'ru'))
+
+  return names
+}
+
+export function addDaysIso(dateIso: string, days: number) {
+  const date = new Date(`${dateIso}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+/** @deprecated use getMetricSettings().shiftTargetTotal */
+export const SHIFT_TARGET_WORKERS = DEFAULT_METRIC_SETTINGS.shiftTargetTotal
 
 export function formatPercent(value: number) {
   return `${Math.round(value)}%`
@@ -338,8 +374,11 @@ export type BrigadeDynamicsPoint = {
   activity_pct: number | null
 }
 
-export const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = 14
 export const ACTIVITY_DYNAMICS_CHART_MAX = 60
+
+function getActivitySparklineDays() {
+  return getMetricSettings().activitySparklineDays
+}
 
 export function listDatesInclusive(startIso: string, endIso: string) {
   const dates: string[] = []
@@ -355,7 +394,7 @@ function buildBrigadeSparkline(
   brigadeDaily: Array<{ report_date: string; activity_pct: number }>,
   referenceDate: string,
 ) {
-  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
+  const sparklineStart = addDaysIso(referenceDate, -(getActivitySparklineDays() - 1))
   const byDate = new Map(brigadeDaily.map((row) => [row.report_date, row.activity_pct]))
   return listDatesInclusive(sparklineStart, referenceDate).map((report_date) => ({
     report_date,
@@ -372,7 +411,7 @@ export type BrigadeDynamicsCard = {
 }
 
 export async function loadBrigadeActivityDynamics(referenceDate: string) {
-  const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
+  const sparklineStart = addDaysIso(referenceDate, -(getActivitySparklineDays() - 1))
   const yesterday = addDaysIso(referenceDate, -1)
 
   const { data: dailyData, error: dailyError } = await supabase
@@ -391,7 +430,7 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
     activity_pct: number
   }>
 
-  return TRACKED_BRIGADES.map((brigadeName) => {
+  return getComparisonBrigades().map((brigadeName) => {
     const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const todayRow = brigadeDaily.find((row) => row.report_date === referenceDate) ?? null
     const yesterdayRow = brigadeDaily.find((row) => row.report_date === yesterday) ?? null
@@ -409,8 +448,11 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
   })
 }
 
-export const VOLUME_DYNAMICS_SPARKLINE_DAYS = 14
 export const VOLUME_DYNAMICS_CHART_MAX = 200
+
+function getVolumeSparklineDays() {
+  return getMetricSettings().volumeSparklineDays
+}
 
 export type BrigadeVolumeDynamicsPoint = {
   report_date: string
@@ -443,7 +485,7 @@ function buildBrigadeVolumeSparkline(
   brigadeName: string,
   referenceDate: string,
 ) {
-  const sparklineStart = addDaysIso(referenceDate, -(VOLUME_DYNAMICS_SPARKLINE_DAYS - 1))
+  const sparklineStart = addDaysIso(referenceDate, -(getVolumeSparklineDays() - 1))
   return listDatesInclusive(sparklineStart, referenceDate).map((report_date) => ({
     report_date,
     volume_m3: sumBrigadeVolumeM3(brigadeRows, brigadeName, report_date),
@@ -451,7 +493,7 @@ function buildBrigadeVolumeSparkline(
 }
 
 export async function loadBrigadeVolumeDynamics(referenceDate: string) {
-  const sparklineStart = addDaysIso(referenceDate, -(VOLUME_DYNAMICS_SPARKLINE_DAYS - 1))
+  const sparklineStart = addDaysIso(referenceDate, -(getVolumeSparklineDays() - 1))
   const yesterday = addDaysIso(referenceDate, -1)
 
   const { data, error } = await supabase
@@ -470,7 +512,7 @@ export async function loadBrigadeVolumeDynamics(referenceDate: string) {
     value_text: row.value_text,
   }))
 
-  return TRACKED_BRIGADES.map((brigadeName) => {
+  return getComparisonBrigades().map((brigadeName) => {
     const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
     const todayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, referenceDate)
     const yesterdayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, yesterday)
@@ -492,18 +534,26 @@ export type AttentionEmployee = {
   activity_pct: number
 }
 
-export const LOW_ACTIVITY_THRESHOLD = 30
-
-/** Порог длительного простоя в отчёте 10 (минуты). */
-export const LONG_IDLE_THRESHOLD_MIN = 10
-
 export function getShiftProductivity(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
   return ratio(row.work_sec_total, row.total_sec_total)
 }
 
+/** @deprecated use getMetricSettings().lowActivityPct */
+export const LOW_ACTIVITY_THRESHOLD = DEFAULT_METRIC_SETTINGS.lowActivityPct
+
+/** @deprecated use getMetricSettings().longIdleMin */
+export const LONG_IDLE_THRESHOLD_MIN = DEFAULT_METRIC_SETTINGS.longIdleMin
+
+/** @deprecated use getMetricSettings().activitySparklineDays */
+export const ACTIVITY_DYNAMICS_SPARKLINE_DAYS = DEFAULT_METRIC_SETTINGS.activitySparklineDays
+
+/** @deprecated use getMetricSettings().volumeSparklineDays */
+export const VOLUME_DYNAMICS_SPARKLINE_DAYS = DEFAULT_METRIC_SETTINGS.volumeSparklineDays
+
 export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
+  const threshold = getMetricSettings().lowActivityPct
   return rows
-    .filter((row) => row.total_sec_total > 0 && getShiftProductivity(row) < LOW_ACTIVITY_THRESHOLD)
+    .filter((row) => row.total_sec_total > 0 && getShiftProductivity(row) < threshold)
     .map(
       (row) =>
         ({
@@ -580,8 +630,9 @@ export function topActivityWeekly(rows: ShiftMetricRow[], limit = 3) {
 }
 
 export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+  const threshold = getMetricSettings().lowActivityPct
   return aggregateShiftActivity(rows)
-    .filter((row) => row.total_sec > 0 && row.activity_pct < LOW_ACTIVITY_THRESHOLD)
+    .filter((row) => row.total_sec > 0 && row.activity_pct < threshold)
     .map(({ total_sec: _total, ...row }) => row)
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
@@ -681,10 +732,11 @@ export function ratio(part: number, total: number) {
 /** Зона проведения работ (ПВ) — zona=1, см. docs/zones-reference.md */
 export const PV_ZONE = 1
 
-/** Доля ПВ от суммы времени по зонам без zone=0 (как в блоке «Местоположение»). */
+/** Доля ПВ от суммы времени по видимым зонам. */
 export function pvPercentFromZoneRows(zoneRows: ZoneDailyRow[]) {
-  const totalSec = zoneRows.reduce((sum, row) => sum + row.sec, 0)
-  const pvSec = zoneRows.find((row) => row.zona === PV_ZONE)?.sec ?? 0
+  const visibleRows = filterDistributionZoneRows(zoneRows, getMetricSettings().zoneVisibility)
+  const totalSec = visibleRows.reduce((sum, row) => sum + row.sec, 0)
+  const pvSec = visibleRows.find((row) => row.zona === PV_ZONE)?.sec ?? 0
   return ratio(pvSec, totalSec)
 }
 
@@ -709,7 +761,7 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
       if (!isAnalyticsSupervisor(supervisorName)) continue
     }
     const zona = Number(row.zona)
-    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
+    if (!Number.isFinite(zona) || !isZoneVisibleInDistribution(zona, getMetricSettings().zoneVisibility)) continue
     const current = totals.get(zona) ?? { sec: 0, shifts: 0 }
     current.sec += Number(row.sec)
     current.shifts = Math.max(current.shifts, Number(row.shifts))
@@ -735,7 +787,7 @@ export async function loadZoneDailyByBrigade(reportDate: string) {
     const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
     if (!isAnalyticsSupervisor(supervisorName)) continue
     const zona = Number(row.zona)
-    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
+    if (!Number.isFinite(zona) || !isZoneVisibleInDistribution(zona, getMetricSettings().zoneVisibility)) continue
     const supervisorTotals = supervisors.get(supervisorName) ?? new Map<number, { sec: number; shifts: number }>()
     const current = supervisorTotals.get(zona) ?? { sec: 0, shifts: 0 }
     current.sec += Number(row.sec)
@@ -760,7 +812,6 @@ export async function loadIdleEpisodes(reportDate: string) {
     .from('idle_episodes_daily')
     .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
     .eq('report_date', reportDate)
-    .gte('duration_min', LONG_IDLE_THRESHOLD_MIN)
     .order('duration_min', { ascending: false })
 
   if (error) throw error
@@ -779,7 +830,7 @@ export async function loadIdleEpisodes(reportDate: string) {
   }
 
   return (data ?? [])
-    .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
+    .filter((row) => isZoneVisibleInDistribution(row.ble_tag_zone as number | null, getMetricSettings().zoneVisibility))
     .map((row) => ({
       ww_shift_id: Number(row.ww_shift_id),
       session_id: row.session_id === null ? null : Number(row.session_id),

@@ -7,9 +7,17 @@ type AttentionPanelProps = {
   onToggle: () => void
   emptyMessage: string
   periodLabel: string
+  lowActivityPct: number
 }
 
-export function AttentionPanel({ employees, open, onToggle, emptyMessage, periodLabel }: AttentionPanelProps) {
+export function AttentionPanel({
+  employees,
+  open,
+  onToggle,
+  emptyMessage,
+  periodLabel,
+  lowActivityPct,
+}: AttentionPanelProps) {
   return (
     <div className={`kpp-panel${employees.length > 0 ? ' kpp-panel-alert' : ''}${open ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
       <div className="kpp-panel-head">
@@ -20,7 +28,9 @@ export function AttentionPanel({ employees, open, onToggle, emptyMessage, period
           <span className="kpp-panel-titles">
             <span className="panel-kicker">Требуют внимания</span>
             <span className="kpp-panel-title">
-              {employees.length > 0 ? `Активность ниже 30% ${periodLabel}` : `Низкой активности ${periodLabel} нет`}
+              {employees.length > 0
+                ? `Активность ниже ${lowActivityPct}% ${periodLabel}`
+                : `Низкой активности ${periodLabel} нет`}
             </span>
           </span>
         </button>

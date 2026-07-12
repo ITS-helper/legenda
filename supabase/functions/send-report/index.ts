@@ -13,7 +13,8 @@ import {
   formatEpisodeCount,
   formatPercent,
   isAlertZone,
-  isHiddenZone,
+  isZoneVisibleInDistribution,
+  normalizeZoneVisibility,
   ratio,
   visibleReportZoneRows,
   zoneName,
@@ -36,6 +37,44 @@ type Recipient = {
 
 type ReportBuildOptions = {
   brigadeFilter?: string
+}
+
+type BlockVisibility = {
+  block1: boolean
+  block2: boolean
+  block3: boolean
+  block4: boolean
+  block5: boolean
+  block6: boolean
+}
+
+const DEFAULT_BLOCK_VISIBILITY: BlockVisibility = {
+  block1: true,
+  block2: true,
+  block3: true,
+  block4: true,
+  block5: true,
+  block6: true,
+}
+
+async function loadZoneVisibility(supabase: ReturnType<typeof getAdminClient>) {
+  const { data, error } = await supabase!.rpc('get_metric_settings')
+  if (error || !data || typeof data !== 'object') return normalizeZoneVisibility(null)
+  return normalizeZoneVisibility((data as Record<string, unknown>).zone_visibility)
+}
+
+async function loadBlockVisibility(supabase: ReturnType<typeof getAdminClient>): Promise<BlockVisibility> {
+  const { data, error } = await supabase!.rpc('get_metric_settings')
+  if (error || !data || typeof data !== 'object') return DEFAULT_BLOCK_VISIBILITY
+  const row = data as Record<string, unknown>
+  return {
+    block1: row.block_1_enabled !== false,
+    block2: row.block_2_enabled !== false,
+    block3: row.block_3_enabled !== false,
+    block4: row.block_4_enabled !== false,
+    block5: row.block_5_enabled !== false,
+    block6: row.block_6_enabled !== false,
+  }
 }
 
 type BrigadeDailyRow = {
@@ -325,6 +364,7 @@ async function loadZoneRowsByBrigade(
   supabase: ReturnType<typeof getAdminClient>,
   dateStart: string,
   dateEnd: string,
+  zoneVisibility: Record<number, boolean>,
 ) {
   const { data, error } = await supabase!
     .from('zone_daily_metrics')
@@ -338,7 +378,7 @@ async function loadZoneRowsByBrigade(
     const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
     if (!isAnalyticsSupervisor(supervisorName)) continue
     const zona = Number(row.zona)
-    if (!Number.isFinite(zona) || isHiddenZone(zona)) continue
+    if (!Number.isFinite(zona) || !isZoneVisibleInDistribution(zona, zoneVisibility)) continue
     const byZone = totals.get(supervisorName) ?? new Map<number, number>()
     byZone.set(zona, (byZone.get(zona) ?? 0) + Number(row.sec))
     totals.set(supervisorName, byZone)
@@ -365,6 +405,7 @@ async function loadIdleEpisodes(
   supabase: ReturnType<typeof getAdminClient>,
   dateStart: string,
   dateEnd: string,
+  zoneVisibility: Record<number, boolean>,
 ): Promise<IdleEpisodeRow[]> {
   const { data: shiftData, error: shiftError } = await supabase!
     .from('shift_daily_metrics')
@@ -386,7 +427,7 @@ async function loadIdleEpisodes(
   if (error) throw error
 
   return (data ?? [])
-    .filter((row) => !isHiddenZone(row.ble_tag_zone as number | null))
+    .filter((row) => isZoneVisibleInDistribution(row.ble_tag_zone as number | null, zoneVisibility))
     .map((row) => ({
       ww_shift_id: Number(row.ww_shift_id),
       duration_min: Number(row.duration_min),
@@ -777,7 +818,17 @@ const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   'ЛИ СОН ХАК': 23,
 }
 
-const TRACKED_BRIGADES = Object.keys(BRIGADE_SHIFT_TARGETS)
+const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК']
+
+async function loadComparisonBrigades(supabase: ReturnType<typeof getAdminClient>): Promise<string[]> {
+  const { data, error } = await supabase!.rpc('get_metric_settings')
+  if (error || !data || typeof data !== 'object') return DEFAULT_COMPARISON_BRIGADES
+  const row = data as Record<string, unknown>
+  const brigades = row.comparison_brigades
+  if (!Array.isArray(brigades)) return DEFAULT_COMPARISON_BRIGADES
+  const names = brigades.map((item) => String(item).trim()).filter(Boolean)
+  return names.length > 0 ? names : DEFAULT_COMPARISON_BRIGADES
+}
 
 function brigadeNamesMatch(left: string, right: string) {
   return (
@@ -1525,7 +1576,11 @@ function volumeDynamicsBlock(
   </table>`
 }
 
-async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminClient>, referenceDate: string) {
+async function loadBrigadeActivityDynamics(
+  supabase: ReturnType<typeof getAdminClient>,
+  referenceDate: string,
+  comparisonBrigades: string[],
+) {
   const sparklineStart = addDaysIso(referenceDate, -(ACTIVITY_DYNAMICS_SPARKLINE_DAYS - 1))
   const priorDate = addDaysIso(referenceDate, -1)
 
@@ -1543,7 +1598,7 @@ async function loadBrigadeActivityDynamics(supabase: ReturnType<typeof getAdminC
     activity_pct: number
   }>
 
-  return TRACKED_BRIGADES.map((brigadeName) => {
+  return comparisonBrigades.map((brigadeName) => {
     const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const todayRow = brigadeDaily.find((row) => row.report_date === referenceDate) ?? null
     const priorRow = brigadeDaily.find((row) => row.report_date === priorDate) ?? null
@@ -1564,6 +1619,7 @@ async function loadBrigadeWeeklyActivityDynamics(
   supabase: ReturnType<typeof getAdminClient>,
   weekStart: string,
   weekEnd: string,
+  comparisonBrigades: string[],
 ) {
   const priorWeekStart = addDaysIso(weekStart, -7)
   const weekDates = listDatesInclusive(weekStart, weekEnd)
@@ -1594,7 +1650,7 @@ async function loadBrigadeWeeklyActivityDynamics(
     activity_pct: number
   }>
 
-  return TRACKED_BRIGADES.map((brigadeName) => {
+  return comparisonBrigades.map((brigadeName) => {
     const brigadeWeekly = weeklyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const weekRow = brigadeWeekly.find((row) => row.week_start === weekStart) ?? null
@@ -1655,6 +1711,7 @@ async function loadBrigadeWeeklyVolumeDynamics(
   supabase: ReturnType<typeof getAdminClient>,
   weekStart: string,
   weekEnd: string,
+  comparisonBrigades: string[],
 ) {
   const priorWeekStart = addDaysIso(weekStart, -7)
   const priorWeekEnd = addDaysIso(weekStart, -1)
@@ -1675,7 +1732,7 @@ async function loadBrigadeWeeklyVolumeDynamics(
     value_text: row.value_text,
   }))
 
-  return TRACKED_BRIGADES.map((brigadeName) => {
+  return comparisonBrigades.map((brigadeName) => {
     const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
     const weekM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, weekDates)
     const priorM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, priorWeekDates)
@@ -1801,28 +1858,42 @@ async function buildDailyHtml(
   options: ReportBuildOptions = {},
 ) {
   const { brigadeFilter } = options
+  const blocks = await loadBlockVisibility(supabase)
+  const comparisonBrigades = await loadComparisonBrigades(supabase)
+  const zoneVisibility = await loadZoneVisibility(supabase)
   const { data: brigadesData, error: brigadesError } = await supabase!
     .from('brigade_daily_metrics')
     .select('*')
     .eq('report_date', date)
     .order('supervisor_name', { ascending: true })
   if (brigadesError) throw brigadesError
-  const brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter)
+  let brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter)
+  if (!brigadeFilter) {
+    brigades = brigades.filter((row) =>
+      comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
+    )
+  }
 
-  const dynamics = filterRowsByBrigade(await loadBrigadeActivityDynamics(supabase, date), brigadeFilter)
-  const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, date, date)
-  const idleEpisodes = filterRowsByBrigade(await loadIdleEpisodes(supabase, date, date), brigadeFilter)
+  const dynamics = blocks.block3
+    ? filterRowsByBrigade(await loadBrigadeActivityDynamics(supabase, date, comparisonBrigades), brigadeFilter)
+    : []
+  const zoneRowsByBrigade = blocks.block4 ? await loadZoneRowsByBrigade(supabase, date, date, zoneVisibility) : new Map<string, ZoneRow[]>()
+  const idleEpisodes = blocks.block4
+    ? filterRowsByBrigade(await loadIdleEpisodes(supabase, date, date, zoneVisibility), brigadeFilter)
+    : []
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
-  const zoneSections = brigades.map((brigade) => {
-    const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
-    return {
-      supervisor_name: brigade.supervisor_name,
-      zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? []),
-      idleByZone,
-      idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
-      idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
-    }
-  })
+  const zoneSections = blocks.block4
+    ? brigades.map((brigade) => {
+        const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
+        return {
+          supervisor_name: brigade.supervisor_name,
+          zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? [], zoneVisibility),
+          idleByZone,
+          idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
+          idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
+        }
+      })
+    : []
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -1844,10 +1915,10 @@ async function buildDailyHtml(
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам'
 
-  const html = `${EMAIL_WRAP_START}
-    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_DAILY, `Смена за ${ru(date)}${brigadeLabel}`)}
-    <tr><td style="padding:8px 24px 24px;">
-      ${metricsGrid([
+  const htmlParts: string[] = []
+  if (blocks.block1) {
+    htmlParts.push(
+      metricsGrid([
         [
           metricCell(
             'Вышло на смену',
@@ -1860,22 +1931,37 @@ async function buildDailyHtml(
           metricCell('Длительный простой', pct(longIdle), false, '20%'),
           metricCell('Ходьба между зонами', pct(go), false, '20%'),
         ],
-      ])}
-      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
-      ${brigadeCardsEmailDaily(brigades)}
-      ${activityDynamicsBlock(dynamics, {
+      ]),
+      `<h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>`,
+      brigadeCardsEmailDaily(brigades),
+    )
+  }
+  if (blocks.block3) {
+    htmlParts.push(
+      activityDynamicsBlock(dynamics, {
         periodLabel: 'За день',
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
         sparklineTitle: `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
-      })}
-      ${zonesBlockEmail({
+      }),
+    )
+  }
+  if (blocks.block4) {
+    htmlParts.push(
+      zonesBlockEmail({
         periodLabel: 'за день',
         locationDescription: 'Где сотрудники проводили время за день.',
         idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
         idleSummaryLabel: 'Всего за день',
         sections: zoneSections,
-      })}
+      }),
+    )
+  }
+
+  const html = `${EMAIL_WRAP_START}
+    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_DAILY, `Смена за ${ru(date)}${brigadeLabel}`)}
+    <tr><td style="padding:8px 24px 24px;">
+      ${htmlParts.join('')}
     </td></tr>
   ${EMAIL_WRAP_END}`
 
@@ -1884,7 +1970,11 @@ async function buildDailyHtml(
     reportEssence: REPORT_ESSENCE_DAILY,
     reportObjectName: REPORT_OBJECT_NAME,
     subtitle: `Смена за ${ru(date)}${brigadeLabel}`,
-    metrics: [
+    singlePage: true,
+  }
+
+  if (blocks.block1) {
+    pdfPayload.metrics = [
       {
         label: 'Вышло на смену',
         value: brigadeFilter ? formatBrigadeShiftHeadcount(brigadeFilter, totals.workers) : formatShiftHeadcount(totals.workers),
@@ -1893,28 +1983,34 @@ async function buildDailyHtml(
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
-    ],
-    metricsColumns: 5,
-    brigadeSectionTitle,
-    brigadeCards: brigades.map(brigadeCardPayloadDaily),
-    dynamicsTitle: 'Динамика показателей активности',
-    dynamicsPeriodLabel: 'За день',
-    dynamicsCards: dynamicsPdfCards(
+    ]
+    pdfPayload.metricsColumns = 5
+    pdfPayload.brigadeSectionTitle = brigadeSectionTitle
+    pdfPayload.brigadeCards = brigades.map(brigadeCardPayloadDaily)
+  }
+  if (blocks.block3) {
+    pdfPayload.dynamicsTitle = 'Динамика показателей активности'
+    pdfPayload.dynamicsPeriodLabel = 'За день'
+    pdfPayload.dynamicsCards = dynamicsPdfCards(
       dynamics,
       {
         comparePrefix: 'к вчера',
         emptyCompare: 'нет данных за вчера',
       },
       `${ACTIVITY_DYNAMICS_SPARKLINE_DAYS} дней до ${ru(date)}`,
-    ),
-    singlePage: true,
-    ...zonesPdfPayload({
-      periodLabel: 'за день',
-      locationDescription: 'Где сотрудники проводили время за день.',
-      idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
-      idleSummaryLabel: 'Всего за день',
-      sections: zoneSections,
-    }),
+    )
+  }
+  if (blocks.block4) {
+    Object.assign(
+      pdfPayload,
+      zonesPdfPayload({
+        periodLabel: 'за день',
+        locationDescription: 'Где сотрудники проводили время за день.',
+        idleDescription: 'Эпизоды бездействия от 10 минут с привязкой к зоне.',
+        idleSummaryLabel: 'Всего за день',
+        sections: zoneSections,
+      }),
+    )
   }
 
   const subject = `Ежедневный отчёт Legenda — ${ruShort(date)}${brigadeLabel}`
@@ -1934,33 +2030,54 @@ async function buildWeeklyHtml(
   options: ReportBuildOptions = {},
 ) {
   const { brigadeFilter } = options
+  const blocks = await loadBlockVisibility(supabase)
+  const comparisonBrigades = await loadComparisonBrigades(supabase)
+  const zoneVisibility = await loadZoneVisibility(supabase)
   const { data, error } = await supabase!
     .from('brigade_weekly_metrics')
     .select('*')
     .eq('week_start', weekStart)
     .order('supervisor_name', { ascending: true })
   if (error) throw error
-  const brigades = filterRowsByBrigade((data ?? []) as BrigadeWeeklyRow[], brigadeFilter)
+  let brigades = filterRowsByBrigade((data ?? []) as BrigadeWeeklyRow[], brigadeFilter)
+  if (!brigadeFilter) {
+    brigades = brigades.filter((row) =>
+      comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
+    )
+  }
   const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
 
-  const dynamics = filterRowsByBrigade(await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd), brigadeFilter)
-  const volumeDynamics = filterRowsByBrigade(
-    await loadBrigadeWeeklyVolumeDynamics(supabase, weekStart, weekEnd),
-    brigadeFilter,
-  )
-  const zoneRowsByBrigade = await loadZoneRowsByBrigade(supabase, weekStart, weekEnd)
-  const idleEpisodes = filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEnd), brigadeFilter)
+  const dynamics = blocks.block3
+    ? filterRowsByBrigade(
+        await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd, comparisonBrigades),
+        brigadeFilter,
+      )
+    : []
+  const volumeDynamics = blocks.block5
+    ? filterRowsByBrigade(
+        await loadBrigadeWeeklyVolumeDynamics(supabase, weekStart, weekEnd, comparisonBrigades),
+        brigadeFilter,
+      )
+    : []
+  const zoneRowsByBrigade = blocks.block4
+    ? await loadZoneRowsByBrigade(supabase, weekStart, weekEnd, zoneVisibility)
+    : new Map<string, ZoneRow[]>()
+  const idleEpisodes = blocks.block4
+    ? filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEnd, zoneVisibility), brigadeFilter)
+    : []
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
-  const zoneSections = brigades.map((brigade) => {
-    const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
-    return {
-      supervisor_name: brigade.supervisor_name,
-      zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? []),
-      idleByZone,
-      idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
-      idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
-    }
-  })
+  const zoneSections = blocks.block4
+    ? brigades.map((brigade) => {
+        const idleByZone = idleByZoneByBrigade.get(brigade.supervisor_name) ?? []
+        return {
+          supervisor_name: brigade.supervisor_name,
+          zoneRows: visibleReportZoneRows(zoneRowsByBrigade.get(brigade.supervisor_name) ?? [], zoneVisibility),
+          idleByZone,
+          idleEpisodeCount: idleByZone.reduce((sum, row) => sum + row.count, 0),
+          idleTotalMin: idleByZone.reduce((sum, row) => sum + row.minutes, 0),
+        }
+      })
+    : []
 
   const totals = brigades.reduce(
     (acc, row) => {
@@ -1977,49 +2094,71 @@ async function buildWeeklyHtml(
   const weakActivity = totals.total_sec > 0 ? (totals.weak_activity_sec / totals.total_sec) * 100 : 0
   const longIdle = totals.total_sec > 0 ? (totals.long_idle_sec / totals.total_sec) * 100 : 0
   const go = totals.total_sec > 0 ? (totals.go_sec / totals.total_sec) * 100 : 0
-  const totalWeekVolume = sumWeekVolumeM3(volumeDynamics)
+  const totalWeekVolume = blocks.block5 ? sumWeekVolumeM3(volumeDynamics) : null
 
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам за неделю'
 
-  const html = `${EMAIL_WRAP_START}
-    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_WEEKLY, `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`)}
-    <tr><td style="padding:8px 24px 24px;">
-      ${metricsGrid([
-        [
-          metricCell('Активность', pct(activity), false, '20%'),
-          metricCell('Слабая активность', pct(weakActivity), false, '20%'),
-          metricCell('Длительный простой', pct(longIdle), false, '20%'),
-          metricCell('Ходьба между зонами', pct(go), false, '20%'),
-          metricCell(
-            'Выполненный объём',
-            totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
-            false,
-            '20%',
-          ),
-        ],
-      ])}
-      <h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>
-      ${brigadeCardsEmailWeekly(brigades, volumeDynamics)}
-      ${activityDynamicsBlock(dynamics, {
+  const htmlParts: string[] = []
+  if (blocks.block2) {
+    const metricCells = [
+      metricCell('Активность', pct(activity), false, blocks.block5 ? '20%' : '25%'),
+      metricCell('Слабая активность', pct(weakActivity), false, blocks.block5 ? '20%' : '25%'),
+      metricCell('Длительный простой', pct(longIdle), false, blocks.block5 ? '20%' : '25%'),
+      metricCell('Ходьба между зонами', pct(go), false, blocks.block5 ? '20%' : '25%'),
+    ]
+    if (blocks.block5) {
+      metricCells.push(
+        metricCell(
+          'Выполненный объём',
+          totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
+          false,
+          '20%',
+        ),
+      )
+    }
+    htmlParts.push(
+      metricsGrid([metricCells]),
+      `<h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>`,
+      brigadeCardsEmailWeekly(brigades, blocks.block5 ? volumeDynamics : []),
+    )
+  }
+  if (blocks.block3) {
+    htmlParts.push(
+      activityDynamicsBlock(dynamics, {
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
-      })}
-      ${volumeDynamicsBlock(volumeDynamics, {
+      }),
+    )
+  }
+  if (blocks.block5) {
+    htmlParts.push(
+      volumeDynamicsBlock(volumeDynamics, {
         periodLabel: 'За неделю',
         comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
-      })}
-      ${zonesBlockEmail({
+      }),
+    )
+  }
+  if (blocks.block4) {
+    htmlParts.push(
+      zonesBlockEmail({
         periodLabel: 'за неделю',
         locationDescription: 'Где сотрудники проводили время за неделю.',
         idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
         idleSummaryLabel: 'Всего за неделю',
         sections: zoneSections,
-      })}
+      }),
+    )
+  }
+
+  const html = `${EMAIL_WRAP_START}
+    ${emailBrandingHeader(COLORS, REPORT_ESSENCE_WEEKLY, `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`)}
+    <tr><td style="padding:8px 24px 24px;">
+      ${htmlParts.join('')}
     </td></tr>
   ${EMAIL_WRAP_END}`
 
@@ -2028,49 +2167,67 @@ async function buildWeeklyHtml(
     reportEssence: REPORT_ESSENCE_WEEKLY,
     reportObjectName: REPORT_OBJECT_NAME,
     subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`,
-    metrics: [
+    singlePage: true,
+  }
+
+  if (blocks.block2) {
+    const metrics = [
       { label: 'Активность', value: pct(activity) },
       { label: 'Слабая активность', value: pct(weakActivity) },
       { label: 'Длительный простой', value: pct(longIdle) },
       { label: 'Ходьба между зонами', value: pct(go) },
-      {
+    ]
+    if (blocks.block5) {
+      metrics.push({
         label: 'Выполненный объём',
         value: totalWeekVolume != null ? formatVolumeM3(totalWeekVolume) : '—',
-      },
-    ],
-    metricsColumns: 5,
-    brigadeSectionTitle,
-    brigadeCards: brigades.map((row) =>
-      brigadeCardPayloadWeekly(row, weekVolumeM3ForBrigade(volumeDynamics, row.supervisor_name)),
-    ),
-    dynamicsTitle: 'Динамика показателей активности',
-    dynamicsPeriodLabel: 'За неделю',
-    dynamicsCards: dynamicsPdfCards(
+      })
+    }
+    pdfPayload.metrics = metrics
+    pdfPayload.metricsColumns = metrics.length
+    pdfPayload.brigadeSectionTitle = brigadeSectionTitle
+    pdfPayload.brigadeCards = brigades.map((row) =>
+      brigadeCardPayloadWeekly(
+        row,
+        blocks.block5 ? weekVolumeM3ForBrigade(volumeDynamics, row.supervisor_name) : null,
+      ),
+    )
+  }
+  if (blocks.block3) {
+    pdfPayload.dynamicsTitle = 'Динамика показателей активности'
+    pdfPayload.dynamicsPeriodLabel = 'За неделю'
+    pdfPayload.dynamicsCards = dynamicsPdfCards(
       dynamics,
       {
         comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
       },
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
-    ),
-    volumeDynamicsTitle: 'Динамика выполненных объёмов',
-    volumeDynamicsPeriodLabel: 'За неделю',
-    volumeDynamicsCards: volumeDynamicsPdfCards(
+    )
+  }
+  if (blocks.block5) {
+    pdfPayload.volumeDynamicsTitle = 'Динамика выполненных объёмов'
+    pdfPayload.volumeDynamicsPeriodLabel = 'За неделю'
+    pdfPayload.volumeDynamicsCards = volumeDynamicsPdfCards(
       volumeDynamics,
       {
         comparePrefix: 'к прошлой недели',
         emptyCompare: 'нет данных за прошлую неделю',
       },
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
-    ),
-    ...zonesPdfPayload({
-      periodLabel: 'за неделю',
-      locationDescription: 'Где сотрудники проводили время за неделю.',
-      idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
-      idleSummaryLabel: 'Всего за неделю',
-      sections: zoneSections,
-    }),
-    singlePage: true,
+    )
+  }
+  if (blocks.block4) {
+    Object.assign(
+      pdfPayload,
+      zonesPdfPayload({
+        periodLabel: 'за неделю',
+        locationDescription: 'Где сотрудники проводили время за неделю.',
+        idleDescription: 'Эпизоды бездействия от 10 минут за неделю с привязкой к зоне.',
+        idleSummaryLabel: 'Всего за неделю',
+        sections: zoneSections,
+      }),
+    )
   }
 
   const subject = `Еженедельный отчёт Legenda — неделя ${ruShort(weekStart)}${brigadeLabel}`
@@ -2174,7 +2331,13 @@ function buildSendBatches(recipients: Recipient[], type: ReportType): SendBatch[
     batches.push({ audience: 'managers', brigadeName: null, recipients: managerEmails })
   }
 
-  for (const brigadeName of TRACKED_BRIGADES) {
+  for (const brigadeName of [
+    ...new Set(
+      active
+        .filter((row) => row.audience === 'foremen' && row.brigade_name)
+        .map((row) => row.brigade_name as string),
+    ),
+  ]) {
     const emails = active
       .filter(
         (row) =>

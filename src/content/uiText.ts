@@ -73,6 +73,7 @@ export const defaultUiText = {
     productivity: 'Продуктивность',
     sleep: 'Сон',
     activity: 'Активность',
+    profession: 'Профессия',
     pv: 'ПВ',
     outsidePv: 'Вне ПВ / чел.',
     absence: 'НЕявка / чел.',
