@@ -225,7 +225,10 @@ function getMoscowMinutesNow() {
 
 // Окно, в котором принимается автоматическая рассылка относительно настроенного времени (МСК).
 const SCHEDULE_WINDOW_BEFORE_MIN = 15
-const SCHEDULE_WINDOW_AFTER_MIN = 120
+// +4 ч после настроенного времени — GitHub Actions cron часто опаздывает на 2–3 часа.
+const SCHEDULE_WINDOW_AFTER_MIN = 240
+// post-import: крайний срок отправки после успешного импорта (МСК, минуты от полуночи).
+const POST_IMPORT_DEADLINE_MIN = 14 * 60
 
 type ReportScheduleRow = {
   daily_enabled: boolean
@@ -2438,13 +2441,14 @@ Deno.serve(async (request) => {
     }
 
     const triggeredBy = request.headers.get('x-triggered-by') ?? 'manual'
+    const nowMin = getMoscowMinutesNow()
+
     if (triggeredBy === 'schedule') {
       const schedule = await loadReportSchedule(supabase)
       const scheduledMin =
         type === 'daily'
           ? (schedule?.daily_hour ?? 8) * 60 + (schedule?.daily_minute ?? 0)
           : (schedule?.weekly_hour ?? 8) * 60 + (schedule?.weekly_minute ?? 0)
-      const nowMin = getMoscowMinutesNow()
 
       if (nowMin < scheduledMin - SCHEDULE_WINDOW_BEFORE_MIN || nowMin > scheduledMin + SCHEDULE_WINDOW_AFTER_MIN) {
         return jsonResponse({
@@ -2455,10 +2459,22 @@ Deno.serve(async (request) => {
           periodKey: type === 'daily' ? date : weekStart,
         })
       }
+    } else if (triggeredBy === 'post-import') {
+      if (nowMin > POST_IMPORT_DEADLINE_MIN) {
+        return jsonResponse({
+          ok: true,
+          skipped: true,
+          reason: 'after_post_import_deadline',
+          reportType: type,
+          periodKey: type === 'daily' ? date : weekStart,
+        })
+      }
     }
 
     const manualAudience =
-      triggeredBy !== 'schedule' && (payload?.audience === 'managers' || payload?.audience === 'foremen')
+      triggeredBy !== 'schedule' &&
+      triggeredBy !== 'post-import' &&
+      (payload?.audience === 'managers' || payload?.audience === 'foremen')
         ? payload.audience
         : undefined
     const manualBrigadeName = manualAudience === 'foremen' ? payload?.brigadeName?.trim() || undefined : undefined
@@ -2484,7 +2500,7 @@ Deno.serve(async (request) => {
     let periodKey = type === 'daily' ? date : weekStart
 
     for (const batch of batches) {
-      if (triggeredBy === 'schedule') {
+      if (triggeredBy === 'schedule' || triggeredBy === 'post-import') {
         const alreadySent = await wasReportAlreadySent(supabase, type, periodKey, batch.audience, batch.brigadeName)
         if (alreadySent) continue
       }

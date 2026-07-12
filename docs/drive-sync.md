@@ -40,7 +40,7 @@
 
 **Резерв:** GitHub Actions [`.github/workflows/sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) — `04:50 UTC` (07:50 МСК).
 
-Рассылка — `pg_cron` + [send-reports.yml](../.github/workflows/send-reports.yml): после импорта, дедлайн **08:30** МСК.
+Рассылка — `pg_cron` + [send-reports.yml](../.github/workflows/send-reports.yml): после импорта (`post-import`), дедлайн **12:00 МСК** (schedule) / **14:00** (post-import).
 
 По умолчанию импортируется **вчерашний день по Europe/Moscow**.
 

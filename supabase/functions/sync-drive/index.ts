@@ -71,6 +71,43 @@ function getAdminClient() {
   })
 }
 
+async function triggerPostImportSend(reportDate: string) {
+  const url = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('VITE_SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('VITE_SUPABASE_PUBLISHABLE_KEY')
+  const cronSecret = Deno.env.get('REPORT_CRON_SECRET')
+  const adminPassword = Deno.env.get('SETTINGS_ADMIN_PASSWORD')
+
+  if (!url) return
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (cronSecret) {
+    headers['x-report-cron-secret'] = cronSecret
+  } else if (anonKey && adminPassword) {
+    headers.apikey = anonKey
+    headers.Authorization = `Bearer ${anonKey}`
+    headers['x-settings-password'] = adminPassword
+  } else {
+    return
+  }
+
+  headers['x-triggered-by'] = 'post-import'
+
+  try {
+    const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/send-report`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ type: 'daily', date: reportDate }),
+    })
+    const body = await response.text()
+    console.log('post-import send-report:', response.status, body)
+  } catch (error) {
+    console.error('post-import send-report failed:', getErrorMessage(error))
+  }
+}
+
 function getYesterdayMoscowDate() {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Moscow',
@@ -175,6 +212,10 @@ Deno.serve(async (request) => {
 
     if (!result.ok) {
       return jsonResponse(result, 400)
+    }
+
+    if (!result.skipped) {
+      await triggerPostImportSend(reportDate)
     }
 
     return jsonResponse(result)

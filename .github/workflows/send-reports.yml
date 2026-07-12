@@ -41,14 +41,15 @@ jobs:
 
           send_report() {
             local report_type="$1"
-            echo "=== send-report: $report_type ==="
+            local trigger_source="$2"
+            echo "=== send-report: $report_type (trigger: $trigger_source) ==="
             RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
               "$SUPABASE_URL/functions/v1/send-report" \
               -H "Content-Type: application/json" \
               -H "apikey: $ANON_KEY" \
               -H "Authorization: Bearer $ANON_KEY" \
               -H "x-settings-password: $ADMIN_PASSWORD" \
-              -H "x-triggered-by: schedule" \
+              -H "x-triggered-by: $trigger_source" \
               -d "{\"type\":\"$report_type\"}")
             BODY=$(echo "$RESPONSE" | head -n -1)
             CODE=$(echo "$RESPONSE" | tail -n 1)
@@ -80,9 +81,14 @@ jobs:
             exit 1
           fi
 
+          TRIGGER_SOURCE="schedule"
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            TRIGGER_SOURCE="post-import"
+          fi
+
           if [ "$SEND_DAILY" = "true" ]; then
-            send_report daily
+            send_report daily "$TRIGGER_SOURCE"
           fi
           if [ "$SEND_WEEKLY" = "true" ]; then
-            send_report weekly
+            send_report weekly "$TRIGGER_SOURCE"
           fi
