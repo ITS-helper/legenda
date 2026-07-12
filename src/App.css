@@ -1471,8 +1471,8 @@
   display: flex;
   align-items: stretch;
   gap: 8px;
-  flex: 1 1 120px;
-  min-width: 110px;
+  flex: 1 1 150px;
+  min-width: 140px;
 }
 
 .metric-flow-step {
@@ -1483,16 +1483,59 @@
   border-radius: 12px;
   background: var(--surface);
   display: grid;
-  gap: 4px;
+  gap: 5px;
+}
+
+.metric-flow-kind {
+  display: inline-flex;
+  align-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.metric-flow-step-excel .metric-flow-kind {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+
+.metric-flow-step-sql .metric-flow-kind {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
+.metric-flow-step-calc .metric-flow-kind {
+  background: #faf5ff;
+  color: #7e22ce;
+  border: 1px solid #d8b4fe;
+}
+
+.metric-flow-step-ui .metric-flow-kind {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #6ee7b7;
 }
 
 .metric-flow-step strong {
   font-size: 12px;
   color: var(--text-h);
   line-height: 1.3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.metric-flow-step span {
+.metric-flow-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.metric-flow-step span:not(.metric-flow-kind) {
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.35;

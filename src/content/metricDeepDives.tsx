@@ -1,6 +1,21 @@
 import type { ComponentType, ReactNode } from 'react'
 
-type FlowStep = { title: string; subtitle: string; accent?: boolean }
+type FlowStepKind = 'excel' | 'sql' | 'calc' | 'ui'
+
+type FlowStep = {
+  kind: FlowStepKind
+  kindLabel?: string
+  title: string
+  detail: string
+  accent?: boolean
+}
+
+const FLOW_KIND_LABELS: Record<FlowStepKind, string> = {
+  excel: 'Excel',
+  sql: 'SQL',
+  calc: 'Расчёт',
+  ui: 'Интерфейс',
+}
 
 function DeepDiveShell({ children }: { children: ReactNode }) {
   return <div className="metric-deep-dive">{children}</div>
@@ -19,15 +34,18 @@ function DeepDiveFlow({ steps, label }: { steps: FlowStep[]; label: string }) {
   return (
     <div className="metric-flow" aria-label={label}>
       {steps.map((step, index) => (
-        <div key={step.title} className="metric-flow-group">
+        <div key={`${step.title}-${index}`} className="metric-flow-group">
           {index > 0 ? (
             <div className="metric-flow-arrow" aria-hidden="true">
               →
             </div>
           ) : null}
-          <div className={`metric-flow-step${step.accent ? ' metric-flow-step-accent' : ''}`}>
+          <div
+            className={`metric-flow-step metric-flow-step-${step.kind}${step.accent ? ' metric-flow-step-accent' : ''}`}
+          >
+            <span className="metric-flow-kind">{step.kindLabel ?? FLOW_KIND_LABELS[step.kind]}</span>
             <strong>{step.title}</strong>
-            <span>{step.subtitle}</span>
+            <span className="metric-flow-detail">{step.detail}</span>
           </div>
         </div>
       ))}
@@ -57,11 +75,33 @@ export function ActivityMetricDeepDive() {
         <DeepDiveFlow
           label="Схема цепочки активности"
           steps={[
-            { title: 'Отчёт 11 · AA_BLE', subtitle: 'work_sec по минутам' },
-            { title: 'ble_minute_facts', subtitle: '1 строка = 1 минута' },
-            { title: 'shift_daily_metrics', subtitle: 'сумма за смену' },
-            { title: 'brigade_daily_metrics', subtitle: 'activity_pct' },
-            { title: 'Дашборд / рассылка', subtitle: 'карточки бригад', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 11',
+              title: 'AA_BLE',
+              detail: 'столбец work_sec · 1 строка = 1 минута',
+            },
+            {
+              kind: 'sql',
+              title: 'ble_minute_facts',
+              detail: 'столбец work_sec · 1 строка = 1 мин × сотрудник',
+            },
+            {
+              kind: 'sql',
+              title: 'shift_daily_metrics',
+              detail: 'столбец work_sec_total · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'brigade_daily_metrics',
+              detail: 'столбец activity_pct · 1 строка = бригада × день',
+              accent: true,
+            },
+            {
+              kind: 'ui',
+              title: 'Карточка бригады',
+              detail: 'показ activity_pct на дашборде и в рассылке',
+            },
           ]}
         />
       </DeepDiveSection>
@@ -146,10 +186,29 @@ export function WeakActivityMetricDeepDive() {
         <DeepDiveFlow
           label="Схема слабой активности"
           steps={[
-            { title: 'AA_BLE', subtitle: 'idle_sec по минутам' },
-            { title: 'idle_sec_total', subtitle: 'сумма за смену' },
-            { title: 'Отчёт 10', subtitle: 'длительные эпизоды' },
-            { title: 'weak_activity', subtitle: 'idle − long_idle', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 11',
+              title: 'AA_BLE',
+              detail: 'столбец idle_sec · 1 строка = 1 минута',
+            },
+            {
+              kind: 'sql',
+              title: 'shift_daily_metrics',
+              detail: 'столбец idle_sec_total · 1 строка = 1 смена',
+            },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 10',
+              title: 'long_idle_arh',
+              detail: 'поле duration_min · 1 строка = 1 эпизод простоя',
+            },
+            {
+              kind: 'calc',
+              title: 'weak_activity',
+              detail: 'формула: idle_sec_total − long_idle_sec_total',
+              accent: true,
+            },
           ]}
         />
       </DeepDiveSection>
@@ -196,10 +255,28 @@ export function LongIdleMetricDeepDive() {
         <DeepDiveFlow
           label="Схема длительного простоя"
           steps={[
-            { title: 'Отчёт 10', subtitle: 'long_idle_arh' },
-            { title: 'idle_episodes', subtitle: 'эпизоды простоя' },
-            { title: 'shift_daily_metrics', subtitle: 'long_idle_sec_total' },
-            { title: 'brigade_daily_metrics', subtitle: 'long_idle_pct', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 10',
+              title: 'long_idle_arh',
+              detail: 'поле duration_min · 1 строка = 1 эпизод',
+            },
+            {
+              kind: 'sql',
+              title: 'idle_episodes',
+              detail: 'столбец duration_min · 1 строка = 1 эпизод',
+            },
+            {
+              kind: 'sql',
+              title: 'shift_daily_metrics',
+              detail: 'столбец long_idle_sec_total · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'brigade_daily_metrics',
+              detail: 'столбец long_idle_pct · 1 строка = бригада × день',
+              accent: true,
+            },
           ]}
         />
       </DeepDiveSection>
@@ -267,10 +344,28 @@ export function GoMetricDeepDive() {
         <DeepDiveFlow
           label="Схема ходьбы между зонами"
           steps={[
-            { title: 'AA_BLE', subtitle: 'go_sec по минутам' },
-            { title: 'ble_minute_facts', subtitle: '1 строка = 1 мин' },
-            { title: 'shift_daily_metrics', subtitle: 'go_sec_total' },
-            { title: 'brigade_daily_metrics', subtitle: 'go_pct', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 11',
+              title: 'AA_BLE',
+              detail: 'столбец go_sec · 1 строка = 1 минута',
+            },
+            {
+              kind: 'sql',
+              title: 'ble_minute_facts',
+              detail: 'столбец go_sec · 1 строка = 1 мин × сотрудник',
+            },
+            {
+              kind: 'sql',
+              title: 'shift_daily_metrics',
+              detail: 'столбец go_sec_total · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'brigade_daily_metrics',
+              detail: 'столбец go_pct · 1 строка = бригада × день',
+              accent: true,
+            },
           ]}
         />
       </DeepDiveSection>
@@ -315,10 +410,28 @@ export function PvMetricDeepDive() {
         <DeepDiveFlow
           label="Схема ПВ"
           steps={[
-            { title: 'AA_BLE', subtitle: 'zona + total_sec' },
-            { title: 'ble_minute_facts', subtitle: 'zona = 1 → ПВ' },
-            { title: 'shift_daily_metrics', subtitle: 'pv_sec_total' },
-            { title: 'zone_daily_metrics', subtitle: 'детализация по зонам', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 11',
+              title: 'AA_BLE',
+              detail: 'столбцы zona и total_sec · 1 строка = 1 минута',
+            },
+            {
+              kind: 'sql',
+              title: 'ble_minute_facts',
+              detail: 'столбец zona · отбор минут с zona = «1» (ПВ)',
+            },
+            {
+              kind: 'sql',
+              title: 'shift_daily_metrics',
+              detail: 'столбец pv_sec_total · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'zone_daily_metrics',
+              detail: 'секунды и доли по зонам · 1 строка = зона × смена',
+              accent: true,
+            },
           ]}
         />
       </DeepDiveSection>
@@ -362,9 +475,23 @@ export function ShiftDurationMetricDeepDive() {
         <DeepDiveFlow
           label="Схема длительности смены"
           steps={[
-            { title: 'faceID / LongIDLE', subtitle: '«Итого в часах»' },
-            { title: 'shifts', subtitle: 'on_watch_duration_seconds' },
-            { title: 'brigade_daily_metrics', subtitle: 'avg_shift_duration_sec', accent: true },
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 6 / LongIDLE',
+              title: 'faceID / LongIDLE',
+              detail: 'колонка «Итого в часах» · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'shifts',
+              detail: 'столбец on_watch_duration_seconds · 1 строка = 1 смена',
+            },
+            {
+              kind: 'sql',
+              title: 'brigade_daily_metrics',
+              detail: 'столбец avg_shift_duration_sec · 1 строка = бригада × день',
+              accent: true,
+            },
           ]}
         />
       </DeepDiveSection>
