@@ -581,6 +581,35 @@ function sumBrigadeVolumeM3(rows: VolumeEntryRow[], brigadeName: string, reportD
   return total > 0 ? total : null
 }
 
+function sumBrigadeVolumeForDates(rows: VolumeEntryRow[], brigadeName: string, dates: string[]) {
+  const total = dates.reduce((sum, date) => sum + (sumBrigadeVolumeM3(rows, brigadeName, date) ?? 0), 0)
+  return total > 0 ? total : null
+}
+
+export async function loadBrigadeWeeklyVolumeTotals(weekStart: string, weekEnd: string) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('volume_entries')
+    .select('report_date, label, value_text')
+    .gte('report_date', weekStart)
+    .lte('report_date', weekEnd)
+    .order('report_date', { ascending: true })
+
+  if (error) throw error
+
+  const rows = (data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+  const weekDates = listDatesInclusive(weekStart, weekEnd)
+
+  return getComparisonBrigades().map((brigadeName) => ({
+    supervisor_name: brigadeName,
+    week_m3: sumBrigadeVolumeForDates(rows, brigadeName, weekDates),
+  }))
+}
+
 function buildBrigadeVolumeSparkline(
   brigadeRows: VolumeEntryRow[],
   brigadeName: string,

@@ -30,6 +30,7 @@ import {
   loadBrigadeDaily,
   enrichBrigadeWeeklyWithShiftStats,
   loadBrigadeWeekly,
+  loadBrigadeWeeklyVolumeTotals,
   loadIdleEpisodes,
   loadKppEmployees,
   loadShiftRows,
@@ -54,6 +55,7 @@ import {
 } from '../lib/reports'
 import {
   formatVolumeCardSummary,
+  formatVolumeM3,
   loadVolumeDates,
   loadVolumeEntries,
   mergeDateLists,
@@ -199,6 +201,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [idleEpisodes, setIdleEpisodes] = useState<IdleEpisode[]>([])
   const [weeklyRows, setWeeklyRows] = useState<BrigadeWeeklyRow[]>([])
   const [weeklyShiftRows, setWeeklyShiftRows] = useState<ShiftMetricRow[]>([])
+  const [weeklyVolumeTotals, setWeeklyVolumeTotals] = useState<Array<{ supervisor_name: string; week_m3: number | null }>>([])
   const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
   const [volumeDynamicsCards, setVolumeDynamicsCards] = useState<BrigadeVolumeDynamicsCard[]>([])
   const [volumeEntries, setVolumeEntries] = useState<VolumeEntry[]>([])
@@ -329,8 +332,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setWeeklyLoading(true)
       setWeeklyError(null)
       try {
-        const brigades = await loadBrigadeWeekly(weekStart, weekEnd)
+        const [brigades, volumeTotals] = await Promise.all([
+          loadBrigadeWeekly(weekStart, weekEnd),
+          loadBrigadeWeeklyVolumeTotals(weekStart, weekEnd).catch(() => [] as Array<{ supervisor_name: string; week_m3: number | null }>),
+        ])
         if (cancelled) return
+        setWeeklyVolumeTotals(volumeTotals)
         setWeeklyRows(brigades)
 
         try {
@@ -444,6 +451,25 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       ),
     [volumeEntries, comparisonBrigades],
   )
+
+  const weeklyVolumeByBrigade = useMemo(() => {
+    const map = new Map<string, number | null>()
+    for (const row of weeklyVolumeTotals) {
+      map.set(row.supervisor_name, row.week_m3)
+    }
+    return map
+  }, [weeklyVolumeTotals])
+
+  function formatWeeklyBrigadeVolume(supervisorName: string) {
+    const direct = weeklyVolumeByBrigade.get(supervisorName)
+    if (direct != null) return formatVolumeM3(direct)
+    for (const [name, weekM3] of weeklyVolumeByBrigade.entries()) {
+      if (brigadeNamesMatch(name, supervisorName) && weekM3 != null) {
+        return formatVolumeM3(weekM3)
+      }
+    }
+    return '—'
+  }
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
@@ -859,9 +885,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   </div>
                 </div>
                 <div className="brigade-card-footer">
-                  <div className={`brigade-stat${brigade.kpp_shifts > 0 ? ' brigade-stat-alert' : ''}`}>
-                    <span>Замечены на КПП</span>
-                    <strong>{brigade.kpp_shifts > 0 ? brigade.kpp_shifts : 'нет'}</strong>
+                  <div className="brigade-stat brigade-stat-volume">
+                    <span>Выполненный объём за неделю</span>
+                    <strong>{formatWeeklyBrigadeVolume(brigade.supervisor_name)}</strong>
                   </div>
                   <div className="brigade-stat">
                     <span>Длительность смены</span>
