@@ -96,3 +96,17 @@ export function blockSettingsKey(id: DashboardBlockId): BooleanBlockSettingKey {
 export function getDashboardBlock(id: DashboardBlockId) {
   return DASHBOARD_BLOCKS.find((block) => block.id === id)
 }
+
+export function dashboardBlockDomId(id: DashboardBlockId) {
+  return `dashboard-block-${id}`
+}
+
+/** Подписи для липкой навигации на дашборде (короткие, только для полосы навигации). */
+export const DASHBOARD_BLOCK_NAV: { id: DashboardBlockId; label: string }[] = [
+  { id: 'block1', label: 'Ежедневная аналитика' },
+  { id: 'block2', label: 'Еженедельная аналитика' },
+  { id: 'block3', label: 'Динамика' },
+  { id: 'block4', label: 'Местоположение и простои' },
+  { id: 'block5', label: 'Объёмы' },
+  { id: 'block6', label: 'Сотрудники' },
+]

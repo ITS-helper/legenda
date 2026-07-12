@@ -9,6 +9,7 @@ import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
+import { DASHBOARD_BLOCK_NAV, dashboardBlockDomId, type DashboardBlockId } from '../content/dashboardBlocks'
 import { isBlockEnabled, isSubblockEnabled } from '../lib/metricSettings'
 import {
   aggregateLowActivityWeekly,
@@ -503,13 +504,40 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return `${label} ${sortDirection === 'asc' ? '↑' : '↓'}`
   }
 
+  const visibleDashboardNav = useMemo(() => {
+    const enabled: Record<DashboardBlockId, boolean> = {
+      block1: showBlock1,
+      block2: showBlock2,
+      block3: showBlock3,
+      block4: showBlock4,
+      block5: showBlock5,
+      block6: showBlock6,
+    }
+    return DASHBOARD_BLOCK_NAV.filter((item) => enabled[item.id])
+  }, [showBlock1, showBlock2, showBlock3, showBlock4, showBlock5, showBlock6])
+
+  function scrollToDashboardBlock(blockId: DashboardBlockId) {
+    window.requestAnimationFrame(() => {
+      document.getElementById(dashboardBlockDomId(blockId))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   return (
     <>
-      <section className="hero-block dashboard-hero reveal-block">
-        <p className="hero-copy hero-copy-compact">
-          Дашборд разбит на шесть блоков: ежедневная сводка, еженедельная аналитика, динамика активности и выполненных работ, местоположение и простои, объёмы и детализация по сотрудникам.
-        </p>
-      </section>
+      {visibleDashboardNav.length > 0 ? (
+        <nav className="dashboard-block-nav" aria-label="Навигация по блокам дашборда">
+          {visibleDashboardNav.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="dashboard-block-nav-link"
+              onClick={() => scrollToDashboardBlock(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
 
       {bootstrapError ? (
         <section className="empty-state error-state">Ошибка загрузки: {bootstrapError}</section>
@@ -518,6 +546,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 1 — ЕЖЕДНЕВНАЯ АНАЛИТИКА */}
       {showBlock1 ? (
       <CollapsibleBlock
+        id={dashboardBlockDomId('block1')}
         kicker="Блок 1 · Ежедневно"
         title="Ежедневная аналитика"
         description="Сколько человек вышло на смену по бригадам, активность, слабая активность, длительный простой и ходьба между зонами за выбранный день. Проценты считаются от общего времени трекинга."
@@ -583,7 +612,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <strong className="metric-value">{zoneRows.length > 0 ? formatPercent(dailyPv) : '—'}</strong>
               </article>
               {showBlock5 && showBlock1VolumeCard ? (
-              <a className="metric-card metric-card-link" href="#block-volumes">
+              <a className="metric-card metric-card-link" href={`#${dashboardBlockDomId('block5')}`}>
                 <span className="metric-label">Объёмы</span>
                 <p className="metric-note">
                   {visibleVolumeEntries.length > 0
@@ -724,6 +753,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 2 — ЕЖЕНЕДЕЛЬНАЯ АНАЛИТИКА */}
       {showBlock2 ? (
       <CollapsibleBlock
+        id={dashboardBlockDomId('block2')}
         kicker="Блок 2 · Еженедельно"
         title="Еженедельная аналитика"
         description="Сводка по бригадам за неделю (Пн–Вс): среднесписочная численность, активность, слабая активность, длительный простой и ходьба."
@@ -833,6 +863,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 3 — ДИНАМИКА АКТИВНОСТИ И ВЫПОЛНЕННЫХ РАБОТ */}
       {showBlock3 ? (
       <CollapsibleBlock
+        id={dashboardBlockDomId('block3')}
         kicker="Блок 3 · Динамика"
         title="Динамика активности и выполненных работ"
         description={`Сравнение активности и выполненных объёмов бригад ${comparisonBrigadesLabel}: выбранный день против вчера и тренд за ${settings.activitySparklineDays} дней.`}
@@ -876,6 +907,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 4 — МЕСТОПОЛОЖЕНИЕ И ПРОСТОИ */}
       {showBlock4 ? (
       <CollapsibleBlock
+        id={dashboardBlockDomId('block4')}
         kicker="Блок 4 · Зоны"
         title="Местоположение и простои"
         description={`Где сотрудники каждой бригады проводили время за день и эпизоды длительного бездействия ${longIdleBlockNote} с привязкой к зоне.`}
@@ -996,7 +1028,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 5 — ОБЪЁМЫ */}
       {showBlock5 ? (
       <CollapsibleBlock
-        id="block-volumes"
+        id={dashboardBlockDomId('block5')}
         kicker="Блок 5 · Объёмы"
         title="Объёмы"
         description="Показатели объёмов за выбранный день. Загрузка Excel ГПР обновляет все дни из файла; при выборе даты на дашборде показываются сохранённые объёмы."
@@ -1038,6 +1070,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       {/* БЛОК 6 — ДЕТАЛИЗАЦИЯ */}
       {showBlock6 ? (
       <CollapsibleBlock
+        id={dashboardBlockDomId('block6')}
         kicker="Блок 6 · Детализация"
         title="Расшифровка по сотрудникам"
         description="Полная таблица смен за выбранный день: профессия, работа, слабая активность, длительный простой, всего, активность и КПП."
