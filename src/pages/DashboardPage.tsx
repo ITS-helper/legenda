@@ -18,7 +18,6 @@ import {
   filterComparisonBrigades,
   filterLowActivityDaily,
   formatEpisodeCount,
-  formatFullDate,
   formatPercent,
   formatSeconds,
   formatShiftHeadcount,
@@ -272,7 +271,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }
 
   useEffect(() => {
-    if (!selectedWeek || availableWeeks.length === 0) return
+    if (!selectedWeek || availableWeeks.length === 0 || dailyLoading) return
 
     const weekMeta = availableWeeks.find((week) => week.week_start === selectedWeek)
     if (!weekMeta) return
@@ -285,13 +284,21 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setWeeklyLoading(true)
       setWeeklyError(null)
       try {
-        const [brigades, shifts] = await Promise.all([
-          loadBrigadeWeekly(weekStart, weekEnd),
-          loadShiftRowsForRange(weekStart, weekEnd),
-        ])
+        const brigades = await loadBrigadeWeekly(weekStart, weekEnd)
         if (cancelled) return
-        setWeeklyShiftRows(shifts)
-        setWeeklyRows(enrichBrigadeWeeklyWithShiftStats(brigades, shifts))
+        setWeeklyRows(brigades)
+
+        try {
+          const shifts = await loadShiftRowsForRange(weekStart, weekEnd)
+          if (cancelled) return
+          setWeeklyShiftRows(shifts)
+          setWeeklyRows(enrichBrigadeWeeklyWithShiftStats(brigades, shifts))
+        } catch (shiftError) {
+          if (!cancelled) {
+            setWeeklyShiftRows([])
+            setWeeklyError(getErrorMessage(shiftError))
+          }
+        }
       } catch (error) {
         if (!cancelled) setWeeklyError(getErrorMessage(error))
       } finally {
@@ -303,7 +310,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedWeek, availableWeeks])
+  }, [selectedWeek, availableWeeks, dailyLoading])
 
   useEffect(() => {
     if (!detailDate) return
@@ -446,8 +453,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return brigadeMap
   }, [idleEpisodes])
 
-  const selectedWeekMeta = availableWeeks.find((week) => week.week_start === selectedWeek) ?? null
-
   const filteredDetailRows = useMemo(() => {
     const query = detailSearch.trim().toLowerCase()
     if (!query) return detailShiftRows
@@ -566,10 +571,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             onChange={setSelectedDate}
             disabled={!availableDates.length}
           />
-          <div className="filter-caption">
-            <span>Выбранный день</span>
-            <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>
-          </div>
         </div>
 
         {dailyLoading ? <div className="empty-state">Загружаем дневную аналитику...</div> : null}
@@ -776,10 +777,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               ))}
             </select>
           </label>
-          <div className="filter-caption">
-            <span>Период</span>
-            <strong>{selectedWeekMeta ? formatWeekRange(selectedWeekMeta.week_start, selectedWeekMeta.week_end) : '—'}</strong>
-          </div>
         </div>
 
         {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
@@ -883,10 +880,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             onChange={setDynamicsDate}
             disabled={!availableDates.length}
           />
-          <div className="filter-caption">
-            <span>Выбранный день</span>
-            <strong>{dynamicsDate ? formatFullDate(dynamicsDate) : '—'}</strong>
-          </div>
         </div>
 
         {dynamicsLoading ? <div className="empty-state">Загружаем динамику активности...</div> : null}
@@ -927,10 +920,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             onChange={setSelectedDate}
             disabled={!availableDates.length}
           />
-          <div className="filter-caption">
-            <span>Выбранный день</span>
-            <strong>{selectedDate ? formatFullDate(selectedDate) : '—'}</strong>
-          </div>
         </div>
 
         {dailyLoading ? <div className="empty-state">Загружаем данные по зонам и простоям...</div> : null}
@@ -1055,10 +1044,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               ))}
             </datalist>
           </label>
-          <div className="filter-caption">
-            <span>Выбранный день</span>
-            <strong>{volumesDate ? formatFullDate(volumesDate) : '—'}</strong>
-          </div>
         </div>
 
         {volumesDate ? (
@@ -1094,10 +1079,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               ))}
             </select>
           </label>
-          <div className="filter-caption">
-            <span>Выбранный день</span>
-            <strong>{detailDate ? formatFullDate(detailDate) : '—'}</strong>
-          </div>
           <label className="filter-field filter-field-search">
             <span>Поиск</span>
             <input

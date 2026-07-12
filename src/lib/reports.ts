@@ -326,23 +326,21 @@ export async function loadAvailableDates() {
   return [...new Set((data ?? []).map((row) => row.report_date as string))]
 }
 
-export async function loadAvailableWeeks() {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('brigade_weekly_metrics')
-    .select('week_start, week_end')
-    .order('week_start', { ascending: false })
-
-  if (error) throw error
-
+export function buildAvailableWeeksFromDates(dates: string[]) {
   const seen = new Map<string, { week_start: string; week_end: string }>()
-  for (const row of data ?? []) {
-    const key = row.week_start as string
-    if (!seen.has(key)) {
-      seen.set(key, { week_start: key, week_end: row.week_end as string })
+  for (const reportDate of dates) {
+    const weekStart = getWeekStart(reportDate)
+    if (!seen.has(weekStart)) {
+      seen.set(weekStart, { week_start: weekStart, week_end: addDaysIso(weekStart, 6) })
     }
   }
-  return [...seen.values()]
+  return [...seen.values()].sort((left, right) => right.week_start.localeCompare(left.week_start))
+}
+
+/** Список недель из дат отчётов — без полного скана view brigade_weekly_metrics. */
+export async function loadAvailableWeeks() {
+  const dates = await loadAvailableDates()
+  return buildAvailableWeeksFromDates(dates)
 }
 
 export async function loadBrigadeDaily(reportDate: string) {
@@ -359,8 +357,13 @@ export async function loadBrigadeDaily(reportDate: string) {
 
 export async function loadBrigadeDailyForRange(weekStart: string, weekEnd: string) {
   const dates = listDatesInclusive(weekStart, weekEnd)
-  const dayRows = await Promise.all(dates.map((reportDate) => loadBrigadeDaily(reportDate)))
-  return dayRows.flat()
+  const rows: BrigadeDailyRow[] = []
+
+  for (const reportDate of dates) {
+    rows.push(...(await loadBrigadeDaily(reportDate)))
+  }
+
+  return rows
 }
 
 function roundPct(part: number, total: number) {
