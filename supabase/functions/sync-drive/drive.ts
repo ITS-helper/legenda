@@ -1,8 +1,8 @@
 import { google } from 'npm:googleapis@140.0.1'
 import { DRIVE_ARCHIVE_FOLDERS, REPORT_FILE_PATTERNS, type SourceType } from './parsers.ts'
 
-const REQUIRED_SOURCES: SourceType[] = ['faceid', 'aa_ble', 'long_idle']
-const OPTIONAL_SOURCES: SourceType[] = ['idle_episode']
+const REQUIRED_SOURCES: SourceType[] = ['aa_ble', 'long_idle']
+const OPTIONAL_SOURCES: SourceType[] = ['faceid', 'idle_episode']
 const ALL_SOURCES: SourceType[] = [...REQUIRED_SOURCES, ...OPTIONAL_SOURCES]
 
 export type DriveFile = {

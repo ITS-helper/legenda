@@ -134,6 +134,53 @@ function validateLongIdleRows(rows: any[]) {
   }
 }
 
+function buildFaceRowsFromLongIdle(rows: any[]) {
+  const byShift = new Map<number, any[]>()
+
+  for (const row of rows) {
+    if (!Number.isFinite(row.ww_shift_id)) continue
+    const group = byShift.get(row.ww_shift_id) ?? []
+    group.push(row)
+    byShift.set(row.ww_shift_id, group)
+  }
+
+  return [...byShift.entries()].map(([wwShiftId, shiftRows]) => {
+    const primary = shiftRows[0]
+    const techSessionIds = [
+      ...new Set(shiftRows.map((row) => row.tech_session_id).filter((id: number) => Number.isFinite(id))),
+    ]
+
+    return {
+      report_date: primary.report_date,
+      ww_shift_id: wwShiftId,
+      employee_number: primary.employee_number,
+      full_name: primary.full_name,
+      object_name: primary.object_name,
+      customer_tab_number: primary.customer_tab_number,
+      area_name: primary.area_name,
+      supervisor_name: primary.supervisor_name,
+      profession: primary.profession,
+      schedule_name: primary.schedule_name,
+      planned_start_at: primary.shift_begin_at,
+      planned_end_at: primary.shift_end_at,
+      watch_received_at: null,
+      watch_returned_at: null,
+      on_watch_duration_text: primary.on_watch_duration_text,
+      on_watch_duration_seconds: primary.real_total_seconds ?? primary.full_total_seconds ?? 0,
+      shift_over_18_hours: null,
+      late_seconds: 0,
+      early_return_seconds: 0,
+      tech_session_ids: techSessionIds,
+      calc_hash: null,
+    }
+  })
+}
+
+function resolveFaceRows(faceRows: any[], longIdleRows: any[]) {
+  if (faceRows.length > 0) return faceRows
+  return buildFaceRowsFromLongIdle(longIdleRows)
+}
+
 export async function importDailyBatch(
   supabase: SupabaseClient,
   options: {
@@ -162,11 +209,16 @@ export async function importDailyBatch(
     throw new Error('Нужна дата отчета в формате YYYY-MM-DD')
   }
   if (bleRows.length === 0) throw new Error('AA_BLE не содержит строк для импорта')
-  if (faceRows.length === 0) throw new Error('faceID не содержит строк для импорта')
   if (longIdleRows.length === 0) throw new Error('LongIDLE не содержит строк для импорта')
 
   validateBleRows(bleRows)
   validateLongIdleRows(longIdleRows)
+
+  const resolvedFaceRows = resolveFaceRows(faceRows, longIdleRows)
+  if (resolvedFaceRows.length === 0) {
+    throw new Error('Не удалось построить смены: нет faceID и LongIDLE пуст')
+  }
+  const faceidPending = faceRows.length === 0
 
   const { data: batchRow, error: batchError } = await supabase
     .from('import_batches')
@@ -175,7 +227,7 @@ export async function importDailyBatch(
         report_date: reportDate,
         source_day_key: sourceDayKey,
         status: 'importing',
-        notes: notes ?? 'Daily report import',
+        notes: notes ?? (faceidPending ? 'Daily report import (faceid pending)' : 'Daily report import'),
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'report_date,source_day_key' },
@@ -209,19 +261,19 @@ export async function importDailyBatch(
   await chunkedUpsert(
     supabase,
     'supervisors',
-    faceRows.filter((row) => row.supervisor_name).map((row) => ({ name: row.supervisor_name })),
+    resolvedFaceRows.filter((row) => row.supervisor_name).map((row) => ({ name: row.supervisor_name })),
     'name',
   )
   await chunkedUpsert(
     supabase,
     'schedules',
-    faceRows.filter((row) => row.schedule_name).map((row) => ({ name: row.schedule_name })),
+    resolvedFaceRows.filter((row) => row.schedule_name).map((row) => ({ name: row.schedule_name })),
     'name',
   )
   await chunkedUpsert(
     supabase,
     'employees',
-    faceRows.map((row) => ({
+    resolvedFaceRows.map((row) => ({
       employee_number: row.employee_number,
       full_name: row.full_name,
       object_name: row.object_name,
@@ -237,24 +289,24 @@ export async function importDailyBatch(
     supabase,
     'supervisors',
     'name',
-    faceRows.map((row) => row.supervisor_name),
+    resolvedFaceRows.map((row) => row.supervisor_name),
   )
   const scheduleMap = await fetchLookupMap(
     supabase,
     'schedules',
     'name',
-    faceRows.map((row) => row.schedule_name),
+    resolvedFaceRows.map((row) => row.schedule_name),
   )
   const employeeMap = await fetchLookupMap(
     supabase,
     'employees',
     'employee_number',
-    faceRows.map((row) => row.employee_number),
+    resolvedFaceRows.map((row) => row.employee_number),
   )
 
   await chunkedInsert(supabase, 'import_files', buildImportFileRecords(batchId, reportDate, files))
 
-  const shiftRows = faceRows
+  const shiftRows = resolvedFaceRows
     .map((row) => ({
       batch_id: batchId,
       report_date: row.report_date,
@@ -290,7 +342,7 @@ export async function importDailyBatch(
     if (error) throw error
   }
 
-  const sessionRows = faceRows
+  const sessionRows = resolvedFaceRows
     .flatMap((row) =>
       row.tech_session_ids.map((techSessionId: number) => ({
         shift_id: shiftMap.get(row.ww_shift_id),
@@ -368,7 +420,9 @@ export async function importDailyBatch(
   return {
     batchId,
     reportDate,
+    faceidPending,
     importedFaceRows: faceRows.length,
+    importedShiftRows: resolvedFaceRows.length,
     importedBleRows: bleRows.length,
     importedLongIdleRows: longIdleRows.length,
     importedIdleEpisodes: idleEpisodeRows.length,

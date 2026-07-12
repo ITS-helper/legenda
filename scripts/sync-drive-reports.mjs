@@ -29,8 +29,8 @@ const projectRoot = path.resolve(__dirname, '..')
 dotenv.config({ path: path.join(projectRoot, '.env.local') })
 dotenv.config({ path: path.join(projectRoot, '.env') })
 
-const REQUIRED_SOURCES = ['faceid', 'aa_ble', 'long_idle']
-const OPTIONAL_SOURCES = ['idle_episode']
+const REQUIRED_SOURCES = ['aa_ble', 'long_idle']
+const OPTIONAL_SOURCES = ['faceid', 'idle_episode']
 const ALL_SOURCES = [...REQUIRED_SOURCES, ...OPTIONAL_SOURCES]
 
 function getArg(flagName) {
@@ -311,11 +311,14 @@ async function main() {
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'legenda-drive-import-'))
   try {
-    const facePath = await downloadDriveFile(drive, reportFiles.faceid, tempDir)
+    let faceRows = []
+    if (reportFiles.faceid) {
+      const facePath = await downloadDriveFile(drive, reportFiles.faceid, tempDir)
+      faceRows = parseFaceRows(facePath)
+    }
     const blePath = await downloadDriveFile(drive, reportFiles.aa_ble, tempDir)
     const longIdlePath = await downloadDriveFile(drive, reportFiles.long_idle, tempDir)
 
-    const faceRows = parseFaceRows(facePath)
     const bleRows = parseBleRows(blePath)
     const longIdleRows = parseLongIdleRows(longIdlePath)
 

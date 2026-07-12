@@ -165,11 +165,15 @@ async function syncDriveReport(options: { reportDate: string; force: boolean }) 
     }
   }
 
-  const faceBytes = await downloadDriveFile(reportFiles.faceid!.id)
+  let faceRows: ReturnType<typeof parseFaceRowsFromBuffer> = []
+  if (reportFiles.faceid) {
+    const faceBytes = await downloadDriveFile(reportFiles.faceid.id)
+    faceRows = parseFaceRowsFromBuffer(faceBytes)
+  }
+
   const bleBytes = await downloadDriveFile(reportFiles.aa_ble!.id)
   const longIdleBytes = await downloadDriveFile(reportFiles.long_idle!.id)
 
-  const faceRows = parseFaceRowsFromBuffer(faceBytes)
   const bleRows = parseBleRowsFromBuffer(bleBytes)
   const longIdleRows = parseLongIdleRowsFromBuffer(longIdleBytes)
 
