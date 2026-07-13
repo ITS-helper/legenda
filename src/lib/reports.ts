@@ -865,19 +865,17 @@ export function getNotWornPct(row: Pick<ShiftMetricRow, 'not_worn_sec_total' | '
 export async function loadAvailableProfessions() {
   const { data, error } = await supabase
     .schema('analytics')
-    .from('employees')
+    .from('shift_daily_metrics')
     .select('profession')
     .not('profession', 'is', null)
 
   if (error) throw error
 
-  const names = new Set<string>()
-  for (const row of data ?? []) {
-    const profession = String(row.profession ?? '').trim()
-    if (profession) names.add(profession)
-  }
+  const names = [...new Set((data ?? []).map((row) => String(row.profession ?? '').trim()))]
+    .filter((name) => name.length > 0)
+    .sort((left, right) => left.localeCompare(right, 'ru'))
 
-  return [...names].sort((left, right) => left.localeCompare(right, 'ru'))
+  return names
 }
 
 export async function loadNotWornEmployees(reportDate: string) {

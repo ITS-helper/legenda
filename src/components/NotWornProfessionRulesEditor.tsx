@@ -61,17 +61,16 @@ export function NotWornProfessionRulesEditor({ professions, globalDefaults, rule
     onChange(next)
   }
 
-  if (professionList.length === 0) {
-    return <p className="metric-settings-note">Список профессий появится после первого импорта данных.</p>
-  }
-
   return (
     <div className="metric-settings-subblocks not-worn-profession-rules">
       <p className="metric-settings-label">Параметры по профессиям</p>
       <p className="metric-settings-block-note">
         Для каждой профессии можно переопределить пороги блока «Не носил». Пустые значения берутся из общих
-        настроек карточки метрики выше.
+        настроек карточки метрики ниже.
       </p>
+      {professionList.length === 0 ? (
+        <p className="metric-settings-note">Список профессий появится после первого импорта данных.</p>
+      ) : (
       <div className="not-worn-profession-rules-list">
         {professionList.map((profession) => {
           const hasOverride = hasNotWornProfessionOverride(rules, profession)
@@ -118,6 +117,7 @@ export function NotWornProfessionRulesEditor({ professions, globalDefaults, rule
           )
         })}
       </div>
+      )}
     </div>
   )
 }
