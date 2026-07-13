@@ -67,6 +67,7 @@ import {
 import { isAlertZone } from '../lib/zones'
 import { filterDistributionZoneRows } from '../lib/zoneVisibility'
 import { brigadeLayoutClass } from '../lib/brigadeLayout'
+import { resolveNotWornRule } from '../lib/notWornProfessionRules'
 
 type SortKey = 'full_name' | 'profession' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity'
 type SortDirection = 'asc' | 'desc'
@@ -309,7 +310,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, password, settings.notWornMinSec])
+  }, [selectedDate, password, settings.notWornMinSec, settings.notWornProfessionRules])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
@@ -1250,12 +1251,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               {notWornOpen ? (
                 visibleNotWornEmployees.length > 0 ? (
                   <div className="kpp-list">
-                    {visibleNotWornEmployees.map((employee) => (
-                      <div className="kpp-row" key={employee.ww_shift_id}>
+                    {visibleNotWornEmployees.map((employee) => {
+                      const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
+                      const isAlert = employee.not_worn_pct >= warnPct
+                      return (
+                      <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
                         <div className="kpp-main">
                           <strong>{employee.full_name}</strong>
                           <span>
-                            #{employee.employee_number} · {employee.supervisor_name}
+                            {employee.profession?.trim() || '—'} · #{employee.employee_number} · {employee.supervisor_name}
                           </span>
                         </div>
                         <div className="kpp-metrics">
@@ -1263,7 +1267,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                           <div className="kpp-time">{formatPercent(employee.not_worn_pct)}</div>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 ) : (
                   <p className="kpp-empty">Никто не превысил порог подозрительного простоя за этот день.</p>

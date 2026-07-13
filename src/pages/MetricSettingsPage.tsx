@@ -37,12 +37,13 @@ import {
   metricBlockDisplayTitle,
   metricMatchesSearch,
 } from '../lib/metricSettingsPageUi'
-import { brigadeNamesMatch, loadAvailableSupervisorNames } from '../lib/reports'
+import { brigadeNamesMatch, loadAvailableSupervisorNames, loadAvailableProfessions } from '../lib/reports'
 import {
   DEFAULT_ZONE_VISIBILITY,
   ZONE_IDS,
   zoneVisibilityLabel,
 } from '../lib/zoneVisibility'
+import { NotWornProfessionRulesEditor } from '../components/NotWornProfessionRulesEditor'
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message
@@ -149,6 +150,7 @@ export function MetricSettingsPage() {
   const { settings: published, refresh, setLocalSettings } = useMetricSettings()
   const [draft, setDraft] = useState<MetricSettings>(published)
   const [availableSupervisors, setAvailableSupervisors] = useState<string[]>([])
+  const [availableProfessions, setAvailableProfessions] = useState<string[]>([])
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -164,10 +166,19 @@ export function MetricSettingsPage() {
 
     async function loadSupervisors() {
       try {
-        const names = await loadAvailableSupervisorNames()
-        if (!cancelled) setAvailableSupervisors(names)
+        const [names, professions] = await Promise.all([
+          loadAvailableSupervisorNames(),
+          loadAvailableProfessions(),
+        ])
+        if (!cancelled) {
+          setAvailableSupervisors(names)
+          setAvailableProfessions(professions)
+        }
       } catch {
-        if (!cancelled) setAvailableSupervisors([])
+        if (!cancelled) {
+          setAvailableSupervisors([])
+          setAvailableProfessions([])
+        }
       }
     }
 
@@ -278,6 +289,10 @@ export function MetricSettingsPage() {
       if (enabledCount === 0) return current
       return { ...current, zoneVisibility: next }
     })
+  }
+
+  function updateNotWornProfessionRules(rules: MetricSettings['notWornProfessionRules']) {
+    setDraft((current) => ({ ...current, notWornProfessionRules: rules }))
   }
 
   function toggleSection(sectionId: string) {
@@ -542,6 +557,14 @@ export function MetricSettingsPage() {
                       ))}
                     </div>
                   </div>
+                ) : null}
+                {blockId === 'block7' && blockEnabled ? (
+                  <NotWornProfessionRulesEditor
+                    professions={availableProfessions}
+                    globalDefaults={draft}
+                    rules={draft.notWornProfessionRules}
+                    onChange={updateNotWornProfessionRules}
+                  />
                 ) : null}
                 <div className="metric-settings-grid">
                   {visibleMetrics.map((metric) => (

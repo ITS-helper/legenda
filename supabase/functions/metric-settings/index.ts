@@ -142,6 +142,26 @@ function validatePayload(body: Record<string, unknown>): string | null {
       }
     }
   }
+  if (body.not_worn_profession_rules !== undefined && body.not_worn_profession_rules !== null) {
+    if (typeof body.not_worn_profession_rules !== 'object' || Array.isArray(body.not_worn_profession_rules)) {
+      return 'not_worn_profession_rules: ожидается объект'
+    }
+    for (const [profession, rawRule] of Object.entries(body.not_worn_profession_rules as Record<string, unknown>)) {
+      if (!profession.trim()) return 'not_worn_profession_rules: пустое имя профессии'
+      if (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) {
+        return `not_worn_profession_rules.${profession}: ожидается объект`
+      }
+      for (const [field, value] of Object.entries(rawRule as Record<string, unknown>)) {
+        if (!['idle_sec_min', 'active_sec_max', 'shift_min_sec', 'warn_pct'].includes(field)) {
+          return `not_worn_profession_rules.${profession}.${field}: неизвестное поле`
+        }
+        const parsed = Number(value)
+        if (!Number.isInteger(parsed)) {
+          return `not_worn_profession_rules.${profession}.${field}: ожидается целое число`
+        }
+      }
+    }
+  }
   return null
 }
 

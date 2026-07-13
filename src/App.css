@@ -3059,6 +3059,42 @@
   background: var(--surface-2);
 }
 
+.kpp-row-alert {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-2));
+}
+
+.not-worn-profession-rules-list {
+  display: grid;
+  gap: 10px;
+}
+
+.not-worn-profession-rule {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  padding: 12px 14px;
+}
+
+.not-worn-profession-rule-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.not-worn-profession-rule-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.not-worn-profession-rule .metric-settings-config-grid {
+  margin-top: 12px;
+}
+
 .kpp-main {
   display: grid;
   gap: 4px;

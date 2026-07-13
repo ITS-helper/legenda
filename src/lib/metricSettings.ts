@@ -7,6 +7,11 @@ import {
   type SubblockId,
 } from '../content/dashboardSubblocks'
 import { DEFAULT_ZONE_VISIBILITY, normalizeZoneVisibility } from './zoneVisibility'
+import {
+  normalizeNotWornProfessionRules,
+  toNotWornProfessionRulesPayload,
+  type NotWornProfessionRules,
+} from './notWornProfessionRules'
 
 export type MetricSettings = {
   longIdleMin: number
@@ -23,6 +28,7 @@ export type MetricSettings = {
   notWornWarnPct: number
   notWornIdleSecMin: number
   notWornActiveSecMax: number
+  notWornProfessionRules: NotWornProfessionRules
   comparisonBrigades: string[]
   subblockVisibility: Record<SubblockId, boolean>
   zoneVisibility: Record<number, boolean>
@@ -46,7 +52,7 @@ export type BooleanBlockSettingKey =
 
 export type NumericMetricSettingKey = Exclude<
   keyof MetricSettings,
-  BooleanBlockSettingKey | 'comparisonBrigades' | 'subblockVisibility' | 'zoneVisibility'
+  BooleanBlockSettingKey | 'comparisonBrigades' | 'subblockVisibility' | 'zoneVisibility' | 'notWornProfessionRules'
 >
 
 type MetricSettingsRow = {
@@ -64,6 +70,7 @@ type MetricSettingsRow = {
   not_worn_warn_pct?: number
   not_worn_idle_sec_min?: number
   not_worn_active_sec_max?: number
+  not_worn_profession_rules?: Record<string, unknown>
   block_7_enabled?: boolean
   block_1_enabled?: boolean
   block_2_enabled?: boolean
@@ -93,6 +100,7 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   notWornWarnPct: 5,
   notWornIdleSecMin: 54,
   notWornActiveSecMax: 6,
+  notWornProfessionRules: {},
   comparisonBrigades: [...DEFAULT_COMPARISON_BRIGADES],
   subblockVisibility: { ...DEFAULT_SUBBLOCK_VISIBILITY },
   zoneVisibility: { ...DEFAULT_ZONE_VISIBILITY },
@@ -181,6 +189,7 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
     notWornWarnPct: row?.not_worn_warn_pct ?? DEFAULT_METRIC_SETTINGS.notWornWarnPct,
     notWornIdleSecMin: row?.not_worn_idle_sec_min ?? DEFAULT_METRIC_SETTINGS.notWornIdleSecMin,
     notWornActiveSecMax: row?.not_worn_active_sec_max ?? DEFAULT_METRIC_SETTINGS.notWornActiveSecMax,
+    notWornProfessionRules: normalizeNotWornProfessionRules(row?.not_worn_profession_rules),
     comparisonBrigades: normalizeComparisonBrigades(row?.comparison_brigades),
     subblockVisibility: normalizeSubblockVisibility(row?.subblock_visibility),
     zoneVisibility: normalizeZoneVisibility(row?.zone_visibility),
@@ -200,6 +209,7 @@ export function cloneMetricSettings(settings: MetricSettings): MetricSettings {
     comparisonBrigades: [...settings.comparisonBrigades],
     subblockVisibility: { ...settings.subblockVisibility },
     zoneVisibility: { ...settings.zoneVisibility },
+    notWornProfessionRules: { ...settings.notWornProfessionRules },
   }
 }
 
@@ -238,6 +248,7 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
     not_worn_warn_pct: settings.notWornWarnPct,
     not_worn_idle_sec_min: settings.notWornIdleSecMin,
     not_worn_active_sec_max: settings.notWornActiveSecMax,
+    not_worn_profession_rules: toNotWornProfessionRulesPayload(settings.notWornProfessionRules),
     comparison_brigades: settings.comparisonBrigades,
     subblock_visibility: settings.subblockVisibility,
     zone_visibility: zoneVisibilityPayload,

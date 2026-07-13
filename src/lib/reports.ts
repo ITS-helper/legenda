@@ -103,6 +103,7 @@ export type ShiftMetricRow = {
   kpp_sec_total: number
   not_worn_sec_total: number
   not_worn_eligible_sec_total: number
+  not_worn_shift_min_sec?: number
 }
 
 export type KppEmployee = {
@@ -118,6 +119,7 @@ export type NotWornEmployee = {
   ww_shift_id: number
   employee_number: string
   full_name: string
+  profession: string | null
   supervisor_name: string
   not_worn_sec: number
   not_worn_pct: number
@@ -860,31 +862,55 @@ export function getNotWornPct(row: Pick<ShiftMetricRow, 'not_worn_sec_total' | '
   return ratio(row.not_worn_sec_total, row.not_worn_eligible_sec_total)
 }
 
-export async function loadNotWornEmployees(reportDate: string, minSec = getMetricSettings().notWornMinSec) {
+export async function loadAvailableProfessions() {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('employees')
+    .select('profession')
+    .not('profession', 'is', null)
+
+  if (error) throw error
+
+  const names = new Set<string>()
+  for (const row of data ?? []) {
+    const profession = String(row.profession ?? '').trim()
+    if (profession) names.add(profession)
+  }
+
+  return [...names].sort((left, right) => left.localeCompare(right, 'ru'))
+}
+
+export async function loadNotWornEmployees(reportDate: string) {
+  const settings = getMetricSettings()
   const { data, error } = await supabase
     .schema('analytics')
     .from('shift_daily_metrics')
     .select(
-      'ww_shift_id, employee_number, full_name, supervisor_name, not_worn_sec_total, not_worn_eligible_sec_total',
+      'ww_shift_id, employee_number, full_name, profession, supervisor_name, not_worn_sec_total, not_worn_eligible_sec_total, not_worn_shift_min_sec',
     )
     .eq('report_date', reportDate)
-    .gte('not_worn_sec_total', minSec)
+    .gt('not_worn_sec_total', 0)
     .order('not_worn_sec_total', { ascending: false })
 
   if (error) throw error
 
   return filterAnalyticsShiftRows(
-    (data ?? []).map((row) => ({
-      ww_shift_id: Number(row.ww_shift_id),
-      employee_number: String(row.employee_number),
-      full_name: String(row.full_name),
-      supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
-      not_worn_sec: Number(row.not_worn_sec_total),
-      not_worn_pct: getNotWornPct({
-        not_worn_sec_total: Number(row.not_worn_sec_total),
-        not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total),
-      }),
-    })),
+    (data ?? [])
+      .map((row) => ({
+        ww_shift_id: Number(row.ww_shift_id),
+        employee_number: String(row.employee_number),
+        full_name: String(row.full_name),
+        profession: (row.profession as string | null) ?? null,
+        supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
+        not_worn_sec: Number(row.not_worn_sec_total),
+        not_worn_pct: getNotWornPct({
+          not_worn_sec_total: Number(row.not_worn_sec_total),
+          not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total),
+        }),
+        shiftMinSec: Number(row.not_worn_shift_min_sec ?? settings.notWornMinSec),
+      }))
+      .filter((row) => row.not_worn_sec >= row.shiftMinSec)
+      .map(({ shiftMinSec: _shiftMinSec, ...row }) => row),
   ) satisfies NotWornEmployee[]
 }
 
