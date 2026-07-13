@@ -64,7 +64,7 @@ export const DASHBOARD_BLOCKS: DashboardBlockDefinition[] = [
     number: 7,
     kicker: 'Блок 7 · Ношение часов',
     title: 'Не носил',
-    description: 'Время без ношения часов на руке (датчик wear), без зон отдыха.',
+    description: 'Подозрительное бездействие вне зон отдыха: простой без движения по AA_BLE.',
     inReports: 'Только дашборд (в рассылку не входит)',
   },
 ]

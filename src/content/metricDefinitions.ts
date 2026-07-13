@@ -265,22 +265,38 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     block: 'Блок 7 · Не носил',
     title: 'Не носил часы',
     description:
-      'Доля времени, когда датчик снятия (wear) не фиксировал ношение на руке. Минуты в зонах отдыха (столовые, курилки, отдых, стройгородок — zona 2, 4, 5, 14) не учитываются.',
+      'Поведенческая оценка: минуты почти полного простоя без движения вне зон отдыха (столовые, курилки, отдых, стройгородок — zona 2, 4, 5, 14). Датчик wear не используется.',
     sources: [
-      'Отчёт 11 · AA_BLE → `ble_minute_facts.wear`, `zona`',
-      'Функция `analytics.is_rest_zone`',
+      'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`',
+      'Функции `analytics.is_rest_zone`, `analytics.is_not_worn_metric_minute`',
       'View `analytics.shift_daily_metrics` → `not_worn_sec_total`, `not_worn_eligible_sec_total`',
     ],
     formula:
-      'not_worn_sec = Σ(total_sec) WHERE wear ≠ 1 AND zona ∉ {2, 4, 5, 14}\nnot_worn_pct = 100 × not_worn_sec / Σ(total_sec) вне зон отдыха',
+      'Подозрительная минута вне зон отдыха: idle_sec ≥ порог И work_sec + go_sec ≤ порог\nnot_worn_pct = 100 × not_worn_sec / eligible_sec',
     configFields: [
       {
+        key: 'notWornIdleSecMin',
+        label: 'Минимум простоя в минуте',
+        unit: 'сек',
+        min: 30,
+        max: 60,
+        hint: 'Обычно 54 (= 90% минуты). Минута считается «мёртвой», если idle_sec не ниже порога',
+      },
+      {
+        key: 'notWornActiveSecMax',
+        label: 'Максимум активности в минуте',
+        unit: 'сек',
+        min: 0,
+        max: 30,
+        hint: 'work_sec + go_sec должны быть не выше этого значения',
+      },
+      {
         key: 'notWornMinSec',
-        label: 'Минимум для списка сотрудников',
+        label: 'Минимум за смену для списка',
         unit: 'сек',
         min: 60,
         max: 7200,
-        hint: 'Сотрудник попадает в список, если не носил часы не меньше этого времени за смену',
+        hint: 'Сотрудник попадает в список, если сумма подозрительных минут ≥ порога (по умолчанию 15 мин)',
       },
       {
         key: 'notWornWarnPct',
@@ -288,10 +304,10 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         unit: '%',
         min: 1,
         max: 100,
-        hint: 'Подсветка карточки бригады и сотрудника при превышении доли «не носил»',
+        hint: 'Подсветка карточки бригады и сотрудника при превышении доли',
       },
     ],
-    notes: 'В рассылку не входит. Только дашборд.',
+    notes: 'В рассылку не входит. Только дашборд. На старых часах wear ненадёжен — метрика строится по простою и отсутствию движения.',
   },
 ]
 

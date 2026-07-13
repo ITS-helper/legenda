@@ -77,6 +77,8 @@ const INT_FIELDS: Array<[string, number, number]> = [
   ['volume_sparkline_days', 3, 60],
   ['not_worn_min_sec', 60, 7200],
   ['not_worn_warn_pct', 1, 100],
+  ['not_worn_idle_sec_min', 30, 60],
+  ['not_worn_active_sec_max', 0, 30],
 ]
 
 function validatePayload(body: Record<string, unknown>): string | null {

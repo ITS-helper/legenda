@@ -21,6 +21,8 @@ export type MetricSettings = {
   volumeSparklineDays: number
   notWornMinSec: number
   notWornWarnPct: number
+  notWornIdleSecMin: number
+  notWornActiveSecMax: number
   comparisonBrigades: string[]
   subblockVisibility: Record<SubblockId, boolean>
   zoneVisibility: Record<number, boolean>
@@ -60,6 +62,8 @@ type MetricSettingsRow = {
   volume_sparkline_days?: number
   not_worn_min_sec?: number
   not_worn_warn_pct?: number
+  not_worn_idle_sec_min?: number
+  not_worn_active_sec_max?: number
   block_7_enabled?: boolean
   block_1_enabled?: boolean
   block_2_enabled?: boolean
@@ -85,8 +89,10 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   kppLunchEndMin: 14 * 60,
   activitySparklineDays: 14,
   volumeSparklineDays: 14,
-  notWornMinSec: 300,
+  notWornMinSec: 900,
   notWornWarnPct: 5,
+  notWornIdleSecMin: 54,
+  notWornActiveSecMax: 6,
   comparisonBrigades: [...DEFAULT_COMPARISON_BRIGADES],
   subblockVisibility: { ...DEFAULT_SUBBLOCK_VISIBILITY },
   zoneVisibility: { ...DEFAULT_ZONE_VISIBILITY },
@@ -173,6 +179,8 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
     volumeSparklineDays: row?.volume_sparkline_days ?? DEFAULT_METRIC_SETTINGS.volumeSparklineDays,
     notWornMinSec: row?.not_worn_min_sec ?? DEFAULT_METRIC_SETTINGS.notWornMinSec,
     notWornWarnPct: row?.not_worn_warn_pct ?? DEFAULT_METRIC_SETTINGS.notWornWarnPct,
+    notWornIdleSecMin: row?.not_worn_idle_sec_min ?? DEFAULT_METRIC_SETTINGS.notWornIdleSecMin,
+    notWornActiveSecMax: row?.not_worn_active_sec_max ?? DEFAULT_METRIC_SETTINGS.notWornActiveSecMax,
     comparisonBrigades: normalizeComparisonBrigades(row?.comparison_brigades),
     subblockVisibility: normalizeSubblockVisibility(row?.subblock_visibility),
     zoneVisibility: normalizeZoneVisibility(row?.zone_visibility),
@@ -228,6 +236,8 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
     volume_sparkline_days: settings.volumeSparklineDays,
     not_worn_min_sec: settings.notWornMinSec,
     not_worn_warn_pct: settings.notWornWarnPct,
+    not_worn_idle_sec_min: settings.notWornIdleSecMin,
+    not_worn_active_sec_max: settings.notWornActiveSecMax,
     comparison_brigades: settings.comparisonBrigades,
     subblock_visibility: settings.subblockVisibility,
     zone_visibility: zoneVisibilityPayload,

@@ -41,7 +41,7 @@ export const DASHBOARD_SUBBLOCKS: SubblockDefinition[] = [
   { id: 'block4_idle', blockId: 'block4', title: 'Длительные простои' },
   { id: 'block7_summary', blockId: 'block7', title: 'Сводные метрики' },
   { id: 'block7_brigades', blockId: 'block7', title: 'Карточки бригад' },
-  { id: 'block7_employees', blockId: 'block7', title: 'Список сотрудников', note: 'С wear ≠ 1 вне зон отдыха' },
+  { id: 'block7_employees', blockId: 'block7', title: 'Список сотрудников', note: 'Простой без движения вне зон отдыха' },
 ]
 
 export const SUBBLOCK_IDS = DASHBOARD_SUBBLOCKS.map((item) => item.id)

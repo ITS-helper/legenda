@@ -201,7 +201,7 @@ select
   coalesce(
     sum(
       case
-        when b.wear is distinct from 1 and not analytics.is_rest_zone(b.zona)
+        when analytics.is_not_worn_metric_minute(b.idle_sec, b.work_sec, b.go_sec, b.total_sec, b.zona)
         then b.total_sec
         else 0
       end

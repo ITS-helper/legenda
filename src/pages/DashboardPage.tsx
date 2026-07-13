@@ -1149,7 +1149,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         id={dashboardBlockDomId('block7')}
         title="Не носил"
-        description="Время без ношения часов на руке (датчик wear). Зоны отдыха (столовые, курилки, отдых, стройгородок) в расчёт не входят."
+        description="Подозрительное бездействие вне зон отдыха: минуты с высоким простоем и почти без движения (AA_BLE). Зоны отдыха (столовые, курилки, отдых, стройгородок) не учитываются."
         defaultOpen={visibleNotWornEmployees.length > 0}
       >
         <div className="filter-row">
@@ -1175,15 +1175,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             <div className="metrics-grid">
               <article className={`metric-card${dailyNotWorn >= settings.notWornWarnPct ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Не носил</span>
-                <p className="metric-note">доля времени вне зон отдыха, когда wear ≠ 1</p>
+                <p className="metric-note">простой без движения вне зон отдыха</p>
                 <strong className="metric-value">{formatPercent(dailyNotWorn)}</strong>
               </article>
               <article className={`metric-card${dailyTotals.not_worn_workers > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Сотрудников</span>
                 <p className="metric-note">
                   {dailyTotals.not_worn_workers > 0
-                    ? `с wear ≠ 1 ≥ ${Math.round(settings.notWornMinSec / 60)} мин`
-                    : 'без эпизодов снятия часов'}
+                    ? `≥ ${Math.round(settings.notWornMinSec / 60)} мин подозрительного простоя`
+                    : 'без длительного простоя без движения'}
                 </p>
                 <strong className="metric-value">{dailyTotals.not_worn_workers}</strong>
               </article>
@@ -1213,7 +1213,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                       <strong>{brigade.not_worn_workers}</strong>
                     </div>
                     <div className="brigade-stat">
-                      <span>Время без wear</span>
+                      <span>Подозрительный простой</span>
                       <strong>{formatSeconds(brigade.not_worn_sec)}</strong>
                     </div>
                   </div>
@@ -1238,8 +1238,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span className="panel-kicker">Контроль ношения</span>
                     <span className="kpp-panel-title">
                       {visibleNotWornEmployees.length > 0
-                        ? 'Сотрудники без ношения часов'
-                        : 'Все носили часы'}
+                        ? 'Сотрудники с подозрительным простоем'
+                        : 'Подозрительного простоя не было'}
                     </span>
                   </span>
                 </button>
@@ -1266,7 +1266,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     ))}
                   </div>
                 ) : (
-                  <p className="kpp-empty">Никто не превысил порог «не носил» за этот день.</p>
+                  <p className="kpp-empty">Никто не превысил порог подозрительного простоя за этот день.</p>
                 )
               ) : null}
             </div>
