@@ -260,6 +260,39 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     formula:
       'productivity = 100 × work_sec_total / total_sec_total\nКПП: «да», если kpp_sec_total > 0',
   },
+  {
+    id: 'not_worn',
+    block: 'Блок 7 · Не носил',
+    title: 'Не носил часы',
+    description:
+      'Доля времени, когда датчик снятия (wear) не фиксировал ношение на руке. Минуты в зонах отдыха (столовые, курилки, отдых, стройгородок — zona 2, 4, 5, 14) не учитываются.',
+    sources: [
+      'Отчёт 11 · AA_BLE → `ble_minute_facts.wear`, `zona`',
+      'Функция `analytics.is_rest_zone`',
+      'View `analytics.shift_daily_metrics` → `not_worn_sec_total`, `not_worn_eligible_sec_total`',
+    ],
+    formula:
+      'not_worn_sec = Σ(total_sec) WHERE wear ≠ 1 AND zona ∉ {2, 4, 5, 14}\nnot_worn_pct = 100 × not_worn_sec / Σ(total_sec) вне зон отдыха',
+    configFields: [
+      {
+        key: 'notWornMinSec',
+        label: 'Минимум для списка сотрудников',
+        unit: 'сек',
+        min: 60,
+        max: 7200,
+        hint: 'Сотрудник попадает в список, если не носил часы не меньше этого времени за смену',
+      },
+      {
+        key: 'notWornWarnPct',
+        label: 'Порог предупреждения',
+        unit: '%',
+        min: 1,
+        max: 100,
+        hint: 'Подсветка карточки бригады и сотрудника при превышении доли «не носил»',
+      },
+    ],
+    notes: 'В рассылку не входит. Только дашборд.',
+  },
 ]
 
 export const METRIC_BLOCKS = [...new Set(METRIC_DEFINITIONS.map((m) => m.block))]

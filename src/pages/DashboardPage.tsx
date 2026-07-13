@@ -33,6 +33,7 @@ import {
   loadBrigadeWeeklyVolumeTotals,
   loadIdleEpisodes,
   loadKppEmployees,
+  loadNotWornEmployees,
   loadShiftRows,
   loadShiftRowsForRange,
   loadZoneDaily,
@@ -50,6 +51,7 @@ import {
   type BrigadeWeeklyRow,
   type IdleEpisode,
   type KppEmployee,
+  type NotWornEmployee,
   type ShiftMetricRow,
   type ZoneDailyRow,
 } from '../lib/reports'
@@ -162,6 +164,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock4 = isBlockEnabled('block4', settings)
   const showBlock5 = isBlockEnabled('block5', settings)
   const showBlock6 = isBlockEnabled('block6', settings)
+  const showBlock7 = isBlockEnabled('block7', settings)
   const showBlock1Summary = isSubblockEnabled('block1_summary', settings)
   const showBlock1Brigades = isSubblockEnabled('block1_brigades', settings)
   const showBlock1Top = isSubblockEnabled('block1_top_activity', settings)
@@ -175,6 +178,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock3Volume = isSubblockEnabled('block3_volume_dynamics', settings)
   const showBlock4Location = isSubblockEnabled('block4_location', settings)
   const showBlock4Idle = isSubblockEnabled('block4_idle', settings)
+  const showBlock7Summary = isSubblockEnabled('block7_summary', settings)
+  const showBlock7Brigades = isSubblockEnabled('block7_brigades', settings)
+  const showBlock7Employees = isSubblockEnabled('block7_employees', settings)
   const comparisonBrigades = settings.comparisonBrigades
   const trackedBrigadeCount = comparisonBrigades.filter((name) => name.trim().length > 0).length || 2
   const comparisonBrigadesLabel =
@@ -194,6 +200,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
+  const [notWornEmployees, setNotWornEmployees] = useState<NotWornEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
   const [detailShiftRows, setDetailShiftRows] = useState<ShiftMetricRow[]>([])
   const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
@@ -226,6 +233,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [kppOpen, setKppOpen] = useState(false)
+  const [notWornOpen, setNotWornOpen] = useState(false)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
@@ -271,9 +279,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, kpp, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
+        const [brigades, kpp, notWorn, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
           loadKppEmployees(selectedDate),
+          loadNotWornEmployees(selectedDate),
           loadShiftRows(selectedDate),
           loadZoneDaily(selectedDate),
           loadZoneDailyByBrigade(selectedDate),
@@ -283,6 +292,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         if (cancelled) return
         setDailyRows(brigades)
         setKppEmployees(kpp)
+        setNotWornEmployees(notWorn)
         setShiftRows(shifts)
         setZoneRows(zones)
         setZoneRowsByBrigade(zonesByBrigade)
@@ -299,7 +309,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, password])
+  }, [selectedDate, password, settings.notWornMinSec])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
@@ -485,6 +495,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     () => pvPercentFromZoneRows(zoneRows),
     [zoneRows, settings.zoneVisibility],
   )
+  const dailyNotWorn = ratio(dailyTotals.not_worn_sec, dailyTotals.not_worn_eligible_sec)
+
+  const visibleNotWornEmployees = useMemo(
+    () =>
+      notWornEmployees.filter((employee) =>
+        comparisonBrigades.some((name) => brigadeNamesMatch(employee.supervisor_name, name)),
+      ),
+    [notWornEmployees, comparisonBrigades],
+  )
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -585,9 +604,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       block4: showBlock4,
       block5: showBlock5,
       block6: showBlock6,
+      block7: showBlock7,
     }
     return DASHBOARD_BLOCK_NAV.filter((item) => enabled[item.id])
-  }, [showBlock1, showBlock2, showBlock3, showBlock4, showBlock5, showBlock6])
+  }, [showBlock1, showBlock2, showBlock3, showBlock4, showBlock5, showBlock6, showBlock7])
 
   function scrollToDashboardBlock(blockId: DashboardBlockId) {
     window.requestAnimationFrame(() => {
@@ -1121,6 +1141,138 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
+      </CollapsibleBlock>
+      ) : null}
+
+      {/* БЛОК 7 — НЕ НОСИЛ */}
+      {showBlock7 ? (
+      <CollapsibleBlock
+        id={dashboardBlockDomId('block7')}
+        title="Не носил"
+        description="Время без ношения часов на руке (датчик wear). Зоны отдыха (столовые, курилки, отдых, стройгородок) в расчёт не входят."
+        defaultOpen={visibleNotWornEmployees.length > 0}
+      >
+        <div className="filter-row">
+          <DatePickerField
+            label="Дата"
+            value={selectedDate}
+            dates={availableDates}
+            onChange={setSelectedDate}
+            disabled={!availableDates.length}
+          />
+        </div>
+
+        {dailyLoading ? <div className="empty-state">Загружаем данные по ношению часов...</div> : null}
+        {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
+
+        {!dailyLoading && !dailyError && visibleDailyRows.length === 0 ? (
+          <div className="empty-state">Нет данных за выбранный день.</div>
+        ) : null}
+
+        {!dailyLoading && !dailyError && visibleDailyRows.length > 0 ? (
+          <>
+            {showBlock7Summary ? (
+            <div className="metrics-grid">
+              <article className={`metric-card${dailyNotWorn >= settings.notWornWarnPct ? ' metric-card-alert' : ''}`}>
+                <span className="metric-label">Не носил</span>
+                <p className="metric-note">доля времени вне зон отдыха, когда wear ≠ 1</p>
+                <strong className="metric-value">{formatPercent(dailyNotWorn)}</strong>
+              </article>
+              <article className={`metric-card${dailyTotals.not_worn_workers > 0 ? ' metric-card-alert' : ''}`}>
+                <span className="metric-label">Сотрудников</span>
+                <p className="metric-note">
+                  {dailyTotals.not_worn_workers > 0
+                    ? `с wear ≠ 1 ≥ ${Math.round(settings.notWornMinSec / 60)} мин`
+                    : 'без эпизодов снятия часов'}
+                </p>
+                <strong className="metric-value">{dailyTotals.not_worn_workers}</strong>
+              </article>
+            </div>
+            ) : null}
+
+            {showBlock7Brigades ? (
+            <div className={brigadeLayoutClass('brigade-grid', visibleDailyRows.length)}>
+              {visibleDailyRows.map((brigade) => (
+                <article className="brigade-card" key={brigade.supervisor_name}>
+                  <div className="brigade-card-head">
+                    <div>
+                      <strong>{brigade.supervisor_name}</strong>
+                      <p>{brigade.workers} чел. · {brigade.not_worn_workers} не носил</p>
+                    </div>
+                    <div className={`brigade-badge${brigade.not_worn_pct >= settings.notWornWarnPct ? ' brigade-badge-warn' : ''}`}>
+                      {formatPercent(brigade.not_worn_pct)}
+                    </div>
+                  </div>
+                  <div className="brigade-stats-grid">
+                    <div className="brigade-stat">
+                      <span>Не носил</span>
+                      <strong>{formatPercent(brigade.not_worn_pct)}</strong>
+                    </div>
+                    <div className="brigade-stat">
+                      <span>Сотрудников</span>
+                      <strong>{brigade.not_worn_workers}</strong>
+                    </div>
+                    <div className="brigade-stat">
+                      <span>Время без wear</span>
+                      <strong>{formatSeconds(brigade.not_worn_sec)}</strong>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            ) : null}
+
+            {showBlock7Employees ? (
+            <div className={`kpp-panel not-worn-panel${visibleNotWornEmployees.length > 0 ? ' kpp-panel-alert' : ''}${notWornOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
+              <div className="kpp-panel-head">
+                <button
+                  type="button"
+                  className="kpp-panel-toggle"
+                  onClick={() => setNotWornOpen((current) => !current)}
+                  aria-expanded={notWornOpen}
+                >
+                  <span className={`kpp-panel-chevron${notWornOpen ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
+                    ▸
+                  </span>
+                  <span className="kpp-panel-titles">
+                    <span className="panel-kicker">Контроль ношения</span>
+                    <span className="kpp-panel-title">
+                      {visibleNotWornEmployees.length > 0
+                        ? 'Сотрудники без ношения часов'
+                        : 'Все носили часы'}
+                    </span>
+                  </span>
+                </button>
+                {visibleNotWornEmployees.length > 0 ? (
+                  <span className="kpp-count">{visibleNotWornEmployees.length}</span>
+                ) : null}
+              </div>
+              {notWornOpen ? (
+                visibleNotWornEmployees.length > 0 ? (
+                  <div className="kpp-list">
+                    {visibleNotWornEmployees.map((employee) => (
+                      <div className="kpp-row" key={employee.ww_shift_id}>
+                        <div className="kpp-main">
+                          <strong>{employee.full_name}</strong>
+                          <span>
+                            #{employee.employee_number} · {employee.supervisor_name}
+                          </span>
+                        </div>
+                        <div className="kpp-metrics">
+                          <div className="kpp-time">{formatSeconds(employee.not_worn_sec)}</div>
+                          <div className="kpp-time">{formatPercent(employee.not_worn_pct)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="kpp-empty">Никто не превысил порог «не носил» за этот день.</p>
+                )
+              ) : null}
+            </div>
+            ) : null}
+          </>
+        ) : null}
       </CollapsibleBlock>
       ) : null}
 

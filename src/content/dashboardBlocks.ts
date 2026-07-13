@@ -1,4 +1,4 @@
-export type DashboardBlockId = 'block1' | 'block2' | 'block3' | 'block4' | 'block5' | 'block6'
+export type DashboardBlockId = 'block1' | 'block2' | 'block3' | 'block4' | 'block5' | 'block6' | 'block7'
 
 export type DashboardBlockDefinition = {
   id: DashboardBlockId
@@ -59,6 +59,14 @@ export const DASHBOARD_BLOCKS: DashboardBlockDefinition[] = [
     description: 'Полная таблица смен с сортировкой, профессиями и поиском.',
     inReports: 'Только дашборд (в рассылку не входит)',
   },
+  {
+    id: 'block7',
+    number: 7,
+    kicker: 'Блок 7 · Ношение часов',
+    title: 'Не носил',
+    description: 'Время без ношения часов на руке (датчик wear), без зон отдыха.',
+    inReports: 'Только дашборд (в рассылку не входит)',
+  },
 ]
 
 export const DEFAULT_BLOCK_VISIBILITY: Record<DashboardBlockId, boolean> = {
@@ -68,6 +76,7 @@ export const DEFAULT_BLOCK_VISIBILITY: Record<DashboardBlockId, boolean> = {
   block4: true,
   block5: true,
   block6: true,
+  block7: true,
 }
 
 import type { BooleanBlockSettingKey } from '../lib/metricSettings'
@@ -79,6 +88,7 @@ export const METRIC_BLOCK_ID_BY_TITLE: Record<string, DashboardBlockId> = {
   'Блок 4 · Местоположение и простои': 'block4',
   'Блок 5 · Объёмы': 'block5',
   'Блок 6 · Детализация': 'block6',
+  'Блок 7 · Не носил': 'block7',
 }
 
 export function blockSettingsKey(id: DashboardBlockId): BooleanBlockSettingKey {
@@ -89,6 +99,7 @@ export function blockSettingsKey(id: DashboardBlockId): BooleanBlockSettingKey {
     block4: 'block4Enabled',
     block5: 'block5Enabled',
     block6: 'block6Enabled',
+    block7: 'block7Enabled',
   }
   return map[id]
 }
@@ -109,4 +120,5 @@ export const DASHBOARD_BLOCK_NAV: { id: DashboardBlockId; label: string }[] = [
   { id: 'block4', label: 'Местоположение и простои' },
   { id: 'block5', label: 'Объёмы' },
   { id: 'block6', label: 'Сотрудники' },
+  { id: 'block7', label: 'Не носил' },
 ]

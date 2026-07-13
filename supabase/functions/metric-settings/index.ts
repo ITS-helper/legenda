@@ -40,6 +40,7 @@ const BOOL_FIELDS = [
   'block_4_enabled',
   'block_5_enabled',
   'block_6_enabled',
+  'block_7_enabled',
 ] as const
 
 const SUBBLOCK_IDS = [
@@ -56,6 +57,9 @@ const SUBBLOCK_IDS = [
   'block3_volume_dynamics',
   'block4_location',
   'block4_idle',
+  'block7_summary',
+  'block7_brigades',
+  'block7_employees',
 ] as const
 
 const ZONE_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
@@ -71,6 +75,8 @@ const INT_FIELDS: Array<[string, number, number]> = [
   ['kpp_lunch_end_min', 1, 1440],
   ['activity_sparkline_days', 3, 60],
   ['volume_sparkline_days', 3, 60],
+  ['not_worn_min_sec', 60, 7200],
+  ['not_worn_warn_pct', 1, 100],
 ]
 
 function validatePayload(body: Record<string, unknown>): string | null {

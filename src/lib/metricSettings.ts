@@ -19,6 +19,8 @@ export type MetricSettings = {
   kppLunchEndMin: number
   activitySparklineDays: number
   volumeSparklineDays: number
+  notWornMinSec: number
+  notWornWarnPct: number
   comparisonBrigades: string[]
   subblockVisibility: Record<SubblockId, boolean>
   zoneVisibility: Record<number, boolean>
@@ -28,6 +30,7 @@ export type MetricSettings = {
   block4Enabled: boolean
   block5Enabled: boolean
   block6Enabled: boolean
+  block7Enabled: boolean
 }
 
 export type BooleanBlockSettingKey =
@@ -37,6 +40,7 @@ export type BooleanBlockSettingKey =
   | 'block4Enabled'
   | 'block5Enabled'
   | 'block6Enabled'
+  | 'block7Enabled'
 
 export type NumericMetricSettingKey = Exclude<
   keyof MetricSettings,
@@ -54,6 +58,9 @@ type MetricSettingsRow = {
   kpp_lunch_end_min?: number
   activity_sparkline_days?: number
   volume_sparkline_days?: number
+  not_worn_min_sec?: number
+  not_worn_warn_pct?: number
+  block_7_enabled?: boolean
   block_1_enabled?: boolean
   block_2_enabled?: boolean
   block_3_enabled?: boolean
@@ -78,6 +85,8 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   kppLunchEndMin: 14 * 60,
   activitySparklineDays: 14,
   volumeSparklineDays: 14,
+  notWornMinSec: 300,
+  notWornWarnPct: 5,
   comparisonBrigades: [...DEFAULT_COMPARISON_BRIGADES],
   subblockVisibility: { ...DEFAULT_SUBBLOCK_VISIBILITY },
   zoneVisibility: { ...DEFAULT_ZONE_VISIBILITY },
@@ -87,6 +96,7 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   block4Enabled: DEFAULT_BLOCK_VISIBILITY.block4,
   block5Enabled: DEFAULT_BLOCK_VISIBILITY.block5,
   block6Enabled: DEFAULT_BLOCK_VISIBILITY.block6,
+  block7Enabled: DEFAULT_BLOCK_VISIBILITY.block7,
 }
 
 const BLOCK_SETTINGS_KEY: Record<DashboardBlockId, BooleanBlockSettingKey> = {
@@ -96,6 +106,7 @@ const BLOCK_SETTINGS_KEY: Record<DashboardBlockId, BooleanBlockSettingKey> = {
   block4: 'block4Enabled',
   block5: 'block5Enabled',
   block6: 'block6Enabled',
+  block7: 'block7Enabled',
 }
 
 let activeSettings: MetricSettings = { ...DEFAULT_METRIC_SETTINGS }
@@ -160,6 +171,8 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
     kppLunchEndMin: row?.kpp_lunch_end_min ?? DEFAULT_METRIC_SETTINGS.kppLunchEndMin,
     activitySparklineDays: row?.activity_sparkline_days ?? DEFAULT_METRIC_SETTINGS.activitySparklineDays,
     volumeSparklineDays: row?.volume_sparkline_days ?? DEFAULT_METRIC_SETTINGS.volumeSparklineDays,
+    notWornMinSec: row?.not_worn_min_sec ?? DEFAULT_METRIC_SETTINGS.notWornMinSec,
+    notWornWarnPct: row?.not_worn_warn_pct ?? DEFAULT_METRIC_SETTINGS.notWornWarnPct,
     comparisonBrigades: normalizeComparisonBrigades(row?.comparison_brigades),
     subblockVisibility: normalizeSubblockVisibility(row?.subblock_visibility),
     zoneVisibility: normalizeZoneVisibility(row?.zone_visibility),
@@ -169,6 +182,7 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
     block4Enabled: row?.block_4_enabled ?? DEFAULT_METRIC_SETTINGS.block4Enabled,
     block5Enabled: row?.block_5_enabled ?? DEFAULT_METRIC_SETTINGS.block5Enabled,
     block6Enabled: row?.block_6_enabled ?? DEFAULT_METRIC_SETTINGS.block6Enabled,
+    block7Enabled: row?.block_7_enabled ?? DEFAULT_METRIC_SETTINGS.block7Enabled,
   }
 }
 
@@ -212,6 +226,8 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
     kpp_lunch_end_min: settings.kppLunchEndMin,
     activity_sparkline_days: settings.activitySparklineDays,
     volume_sparkline_days: settings.volumeSparklineDays,
+    not_worn_min_sec: settings.notWornMinSec,
+    not_worn_warn_pct: settings.notWornWarnPct,
     comparison_brigades: settings.comparisonBrigades,
     subblock_visibility: settings.subblockVisibility,
     zone_visibility: zoneVisibilityPayload,
@@ -221,6 +237,7 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
     block_4_enabled: settings.block4Enabled,
     block_5_enabled: settings.block5Enabled,
     block_6_enabled: settings.block6Enabled,
+    block_7_enabled: settings.block7Enabled,
   }
 }
 

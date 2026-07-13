@@ -28,6 +28,10 @@ export type BrigadeDailyRow = {
   long_idle_pct: number
   go_pct: number
   avg_shift_duration_sec: number
+  not_worn_sec: number
+  not_worn_eligible_sec: number
+  not_worn_workers: number
+  not_worn_pct: number
 }
 
 export type BrigadeWeeklyRow = {
@@ -97,6 +101,8 @@ export type ShiftMetricRow = {
   pv_sec_total: number
   outside_pv_sec_total: number
   kpp_sec_total: number
+  not_worn_sec_total: number
+  not_worn_eligible_sec_total: number
 }
 
 export type KppEmployee = {
@@ -106,6 +112,15 @@ export type KppEmployee = {
   supervisor_name: string
   kpp_sec: number
   kpp_time: string
+}
+
+export type NotWornEmployee = {
+  ww_shift_id: number
+  employee_number: string
+  full_name: string
+  supervisor_name: string
+  not_worn_sec: number
+  not_worn_pct: number
 }
 
 import { MSK_TIME_ZONE } from './mskTime'
@@ -841,6 +856,38 @@ export async function loadKppEmployees(reportDate: string) {
   })) satisfies KppEmployee[]
 }
 
+export function getNotWornPct(row: Pick<ShiftMetricRow, 'not_worn_sec_total' | 'not_worn_eligible_sec_total'>) {
+  return ratio(row.not_worn_sec_total, row.not_worn_eligible_sec_total)
+}
+
+export async function loadNotWornEmployees(reportDate: string, minSec = getMetricSettings().notWornMinSec) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('shift_daily_metrics')
+    .select(
+      'ww_shift_id, employee_number, full_name, supervisor_name, not_worn_sec_total, not_worn_eligible_sec_total',
+    )
+    .eq('report_date', reportDate)
+    .gte('not_worn_sec_total', minSec)
+    .order('not_worn_sec_total', { ascending: false })
+
+  if (error) throw error
+
+  return filterAnalyticsShiftRows(
+    (data ?? []).map((row) => ({
+      ww_shift_id: Number(row.ww_shift_id),
+      employee_number: String(row.employee_number),
+      full_name: String(row.full_name),
+      supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
+      not_worn_sec: Number(row.not_worn_sec_total),
+      not_worn_pct: getNotWornPct({
+        not_worn_sec_total: Number(row.not_worn_sec_total),
+        not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total),
+      }),
+    })),
+  ) satisfies NotWornEmployee[]
+}
+
 export function sumDaily(rows: BrigadeDailyRow[]) {
   return rows.reduce(
     (acc, row) => {
@@ -853,6 +900,9 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
       acc.pv_sec += row.pv_sec
       acc.kpp_sec += row.kpp_sec
       acc.kpp_workers += row.kpp_workers
+      acc.not_worn_sec += row.not_worn_sec
+      acc.not_worn_eligible_sec += row.not_worn_eligible_sec
+      acc.not_worn_workers += row.not_worn_workers
       return acc
     },
     {
@@ -865,6 +915,9 @@ export function sumDaily(rows: BrigadeDailyRow[]) {
       pv_sec: 0,
       kpp_sec: 0,
       kpp_workers: 0,
+      not_worn_sec: 0,
+      not_worn_eligible_sec: 0,
+      not_worn_workers: 0,
     },
   )
 }

@@ -188,7 +188,7 @@ flowchart LR
 Вход по паролю: [`src/context/AuthContext.tsx`](../src/context/AuthContext.tsx),
 проверка через `site-settings?action=verify`.
 
-### Дашборд — 6 блоков
+### Дашборд — 7 блоков
 
 | № | Блок | Компоненты / данные |
 |---|------|---------------------|
@@ -198,6 +198,7 @@ flowchart LR
 | 4 | **Местоположение и простои** | Распределение по зонам, эпизоды простоя | `zone_daily_metrics`, `idle_episodes_daily` |
 | 5 | **Объёмы** | Ручной ввод таблицей | [`VolumesPanel`](../src/components/VolumesPanel.tsx), `volume-entries` |
 | 6 | **Детализация** | Сортируемая таблица смен | `shift_daily_metrics` |
+| 7 | **Не носил** | Доля времени без wear на руке (без зон отдыха), список сотрудников | `shift_daily_metrics` → `not_worn_sec_total`; **не в рассылке** |
 
 Загрузчики и типы: [`src/lib/reports.ts`](../src/lib/reports.ts).  
 Объёмы: [`src/lib/volumes.ts`](../src/lib/volumes.ts).  

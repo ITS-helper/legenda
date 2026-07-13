@@ -198,6 +198,26 @@ select
   coalesce(sum(b.work_sec), 0) as work_sec_total,
   coalesce(sum(b.total_sec), 0) as total_sec_total,
   coalesce(sum(case when b.wear = 1 then b.total_sec else 0 end), 0) as wear_sec_total,
+  coalesce(
+    sum(
+      case
+        when b.wear is distinct from 1 and not analytics.is_rest_zone(b.zona)
+        then b.total_sec
+        else 0
+      end
+    ),
+    0
+  ) as not_worn_sec_total,
+  coalesce(
+    sum(
+      case
+        when not analytics.is_rest_zone(b.zona)
+        then b.total_sec
+        else 0
+      end
+    ),
+    0
+  ) as not_worn_eligible_sec_total,
   -- zona=1 is the work zone (ПВ); see docs/zones-reference.md.
   coalesce(sum(case when b.zona = '1' then b.total_sec else 0 end), 0) as pv_sec_total,
   coalesce(sum(case when b.zona is not null and b.zona <> '1' then b.total_sec else 0 end), 0) as outside_pv_sec_total,
@@ -244,7 +264,10 @@ select
   sum(total_sec_total) as total_sec,
   sum(pv_sec_total) as pv_sec,
   sum(kpp_sec_total) as kpp_sec,
+  sum(not_worn_sec_total) as not_worn_sec,
+  sum(not_worn_eligible_sec_total) as not_worn_eligible_sec,
   count(*) filter (where kpp_sec_total > 0) as kpp_workers,
+  count(*) filter (where not_worn_sec_total >= analytics.not_worn_min_sec()) as not_worn_workers,
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(work_sec_total) / sum(total_sec_total), 1)
     else 0 end as activity_pct,
@@ -257,6 +280,9 @@ select
   case when sum(total_sec_total) > 0
     then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
     else 0 end as go_pct,
+  case when sum(not_worn_eligible_sec_total) > 0
+    then round(100.0 * sum(not_worn_sec_total) / sum(not_worn_eligible_sec_total), 1)
+    else 0 end as not_worn_pct,
   coalesce(
     round(avg(on_watch_duration_seconds) filter (where on_watch_duration_seconds > 0)),
     0
