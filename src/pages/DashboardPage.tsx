@@ -337,7 +337,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, showBlock7, settings.notWornMinSec, settings.notWornProfessionRules])
+  }, [selectedDate, showBlock7, settings.notWornMinSec, settings.notWornMinIntervalSec, settings.notWornProfessionRules])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)

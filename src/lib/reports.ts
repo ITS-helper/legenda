@@ -931,11 +931,10 @@ export async function loadNotWornEmployees(reportDate: string) {
   const shiftIds = employees.map((employee) => employee.ww_shift_id)
   const { data: minuteData, error: minuteError } = await supabase
     .schema('analytics')
-    .from('not_worn_minutes_daily')
-    .select('ww_shift_id, event_at')
-    .eq('report_date', reportDate)
-    .in('ww_shift_id', shiftIds)
-    .limit(10_000)
+    .rpc('not_worn_episode_minutes_for_date', {
+      p_report_date: reportDate,
+      p_shift_ids: shiftIds,
+    })
 
   if (minuteError) throw minuteError
 
