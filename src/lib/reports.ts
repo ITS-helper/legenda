@@ -123,6 +123,7 @@ export type NotWornEmployee = {
   supervisor_name: string
   not_worn_sec: number
   not_worn_pct: number
+  not_worn_time: string
 }
 
 import { MSK_TIME_ZONE } from './mskTime'
@@ -154,7 +155,7 @@ export function formatMoscowTime(iso: string) {
   }).format(new Date(iso))
 }
 
-function formatKppRanges(eventTimes: string[]) {
+function formatEventTimeRanges(eventTimes: string[]) {
   if (eventTimes.length === 0) return ''
 
   const ranges: Array<{ start: string; end: string }> = []
@@ -183,14 +184,22 @@ export function buildKppTimeLabel(eventTimes: string[]) {
     .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
 
   const metric = sorted.filter(isKppMetricMinuteAt)
-  if (metric.length > 0) return formatKppRanges(metric)
+  if (metric.length > 0) return formatEventTimeRanges(metric)
 
   if (sorted.length > 0) {
-    const lunch = formatKppRanges(sorted)
+    const lunch = formatEventTimeRanges(sorted)
     return lunch ? `${lunch} (обед)` : '—'
   }
 
   return '—'
+}
+
+export function buildNotWornTimeLabel(eventTimes: string[]) {
+  const sorted = [...eventTimes]
+    .filter((iso) => Boolean(iso))
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())
+
+  return sorted.length > 0 ? formatEventTimeRanges(sorted) : '—'
 }
 
 const NO_SUPERVISOR = 'Без начальника'
@@ -892,7 +901,7 @@ export async function loadNotWornEmployees(reportDate: string) {
 
   if (error) throw error
 
-  return filterAnalyticsShiftRows(
+  const employees = filterAnalyticsShiftRows(
     (data ?? [])
       .map((row) => ({
         ww_shift_id: Number(row.ww_shift_id),
@@ -909,7 +918,34 @@ export async function loadNotWornEmployees(reportDate: string) {
       }))
       .filter((row) => row.not_worn_sec >= row.shiftMinSec)
       .map(({ shiftMinSec: _shiftMinSec, ...row }) => row),
-  ) satisfies NotWornEmployee[]
+  )
+
+  if (employees.length === 0) return [] satisfies NotWornEmployee[]
+
+  const shiftIds = employees.map((employee) => employee.ww_shift_id)
+  const { data: minuteData, error: minuteError } = await supabase
+    .schema('analytics')
+    .from('not_worn_minutes_daily')
+    .select('ww_shift_id, event_at')
+    .eq('report_date', reportDate)
+    .in('ww_shift_id', shiftIds)
+    .limit(10_000)
+
+  if (minuteError) throw minuteError
+
+  const minutesByShift = new Map<number, string[]>()
+  for (const row of minuteData ?? []) {
+    if (!row.event_at) continue
+    const shiftId = Number(row.ww_shift_id)
+    const events = minutesByShift.get(shiftId) ?? []
+    events.push(String(row.event_at))
+    minutesByShift.set(shiftId, events)
+  }
+
+  return employees.map((employee) => ({
+    ...employee,
+    not_worn_time: buildNotWornTimeLabel(minutesByShift.get(employee.ww_shift_id) ?? []),
+  })) satisfies NotWornEmployee[]
 }
 
 export function sumDaily(rows: BrigadeDailyRow[]) {

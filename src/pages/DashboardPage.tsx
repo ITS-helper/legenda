@@ -1263,8 +1263,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                           </span>
                         </div>
                         <div className="kpp-metrics">
-                          <div className="kpp-time">{formatSeconds(employee.not_worn_sec)}</div>
-                          <div className="kpp-time">{formatPercent(employee.not_worn_pct)}</div>
+                          <div className="kpp-time">{employee.not_worn_time}</div>
+                          <div className="kpp-time kpp-time-secondary">
+                            {formatSeconds(employee.not_worn_sec)} · {formatPercent(employee.not_worn_pct)}
+                          </div>
                         </div>
                       </div>
                     )})}

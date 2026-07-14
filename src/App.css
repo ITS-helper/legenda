@@ -3122,6 +3122,13 @@
   line-height: 1.35;
 }
 
+.kpp-time-secondary {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .kpp-empty {
   margin: 0;
   color: var(--text-muted);

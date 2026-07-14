@@ -198,7 +198,7 @@ flowchart LR
 | 4 | **Местоположение и простои** | Распределение по зонам, эпизоды простоя | `zone_daily_metrics`, `idle_episodes_daily` |
 | 5 | **Объёмы** | Ручной ввод таблицей | [`VolumesPanel`](../src/components/VolumesPanel.tsx), `volume-entries` |
 | 6 | **Детализация** | Сортируемая таблица смен | `shift_daily_metrics` |
-| 7 | **Не носил** | Поведенческий простой без движения вне зон отдыха, список сотрудников | `shift_daily_metrics` → `not_worn_sec_total`; **не в рассылке** |
+| 7 | **Не носил** | Поведенческий простой без движения вне зон отдыха, список сотрудников с интервалами; обед 13:00–14:00 МСК не учитывается | `shift_daily_metrics` → `not_worn_sec_total`; `not_worn_minutes_daily` → интервалы; **не в рассылке** |
 
 Загрузчики и типы: [`src/lib/reports.ts`](../src/lib/reports.ts).  
 Объёмы: [`src/lib/volumes.ts`](../src/lib/volumes.ts).  
