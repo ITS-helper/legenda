@@ -2907,6 +2907,14 @@
   margin-top: 16px;
 }
 
+.not-worn-brigade-matrix {
+  margin-top: 2px;
+}
+
+.not-worn-brigade-matrix .zones-brigade-column {
+  min-width: 0;
+}
+
 .top-activity-panel {
   padding: 18px 20px;
   border-radius: 20px;

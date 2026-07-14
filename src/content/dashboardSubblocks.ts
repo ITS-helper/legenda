@@ -5,7 +5,7 @@ export type SubblockId =
   | 'block1_brigades'
   | 'block1_top_activity'
   | 'block1_attention'
-  | 'block1_kpp_panel'
+  | 'block1_not_worn_panel'
   | 'block1_volume_card'
   | 'block2_brigades'
   | 'block2_top_activity'
@@ -27,7 +27,7 @@ export const DASHBOARD_SUBBLOCKS: SubblockDefinition[] = [
   { id: 'block1_brigades', blockId: 'block1', title: 'Карточки бригад' },
   { id: 'block1_top_activity', blockId: 'block1', title: 'Топ-3 по активности' },
   { id: 'block1_attention', blockId: 'block1', title: 'Требуют внимания' },
-  { id: 'block1_kpp_panel', blockId: 'block1', title: 'Список на КПП' },
+  { id: 'block1_not_worn_panel', blockId: 'block1', title: 'Список «Не носил»', note: 'Подозрительное бездействие по бригадам' },
   { id: 'block1_volume_card', blockId: 'block1', title: 'Карточка «Объёмы»', note: 'Ссылка на блок 5' },
   { id: 'block2_brigades', blockId: 'block2', title: 'Карточки бригад' },
   { id: 'block2_top_activity', blockId: 'block2', title: 'Топ-3 по активности' },

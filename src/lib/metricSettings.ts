@@ -113,7 +113,7 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   block4Enabled: DEFAULT_BLOCK_VISIBILITY.block4,
   block5Enabled: DEFAULT_BLOCK_VISIBILITY.block5,
   block6Enabled: DEFAULT_BLOCK_VISIBILITY.block6,
-  block7Enabled: DEFAULT_BLOCK_VISIBILITY.block7,
+  block7Enabled: false,
 }
 
 const BLOCK_SETTINGS_KEY: Record<DashboardBlockId, BooleanBlockSettingKey> = {
@@ -123,7 +123,6 @@ const BLOCK_SETTINGS_KEY: Record<DashboardBlockId, BooleanBlockSettingKey> = {
   block4: 'block4Enabled',
   block5: 'block5Enabled',
   block6: 'block6Enabled',
-  block7: 'block7Enabled',
 }
 
 let activeSettings: MetricSettings = { ...DEFAULT_METRIC_SETTINGS }
@@ -168,10 +167,14 @@ function normalizeComparisonBrigades(value: unknown): string[] {
 function normalizeSubblockVisibility(value: unknown): Record<SubblockId, boolean> {
   const result = { ...DEFAULT_SUBBLOCK_VISIBILITY }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result
+  const raw = value as Record<string, unknown>
   for (const id of SUBBLOCK_IDS) {
-    if (id in (value as Record<string, unknown>)) {
-      result[id] = (value as Record<string, boolean>)[id] !== false
+    if (id in raw) {
+      result[id] = raw[id] !== false
     }
+  }
+  if ('block1_kpp_panel' in raw && !('block1_not_worn_panel' in raw)) {
+    result.block1_not_worn_panel = raw.block1_kpp_panel !== false
   }
   return result
 }

@@ -571,7 +571,7 @@ export function NotWornMetricDeepDive() {
             },
             {
               kind: 'ui',
-              title: 'Блок 7 · Не носил',
+              title: 'Блок 1 · Ежедневная аналитика',
               detail: 'список сотрудников по бригадам · интервалы времени',
               accent: true,
             },

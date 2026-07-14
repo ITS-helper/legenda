@@ -32,7 +32,6 @@ import {
   loadBrigadeWeekly,
   loadBrigadeWeeklyVolumeTotals,
   loadIdleEpisodes,
-  loadKppEmployees,
   loadNotWornEmployees,
   loadShiftRows,
   loadShiftRowsForRange,
@@ -50,7 +49,6 @@ import {
   type BrigadeVolumeDynamicsCard,
   type BrigadeWeeklyRow,
   type IdleEpisode,
-  type KppEmployee,
   type NotWornEmployee,
   type ShiftMetricRow,
   type ZoneDailyRow,
@@ -165,12 +163,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock4 = isBlockEnabled('block4', settings)
   const showBlock5 = isBlockEnabled('block5', settings)
   const showBlock6 = isBlockEnabled('block6', settings)
-  const showBlock7 = isBlockEnabled('block7', settings)
   const showBlock1Summary = isSubblockEnabled('block1_summary', settings)
   const showBlock1Brigades = isSubblockEnabled('block1_brigades', settings)
   const showBlock1Top = isSubblockEnabled('block1_top_activity', settings)
   const showBlock1Attention = isSubblockEnabled('block1_attention', settings)
-  const showBlock1Kpp = isSubblockEnabled('block1_kpp_panel', settings)
+  const showBlock1NotWorn = isSubblockEnabled('block1_not_worn_panel', settings)
   const showBlock1VolumeCard = isSubblockEnabled('block1_volume_card', settings)
   const showBlock2Brigades = isSubblockEnabled('block2_brigades', settings)
   const showBlock2Top = isSubblockEnabled('block2_top_activity', settings)
@@ -197,7 +194,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [volumesDate, setVolumesDate] = useState('')
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
-  const [kppEmployees, setKppEmployees] = useState<KppEmployee[]>([])
   const [notWornEmployees, setNotWornEmployees] = useState<NotWornEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
   const [detailShiftRows, setDetailShiftRows] = useState<ShiftMetricRow[]>([])
@@ -232,7 +228,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [kppOpen, setKppOpen] = useState(false)
+  const [notWornOpen, setNotWornOpen] = useState(false)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
@@ -276,9 +272,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, kpp, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
+        const [brigades, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
-          loadKppEmployees(selectedDate),
           loadShiftRows(selectedDate),
           loadZoneDaily(selectedDate),
           loadZoneDailyByBrigade(selectedDate),
@@ -287,7 +282,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ])
         if (cancelled) return
         setDailyRows(brigades)
-        setKppEmployees(kpp)
         setShiftRows(shifts)
         setZoneRows(zones)
         setZoneRowsByBrigade(zonesByBrigade)
@@ -307,7 +301,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }, [selectedDate, password])
 
   useEffect(() => {
-    if (!selectedDate || !showBlock7) {
+    if (!selectedDate || !showBlock1 || !showBlock1NotWorn) {
       setNotWornEmployees([])
       setNotWornLoading(false)
       setNotWornError(null)
@@ -333,7 +327,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, showBlock7, settings.notWornMinSec, settings.notWornMinIntervalSec, settings.notWornProfessionRules])
+  }, [selectedDate, showBlock1, showBlock1NotWorn, settings.notWornMinSec, settings.notWornMinIntervalSec, settings.notWornProfessionRules])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
@@ -643,10 +637,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       block4: showBlock4,
       block5: showBlock5,
       block6: showBlock6,
-      block7: showBlock7,
     }
     return DASHBOARD_BLOCK_NAV.filter((item) => enabled[item.id])
-  }, [showBlock1, showBlock2, showBlock3, showBlock4, showBlock5, showBlock6, showBlock7])
+  }, [showBlock1, showBlock2, showBlock3, showBlock4, showBlock5, showBlock6])
 
   function scrollToDashboardBlock(blockId: DashboardBlockId) {
     window.requestAnimationFrame(() => {
@@ -830,44 +823,85 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             />
             ) : null}
 
-            {showBlock1Kpp ? (
-            <div className={`kpp-panel${kppEmployees.length > 0 ? ' kpp-panel-alert' : ''}${kppOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
+            {showBlock1NotWorn ? (
+            <div
+              className={`kpp-panel not-worn-panel${visibleNotWornEmployees.length > 0 ? ' kpp-panel-alert' : ''}${notWornOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}
+            >
               <div className="kpp-panel-head">
                 <button
                   type="button"
                   className="kpp-panel-toggle"
-                  onClick={() => setKppOpen((current) => !current)}
-                  aria-expanded={kppOpen}
+                  onClick={() => setNotWornOpen((current) => !current)}
+                  aria-expanded={notWornOpen}
                 >
-                  <span className={`kpp-panel-chevron${kppOpen ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
+                  <span className={`kpp-panel-chevron${notWornOpen ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
                     ▸
                   </span>
                   <span className="kpp-panel-titles">
-                    <span className="panel-kicker">Контроль КПП</span>
-                    <span className="kpp-panel-title">{kppEmployees.length > 0 ? 'Сотрудники в зоне КПП' : 'На КПП никого не было'}</span>
+                    <span className="panel-kicker">Не носил</span>
+                    <span className="kpp-panel-title">
+                      {visibleNotWornEmployees.length > 0
+                        ? 'Сотрудники с подозрительным простоем'
+                        : 'Подозрительного простоя не было'}
+                    </span>
                   </span>
                 </button>
-                {kppEmployees.length > 0 ? <span className="kpp-count">{kppEmployees.length}</span> : null}
+                {visibleNotWornEmployees.length > 0 ? (
+                  <span className="kpp-count">{visibleNotWornEmployees.length}</span>
+                ) : null}
               </div>
-              {kppOpen ? (
-                kppEmployees.length > 0 ? (
-                  <div className="kpp-list">
-                    {kppEmployees.map((employee) => (
-                      <div className="kpp-row" key={employee.ww_shift_id}>
-                        <div className="kpp-main">
-                          <strong>{employee.full_name}</strong>
-                          <span>
-                            #{employee.employee_number} · {employee.supervisor_name}
-                          </span>
+              {notWornOpen ? (
+                notWornLoading ? (
+                  <p className="kpp-empty">Загружаем список...</p>
+                ) : notWornError ? (
+                  <p className="kpp-empty error-state">Ошибка: {notWornError}</p>
+                ) : visibleNotWornEmployees.length > 0 ? (
+                  <div className={brigadeLayoutClass('zones-brigade-matrix not-worn-brigade-matrix', visibleDailyRows.length)}>
+                    {visibleDailyRows.map((brigade) => {
+                      const brigadeEmployees = visibleNotWornEmployees.filter((employee) =>
+                        brigadeNamesMatch(employee.supervisor_name, brigade.supervisor_name),
+                      )
+
+                      return (
+                        <div className="zones-brigade-column" key={brigade.supervisor_name}>
+                          <div className="zones-brigade-matrix-head">
+                            <strong>{brigade.supervisor_name}</strong>
+                          </div>
+
+                          <div
+                            className={`zone-panel zone-panel--idle${brigadeEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}
+                          >
+                            {brigadeEmployees.length > 0 ? (
+                              <div className="kpp-list">
+                                {brigadeEmployees.map((employee) => {
+                                  const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
+                                  const isAlert = employee.not_worn_pct >= warnPct
+                                  return (
+                                    <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
+                                      <div className="kpp-main">
+                                        <strong>{employee.full_name}</strong>
+                                        <span>
+                                          {employee.profession?.trim() || '—'} · #{employee.employee_number}
+                                        </span>
+                                      </div>
+                                      <div className="kpp-metrics">
+                                        <div className="kpp-time">{employee.not_worn_time}</div>
+                                        <div className="kpp-time kpp-time-secondary">{formatSeconds(employee.not_worn_sec)}</div>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <p className="kpp-empty">Подозрительного простоя нет.</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="kpp-metrics">
-                          <div className="kpp-time">{employee.kpp_time}</div>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
-                  <p className="kpp-empty">Никто не фиксировался в зоне КПП за этот день.</p>
+                  <p className="kpp-empty">Никто не превысил порог подозрительного простоя за этот день.</p>
                 )
               ) : null}
             </div>
@@ -1185,81 +1219,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
-      </CollapsibleBlock>
-      ) : null}
-
-      {/* БЛОК 7 — НЕ НОСИЛ */}
-      {showBlock7 ? (
-      <CollapsibleBlock
-        id={dashboardBlockDomId('block7')}
-        title="Не носил"
-        description="Подозрительное бездействие в окне рабочей смены."
-        defaultOpen={visibleNotWornEmployees.length > 0}
-      >
-        <div className="filter-row">
-          <DatePickerField
-            label="Дата"
-            value={selectedDate}
-            dates={availableDates}
-            onChange={setSelectedDate}
-            disabled={!availableDates.length}
-          />
-        </div>
-
-        {dailyLoading || notWornLoading ? <div className="empty-state">Загружаем данные по ношению часов...</div> : null}
-        {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
-        {notWornError ? <div className="empty-state error-state">Ошибка: {notWornError}</div> : null}
-
-        {!dailyLoading && !dailyError && !notWornLoading && visibleDailyRows.length === 0 ? (
-          <div className="empty-state">Нет данных за выбранный день.</div>
-        ) : null}
-
-        {!dailyLoading && !dailyError && visibleDailyRows.length > 0 ? (
-          <div className={brigadeLayoutClass('zones-brigade-matrix', visibleDailyRows.length)}>
-            {visibleDailyRows.map((brigade) => {
-              const brigadeEmployees = visibleNotWornEmployees.filter((employee) =>
-                brigadeNamesMatch(employee.supervisor_name, brigade.supervisor_name),
-              )
-
-              return (
-                <div className="zones-brigade-column" key={brigade.supervisor_name}>
-                  <div className="zones-brigade-matrix-head">
-                    <strong>{brigade.supervisor_name}</strong>
-                  </div>
-
-                  <div
-                    className={`zone-panel zone-panel--idle not-worn-panel${brigadeEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}
-                  >
-                    {brigadeEmployees.length > 0 ? (
-                      <div className="kpp-list">
-                        {brigadeEmployees.map((employee) => {
-                          const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
-                          const isAlert = employee.not_worn_pct >= warnPct
-                          return (
-                            <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
-                              <div className="kpp-main">
-                                <strong>{employee.full_name}</strong>
-                                <span>
-                                  {employee.profession?.trim() || '—'} · #{employee.employee_number}
-                                </span>
-                              </div>
-                              <div className="kpp-metrics">
-                                <div className="kpp-time">{employee.not_worn_time}</div>
-                                <div className="kpp-time kpp-time-secondary">{formatSeconds(employee.not_worn_sec)}</div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <p className="kpp-empty">Подозрительного простоя нет.</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : null}
       </CollapsibleBlock>
       ) : null}
 

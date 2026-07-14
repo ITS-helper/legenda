@@ -558,7 +558,7 @@ export function MetricSettingsPage() {
                     </div>
                   </div>
                 ) : null}
-                {blockId === 'block7' && blockEnabled ? (
+                {blockId === 'block1' && blockEnabled ? (
                   <NotWornProfessionRulesEditor
                     professions={availableProfessions}
                     globalDefaults={draft}
