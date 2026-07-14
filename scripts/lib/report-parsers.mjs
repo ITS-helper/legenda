@@ -327,7 +327,7 @@ export function assertFileExists(filePath, label) {
 
 export const REPORT_FILE_PATTERNS = {
   faceid: /6_report_6_faceID.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
-  aa_ble: /11_отчет по АА_BLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
+  aa_ble: /11_отчет по [AА]{2}_BLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
   long_idle: /8_report_8_LongIDLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
   idle_episode: /10_report_10.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
 }

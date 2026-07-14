@@ -102,7 +102,7 @@ npm run sync:drive -- --date 2026-07-01 --force
 
 | Симптом | Что проверить |
 |---------|----------------|
-| `Не найдены файлы за YYYY-MM-DD` | Файлы ещё не появились в нужной архивной папке или дата в имени не совпадает |
+| `Не найдены файлы за YYYY-MM-DD` | Файлы ещё не появились в нужной архивной папке, дата в имени не совпадает, или в имени **AA_BLE** латинские `A` вместо кириллических `А` (скрипт принимает оба варианта) |
 | `invalid_grant` / auth error | `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` с корректными `\n` |
 | `DECODER routines::unsupported` | Добавьте secret `GOOGLE_SERVICE_ACCOUNT_JSON` с полным JSON service account |
 | `permission denied` | Папка расшарена на service account email |
