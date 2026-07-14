@@ -139,7 +139,7 @@ type AttentionRow = {
   activity_pct: number
 }
 
-const LOW_ACTIVITY_THRESHOLD = 30
+const DEFAULT_LOW_ACTIVITY_PCT = 30
 const DEFAULT_ANALYTICS_MIN_ACTIVITY_PCT = 11
 
 const corsHeaders = {
@@ -1212,9 +1212,57 @@ function isAnalyticsEligibleShift(
   return shiftActivityPct(row) >= minActivityPct
 }
 
-function filterLowActivityDaily(rows: ShiftMetricRow[]) {
+async function loadLowActivityPct(supabase: ReturnType<typeof getAdminClient>) {
+  const { data, error } = await supabase!.rpc('get_metric_settings')
+  if (error || !data || typeof data !== 'object') return DEFAULT_LOW_ACTIVITY_PCT
+  const value = Number((data as Record<string, unknown>).low_activity_pct)
+  return Number.isFinite(value) ? value : DEFAULT_LOW_ACTIVITY_PCT
+}
+
+async function loadShiftRowsForDate(
+  supabase: ReturnType<typeof getAdminClient>,
+  date: string,
+  minActivityPct: number,
+) {
+  const { data, error } = await supabase!
+    .from('shift_daily_metrics')
+    .select('employee_number, full_name, supervisor_name, work_sec_total, total_sec_total')
+    .eq('report_date', date)
+  if (error) throw error
+  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[], minActivityPct)
+}
+
+async function loadShiftRowsForRange(
+  supabase: ReturnType<typeof getAdminClient>,
+  dateStart: string,
+  dateEnd: string,
+  minActivityPct: number,
+) {
+  const { data, error } = await supabase!
+    .from('shift_daily_metrics')
+    .select('employee_number, full_name, supervisor_name, work_sec_total, total_sec_total')
+    .gte('report_date', dateStart)
+    .lte('report_date', dateEnd)
+  if (error) throw error
+  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[], minActivityPct)
+}
+
+function filterLowActivityForReport(
+  rows: AttentionRow[],
+  brigadeFilter: string | undefined,
+  comparisonBrigades: string[],
+) {
+  if (brigadeFilter) {
+    return rows.filter((row) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, brigadeFilter))
+  }
+  return rows.filter((row) =>
+    comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, name)),
+  )
+}
+
+function filterLowActivityDaily(rows: ShiftMetricRow[], lowActivityPct: number) {
   return rows
-    .filter((row) => row.total_sec_total > 0 && shiftActivityPct(row) < LOW_ACTIVITY_THRESHOLD)
+    .filter((row) => row.total_sec_total > 0 && shiftActivityPct(row) < lowActivityPct)
     .map((row) => ({
       full_name: row.full_name,
       employee_number: row.employee_number,
@@ -1224,7 +1272,7 @@ function filterLowActivityDaily(rows: ShiftMetricRow[]) {
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
 
-function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
+function aggregateLowActivityWeekly(rows: ShiftMetricRow[], lowActivityPct: number) {
   const totals = new Map<
     string,
     { work_sec: number; total_sec: number; full_name: string; supervisor_name: string | null }
@@ -1250,7 +1298,7 @@ function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
       activity_pct: row.total_sec > 0 ? (row.work_sec / row.total_sec) * 100 : 0,
       total_sec: row.total_sec,
     }))
-    .filter((row) => row.total_sec > 0 && row.activity_pct < LOW_ACTIVITY_THRESHOLD)
+    .filter((row) => row.total_sec > 0 && row.activity_pct < lowActivityPct)
     .map(({ total_sec: _total, ...row }) => row)
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
@@ -1334,9 +1382,9 @@ function topActivityBlock(rows: AttentionRow[], periodLabel: string) {
   </details>`
 }
 
-function attentionBlock(rows: AttentionRow[], periodLabel: string) {
+function attentionBlock(rows: AttentionRow[], periodLabel: string, lowActivityPct: number) {
   if (rows.length === 0) {
-    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Сотрудников с активностью ниже 30% ${periodLabel} нет.</div>`
+    return `<div style="margin-top:16px;padding:14px 16px;background:${COLORS.surface2};border-radius:16px;color:${COLORS.textMuted};border:1px solid ${COLORS.border};">Сотрудников с активностью ниже ${lowActivityPct}% ${periodLabel} нет.</div>`
   }
 
   const items = rows
@@ -1354,7 +1402,7 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string) {
   return `<details style="margin-top:16px;border:1px solid ${COLORS.alertBorder};border-radius:20px;background:${COLORS.alertSoft};overflow:hidden;">
     <summary style="padding:16px 20px;font-weight:700;color:${COLORS.alert};cursor:pointer;list-style:none;">
       <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};display:block;margin-bottom:4px;">Требуют внимания</span>
-      Активность ниже 30% ${periodLabel}
+      Активность ниже ${lowActivityPct}% ${periodLabel}
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
@@ -1987,6 +2035,15 @@ async function buildDailyHtml(
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам'
 
+  const minActivityPct = await loadAnalyticsMinActivityPct(supabase)
+  const lowActivityPct = await loadLowActivityPct(supabase)
+  const shiftRows = await loadShiftRowsForDate(supabase, date, minActivityPct)
+  const lowActivityRows = filterLowActivityForReport(
+    filterLowActivityDaily(shiftRows, lowActivityPct),
+    brigadeFilter,
+    comparisonBrigades,
+  )
+
   const htmlParts: string[] = []
   if (blocks.block1) {
     htmlParts.push(
@@ -2006,6 +2063,7 @@ async function buildDailyHtml(
       ]),
       `<h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>`,
       brigadeCardsEmailDaily(brigades),
+      attentionBlock(lowActivityRows, 'за день', lowActivityPct),
     )
   }
   if (blocks.block3) {
@@ -2171,6 +2229,15 @@ async function buildWeeklyHtml(
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам за неделю'
 
+  const minActivityPct = await loadAnalyticsMinActivityPct(supabase)
+  const lowActivityPct = await loadLowActivityPct(supabase)
+  const weeklyShiftRows = await loadShiftRowsForRange(supabase, weekStart, weekEnd, minActivityPct)
+  const lowActivityRows = filterLowActivityForReport(
+    aggregateLowActivityWeekly(weeklyShiftRows, lowActivityPct),
+    brigadeFilter,
+    comparisonBrigades,
+  )
+
   const htmlParts: string[] = []
   if (blocks.block2) {
     const metricCells = [
@@ -2193,6 +2260,7 @@ async function buildWeeklyHtml(
       metricsGrid([metricCells]),
       `<h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>`,
       brigadeCardsEmailWeekly(brigades, blocks.block5 ? volumeDynamics : []),
+      attentionBlock(lowActivityRows, 'за неделю', lowActivityPct),
     )
   }
   if (blocks.block3) {
