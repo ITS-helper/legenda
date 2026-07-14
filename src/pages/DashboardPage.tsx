@@ -825,6 +825,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             {showBlock1Attention ? (
             <AttentionPanel
               employees={lowActivityDaily}
+              brigades={visibleDailyRows.map((brigade) => brigade.supervisor_name)}
               open={attentionOpen}
               onToggle={() => setAttentionOpen((current) => !current)}
               emptyMessage={`Нет сотрудников с активностью ниже ${settings.lowActivityPct}% за этот день.`}
@@ -1021,6 +1022,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Attention ? (
           <AttentionPanel
             employees={lowActivityWeekly}
+            brigades={visibleWeeklyRows.map((brigade) => brigade.supervisor_name)}
             open={weeklyAttentionOpen}
             onToggle={() => setWeeklyAttentionOpen((current) => !current)}
             emptyMessage={`Нет сотрудников со средней активностью ниже ${settings.lowActivityPct}% за неделю.`}

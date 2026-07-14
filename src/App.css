@@ -2915,6 +2915,14 @@
   min-width: 0;
 }
 
+.attention-brigade-matrix {
+  margin-top: 2px;
+}
+
+.attention-brigade-matrix .zones-brigade-column {
+  min-width: 0;
+}
+
 .top-activity-panel {
   padding: 18px 20px;
   border-radius: 20px;
@@ -3064,11 +3072,13 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: var(--surface-2);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .kpp-row-alert {
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--alert) 35%, var(--border));
+  background: color-mix(in srgb, var(--alert) 6%, var(--surface));
 }
 
 .not-worn-profession-rules-list {
