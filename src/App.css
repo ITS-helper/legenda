@@ -3663,7 +3663,7 @@
 
 .scroll-to-top {
   position: fixed;
-  right: max(20px, calc(50% - 600px));
+  right: max(16px, calc(50% - 632px));
   bottom: max(24px, env(safe-area-inset-bottom, 0px));
   z-index: 25;
   display: grid;
@@ -3713,7 +3713,7 @@
 
 @media (max-width: 720px) {
   .scroll-to-top {
-    right: 16px;
+    right: 12px;
     bottom: max(16px, env(safe-area-inset-bottom, 0px));
     width: 44px;
     height: 44px;
