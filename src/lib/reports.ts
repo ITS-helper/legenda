@@ -202,6 +202,21 @@ export function buildNotWornTimeLabel(eventTimes: string[]) {
   return sorted.length > 0 ? formatEventTimeRanges(sorted) : '—'
 }
 
+export function buildNotWornEpisodeTimeLabel(
+  episodes: Array<{ episode_start: string; episode_end: string }>,
+) {
+  if (episodes.length === 0) return '—'
+
+  return episodes
+    .sort((left, right) => new Date(left.episode_start).getTime() - new Date(right.episode_start).getTime())
+    .map(({ episode_start, episode_end }) => {
+      const start = formatMoscowTime(episode_start)
+      const end = formatMoscowTime(episode_end)
+      return start === end ? start : `${start}–${end}`
+    })
+    .join(', ')
+}
+
 const NO_SUPERVISOR = 'Без начальника'
 
 export { NO_SUPERVISOR }
@@ -929,28 +944,38 @@ export async function loadNotWornEmployees(reportDate: string) {
   if (employees.length === 0) return [] satisfies NotWornEmployee[]
 
   const shiftIds = employees.map((employee) => employee.ww_shift_id)
-  const { data: minuteData, error: minuteError } = await supabase
+  const { data: episodeData, error: episodeError } = await supabase
     .schema('analytics')
-    .rpc('not_worn_episode_minutes_for_date', {
+    .rpc('not_worn_episode_ranges_for_date', {
       p_report_date: reportDate,
       p_shift_ids: shiftIds,
     })
 
-  if (minuteError) throw minuteError
+  if (episodeError) throw episodeError
 
-  const minutesByShift = new Map<number, string[]>()
-  for (const row of minuteData ?? []) {
-    if (!row.event_at) continue
+  type NotWornEpisodeRow = {
+    ww_shift_id: number | string
+    episode_start: string
+    episode_end: string
+    episode_sec: number | string
+  }
+
+  const episodesByShift = new Map<number, Array<{ episode_start: string; episode_end: string }>>()
+  for (const row of (episodeData ?? []) as NotWornEpisodeRow[]) {
+    if (!row.episode_start || !row.episode_end) continue
     const shiftId = Number(row.ww_shift_id)
-    const events = minutesByShift.get(shiftId) ?? []
-    events.push(String(row.event_at))
-    minutesByShift.set(shiftId, events)
+    const episodes = episodesByShift.get(shiftId) ?? []
+    episodes.push({
+      episode_start: String(row.episode_start),
+      episode_end: String(row.episode_end),
+    })
+    episodesByShift.set(shiftId, episodes)
   }
 
   return employees
     .map((employee) => ({
       ...employee,
-      not_worn_time: buildNotWornTimeLabel(minutesByShift.get(employee.ww_shift_id) ?? []),
+      not_worn_time: buildNotWornEpisodeTimeLabel(episodesByShift.get(employee.ww_shift_id) ?? []),
     }))
     .sort((left, right) => right.not_worn_sec - left.not_worn_sec)
 }
