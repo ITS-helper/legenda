@@ -192,6 +192,47 @@ as $$
     );
 $$;
 
+create or replace function analytics.is_rest_zone(p_zona text)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select coalesce(p_zona, '') in ('2', '4', '5', '14');
+$$;
+
+create or replace function analytics.is_not_worn_eligible_zone(p_zona text)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select not analytics.is_rest_zone(p_zona)
+    and coalesce(trim(p_zona), '') <> '0';
+$$;
+
+create or replace function analytics.is_not_worn_metric_minute(
+  p_idle_sec integer,
+  p_work_sec integer,
+  p_go_sec integer,
+  p_total_sec integer,
+  p_zona text,
+  p_profession text,
+  p_event_at timestamptz
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = analytics, public, pg_temp
+as $$
+  select analytics.is_not_worn_eligible_zone(p_zona)
+    and not analytics.is_lunch_minute(p_event_at)
+    and coalesce(p_total_sec, 0) > 0
+    and coalesce(p_idle_sec, 0) >= analytics.not_worn_idle_sec_min_for(p_profession)
+    and coalesce(p_work_sec, 0) + coalesce(p_go_sec, 0) <= analytics.not_worn_active_sec_max_for(p_profession);
+$$;
+
 create or replace function analytics.not_worn_episode_minutes_for_date(
   p_report_date date,
   p_shift_ids bigint[] default null
@@ -342,7 +383,7 @@ select
   coalesce(
     sum(
       case
-        when not analytics.is_rest_zone(b.zona)
+        when analytics.is_not_worn_eligible_zone(b.zona)
           and not analytics.is_lunch_minute(b.event_at)
         then b.total_sec
         else 0
