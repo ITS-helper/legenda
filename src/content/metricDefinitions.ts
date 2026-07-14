@@ -3,6 +3,10 @@ import { formatMskTimeFromMinutes, parseMskTimeToMinutes } from '../lib/mskTime'
 
 export const MSK_TIME_ZONE = 'Europe/Moscow'
 
+/** Единое правило для всех метрик из AA_BLE (отчёт 11). */
+export const BLE_SHIFT_WINDOW_NOTE =
+  'Учитываются только минуты AA_BLE в окне рабочей смены 07:00–23:00 МСК (`analytics.is_ble_shift_window_minute`).'
+
 export type MetricConfigFieldKey = NumericMetricSettingKey
 
 export type MetricDefinition = {
@@ -53,7 +57,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
       'View `analytics.brigade_daily_metrics` → `activity_pct`',
     ],
     formula: 'activity_pct = 100 × Σ(work_sec) / Σ(total_sec)',
-    notes: 'Проценты по бригаде — сумма секунд всех смен бригады, не среднее арифметическое процентов.',
+    notes: `Проценты по бригаде — сумма секунд всех смен бригады, не среднее арифметическое процентов. ${BLE_SHIFT_WINDOW_NOTE}`,
   },
   {
     id: 'weak_activity',
@@ -67,7 +71,8 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     formula:
       'weak_activity_sec = max(idle_sec_total − long_idle_sec_total, 0)\nweak_activity_pct = 100 × weak_activity_sec / total_sec',
     notes:
-      'В системе мониторинга это поле `idle_sec` (простой / бездействие по датчику). В Legenda «слабая активность» — остаток простоя после вычитания длительных эпизодов: короткие паузы и минуты с низким движением, не попавшие в порог длительного простоя.',
+      'В системе мониторинга это поле `idle_sec` (простой / бездействие по датчику). В Legenda «слабая активность» — остаток простоя после вычитания длительных эпизодов: короткие паузы и минуты с низким движением, не попавшие в порог длительного простоя. ' +
+      BLE_SHIFT_WINDOW_NOTE,
   },
   {
     id: 'long_idle',
@@ -90,6 +95,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         hint: 'Эпизоды короче порога идут в «слабую активность»',
       },
     ],
+    notes: BLE_SHIFT_WINDOW_NOTE,
   },
   {
     id: 'go',
@@ -98,6 +104,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     description: 'Время перемещения между BLE-зонами (GO).',
     sources: ['AA_BLE → `ble_minute_facts.go_sec`'],
     formula: 'go_pct = 100 × Σ(go_sec) / Σ(total_sec)',
+    notes: BLE_SHIFT_WINDOW_NOTE,
   },
   {
     id: 'kpp',
@@ -120,7 +127,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         max: 1440,
       },
     ],
-    notes: 'Время обеда задаётся по Москве (МСК). По умолчанию 13:00–14:00 — минуты КПП в этом интервале не учитываются.',
+    notes: `Время обеда задаётся по Москве (МСК). По умолчанию 13:00–14:00 — минуты КПП в этом интервале не учитываются. ${BLE_SHIFT_WINDOW_NOTE}`,
   },
   {
     id: 'pv',
@@ -129,7 +136,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     description: 'Доля времени в производственной зоне (zona = 1).',
     sources: ['AA_BLE → `ble_minute_facts` WHERE zona = 1', 'View `zone_daily_metrics` для детализации по зонам'],
     formula: 'pv_pct = 100 × pv_sec / Σ(секунды по всем видимым зонам, кроме скрытых)',
-    notes: 'Зона 0 скрыта из UI. Зона 13 (КПП) в блоке «Местоположение» показывается отдельно.',
+    notes: `Зона 0 скрыта из UI. Зона 13 (КПП) в блоке «Местоположение» показывается отдельно. ${BLE_SHIFT_WINDOW_NOTE}`,
   },
   {
     id: 'shift_duration',
@@ -265,11 +272,10 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     block: 'Блок 7 · Не носил',
     title: 'Не носил часы',
     description:
-      'Поведенческая оценка: минуты почти полного простоя без движения только после выдачи часов (faceID → watch_received_at). Учитываемые зоны — вне отдыха (2, 4, 5, 14) и вне zona 0. Обед 13:00–14:00 МСК не учитывается.',
+      'Поведенческая оценка: минуты почти полного простоя без движения в окне рабочей смены 07:00–23:00 МСК. Учитываемые зоны — вне отдыха (2, 4, 5, 14) и вне zona 0. Обед 13:00–14:00 МСК не учитывается.',
     sources: [
       'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`, `event_at`',
-      'Отчёт 6 · faceID → `watch_received_at`, `watch_returned_at`',
-      'Функции `analytics.is_not_worn_on_watch_minute`, `analytics.is_not_worn_eligible_zone`, `analytics.is_lunch_minute`, `analytics.is_not_worn_metric_minute`',
+      'Функции `analytics.is_ble_shift_window_minute`, `analytics.is_not_worn_eligible_zone`, `analytics.is_lunch_minute`, `analytics.is_not_worn_metric_minute`',
       'View `analytics.shift_daily_metrics` → `not_worn_sec_total`, `not_worn_eligible_sec_total`',
       'View `analytics.not_worn_minutes_daily` → интервалы в списке сотрудников',
     ],

@@ -64,7 +64,7 @@ export const DASHBOARD_BLOCKS: DashboardBlockDefinition[] = [
     number: 7,
     kicker: 'Блок 7 · Ношение часов',
     title: 'Не носил',
-    description: 'Подозрительное бездействие после выдачи часов: простой без движения по AA_BLE (без отдыха, zona 0 и до watch_received_at).',
+    description: 'Подозрительное бездействие в окне рабочей смены 07:00–23:00 МСК: простой без движения по AA_BLE (без отдыха и zona 0).',
     inReports: 'Только дашборд (в рассылку не входит)',
   },
 ]

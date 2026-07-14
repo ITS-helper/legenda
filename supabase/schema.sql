@@ -192,6 +192,20 @@ as $$
     );
 $$;
 
+create or replace function analytics.is_ble_shift_window_minute(p_event_at timestamptz)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select (
+    (extract(hour from p_event_at at time zone 'Europe/Moscow') * 60
+      + extract(minute from p_event_at at time zone 'Europe/Moscow'))::int >= 420
+    and (extract(hour from p_event_at at time zone 'Europe/Moscow') * 60
+      + extract(minute from p_event_at at time zone 'Europe/Moscow'))::int < 1380
+  );
+$$;
+
 create or replace function analytics.is_rest_zone(p_zona text)
 returns boolean
 language sql
@@ -272,7 +286,7 @@ as $$
     join analytics.employees e on e.id = s.employee_id
     where b.report_date = p_report_date
       and (p_shift_ids is null or b.ww_shift_id = any(p_shift_ids))
-      and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
+      and analytics.is_ble_shift_window_minute(b.event_at)
       and analytics.is_not_worn_metric_minute(
         b.idle_sec,
         b.work_sec,
@@ -340,7 +354,7 @@ as $$
     join analytics.employees e on e.id = s.employee_id
     where b.report_date = p_report_date
       and (p_shift_ids is null or b.ww_shift_id = any(p_shift_ids))
-      and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
+      and analytics.is_ble_shift_window_minute(b.event_at)
       and analytics.is_not_worn_metric_minute(
         b.idle_sec,
         b.work_sec,
@@ -476,7 +490,6 @@ select
       case
         when analytics.is_not_worn_eligible_zone(b.zona)
           and not analytics.is_lunch_minute(b.event_at)
-          and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
         then b.total_sec
         else 0
       end
@@ -496,7 +509,10 @@ from analytics.shifts s
 join analytics.employees e on e.id = s.employee_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id
 left join analytics.schedules sch on sch.id = s.schedule_id
-left join analytics.ble_minute_facts b on b.ww_shift_id = s.ww_shift_id and b.report_date = s.report_date
+left join analytics.ble_minute_facts b
+  on b.ww_shift_id = s.ww_shift_id
+ and b.report_date = s.report_date
+ and analytics.is_ble_shift_window_minute(b.event_at)
 left join (
   select
     ww_shift_id,
@@ -613,6 +629,7 @@ from analytics.ble_minute_facts b
 left join analytics.shifts s on s.ww_shift_id = b.ww_shift_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id
 where b.zona is not null
+  and analytics.is_ble_shift_window_minute(b.event_at)
 group by b.report_date, coalesce(sup.name, 'Без начальника'), b.zona;
 
 create table if not exists analytics.idle_episodes (
@@ -658,7 +675,8 @@ select
   ww_shift_id,
   event_at
 from analytics.ble_minute_facts
-where zona = '13';
+where zona = '13'
+  and analytics.is_ble_shift_window_minute(event_at);
 
 create or replace view analytics.not_worn_minutes_daily as
 with suspicious as (
@@ -670,7 +688,7 @@ with suspicious as (
   from analytics.ble_minute_facts b
   join analytics.shifts s on s.ww_shift_id = b.ww_shift_id and s.report_date = b.report_date
   join analytics.employees e on e.id = s.employee_id
-  where analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
+  where analytics.is_ble_shift_window_minute(b.event_at)
     and analytics.is_not_worn_metric_minute(
     b.idle_sec,
     b.work_sec,
