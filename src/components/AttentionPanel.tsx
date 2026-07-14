@@ -59,7 +59,7 @@ export function AttentionPanel({
                           <div className="kpp-row" key={`${employee.employee_number}-${employee.full_name}`}>
                             <div className="kpp-main">
                               <strong>{employee.full_name}</strong>
-                              <span>#{employee.employee_number}</span>
+                              <span>{employee.profession?.trim() || '—'} · #{employee.employee_number}</span>
                             </div>
                             <div className="kpp-time">{formatPercent(employee.activity_pct)}</div>
                           </div>

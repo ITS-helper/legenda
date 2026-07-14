@@ -699,6 +699,7 @@ export type AttentionEmployee = {
   employee_number: string
   full_name: string
   supervisor_name: string
+  profession: string | null
   activity_pct: number
 }
 
@@ -728,6 +729,7 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
           employee_number: row.employee_number,
           full_name: row.full_name,
           supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+          profession: row.profession ?? null,
           activity_pct: getShiftProductivity(row),
         }) satisfies AttentionEmployee,
     )
@@ -735,7 +737,7 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
 }
 
 const WEEKLY_SHIFT_ROW_COLUMNS =
-  'employee_number, full_name, supervisor_name, work_sec_total, total_sec_total, kpp_sec_total'
+  'employee_number, full_name, supervisor_name, profession, work_sec_total, total_sec_total, kpp_sec_total'
 
 async function loadShiftRowsForDay(reportDate: string) {
   const { data, error } = await supabase
@@ -763,7 +765,7 @@ export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) 
 function aggregateShiftActivity(rows: ShiftMetricRow[]) {
   const totals = new Map<
     string,
-    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string }
+    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string; profession: string | null }
   >()
 
   for (const row of rows) {
@@ -772,9 +774,13 @@ function aggregateShiftActivity(rows: ShiftMetricRow[]) {
       total_sec: 0,
       full_name: row.full_name,
       supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+      profession: row.profession ?? null,
     }
     current.work_sec += row.work_sec_total
     current.total_sec += row.total_sec_total
+    if (!current.profession && row.profession) {
+      current.profession = row.profession
+    }
     totals.set(row.employee_number, current)
   }
 
@@ -782,6 +788,7 @@ function aggregateShiftActivity(rows: ShiftMetricRow[]) {
     employee_number,
     full_name: row.full_name,
     supervisor_name: row.supervisor_name,
+    profession: row.profession,
     activity_pct: ratio(row.work_sec, row.total_sec),
     total_sec: row.total_sec,
   }))
@@ -796,6 +803,7 @@ export function topActivityDaily(rows: ShiftMetricRow[], limit = 3) {
           employee_number: row.employee_number,
           full_name: row.full_name,
           supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+          profession: row.profession ?? null,
           activity_pct: getShiftProductivity(row),
         }) satisfies AttentionEmployee,
     )
