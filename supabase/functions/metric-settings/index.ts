@@ -64,6 +64,7 @@ const ZONE_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
 const INT_FIELDS: Array<[string, number, number]> = [
   ['long_idle_min', 1, 180],
   ['low_activity_pct', 1, 100],
+  ['analytics_min_activity_pct', 0, 100],
   ['brigade_warn_pct', 1, 100],
   ['shift_target_total', 1, 500],
   ['brigade_target_jalol', 1, 200],

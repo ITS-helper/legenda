@@ -150,7 +150,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     id: 'attention',
     block: 'Блок 1 · Ежедневная аналитика',
     title: 'Требуют внимания',
-    description: 'Сотрудники с активностью ниже порога за день или неделю.',
+    description: 'Сотрудники с активностью ниже порога за день или неделю. Смены с активностью ниже analytics_min_activity_pct (по умолчанию 11%) в аналитику не попадают.',
     sources: ['View `shift_daily_metrics` / `brigade_weekly_metrics`'],
     formula: 'productivity = 100 × work_sec_total / total_sec_total\nотбор: productivity < low_activity_pct',
     configFields: [

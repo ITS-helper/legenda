@@ -16,6 +16,7 @@ import {
 export type MetricSettings = {
   longIdleMin: number
   lowActivityPct: number
+  analyticsMinActivityPct: number
   brigadeWarnPct: number
   shiftTargetTotal: number
   brigadeTargetJalol: number
@@ -59,6 +60,7 @@ export type NumericMetricSettingKey = Exclude<
 type MetricSettingsRow = {
   long_idle_min?: number
   low_activity_pct?: number
+  analytics_min_activity_pct?: number
   brigade_warn_pct?: number
   shift_target_total?: number
   brigade_target_jalol?: number
@@ -90,6 +92,7 @@ export const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК'
 export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   longIdleMin: 10,
   lowActivityPct: 30,
+  analyticsMinActivityPct: 11,
   brigadeWarnPct: 40,
   shiftTargetTotal: 50,
   brigadeTargetJalol: 20,
@@ -183,6 +186,7 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
   return {
     longIdleMin: row?.long_idle_min ?? DEFAULT_METRIC_SETTINGS.longIdleMin,
     lowActivityPct: row?.low_activity_pct ?? DEFAULT_METRIC_SETTINGS.lowActivityPct,
+    analyticsMinActivityPct: row?.analytics_min_activity_pct ?? DEFAULT_METRIC_SETTINGS.analyticsMinActivityPct,
     brigadeWarnPct: row?.brigade_warn_pct ?? DEFAULT_METRIC_SETTINGS.brigadeWarnPct,
     shiftTargetTotal: row?.shift_target_total ?? DEFAULT_METRIC_SETTINGS.shiftTargetTotal,
     brigadeTargetJalol: row?.brigade_target_jalol ?? DEFAULT_METRIC_SETTINGS.brigadeTargetJalol,
@@ -243,6 +247,7 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
   return {
     long_idle_min: settings.longIdleMin,
     low_activity_pct: settings.lowActivityPct,
+    analytics_min_activity_pct: settings.analyticsMinActivityPct,
     brigade_warn_pct: settings.brigadeWarnPct,
     shift_target_total: settings.shiftTargetTotal,
     brigade_target_jalol: settings.brigadeTargetJalol,

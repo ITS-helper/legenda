@@ -140,6 +140,7 @@ type AttentionRow = {
 }
 
 const LOW_ACTIVITY_THRESHOLD = 30
+const DEFAULT_ANALYTICS_MIN_ACTIVITY_PCT = 11
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -720,10 +721,14 @@ function zonesPdfPayload(options: {
   }
 }
 
-async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: string) {
+async function loadKppRows(
+  supabase: ReturnType<typeof getAdminClient>,
+  date: string,
+  minActivityPct: number,
+) {
   const { data: kppData, error: kppError } = await supabase!
     .from('shift_daily_metrics')
-    .select('ww_shift_id, full_name, employee_number, supervisor_name, kpp_sec_total')
+    .select('ww_shift_id, full_name, employee_number, supervisor_name, kpp_sec_total, work_sec_total, total_sec_total')
     .eq('report_date', date)
     .gt('kpp_sec_total', 0)
     .order('kpp_sec_total', { ascending: false })
@@ -751,13 +756,18 @@ async function loadKppRows(supabase: ReturnType<typeof getAdminClient>, date: st
     minutesByShift.set(shiftId, events)
   }
 
-  return rows.map((row) => ({
-    full_name: row.full_name,
-    employee_number: row.employee_number,
-    supervisor_name: row.supervisor_name,
-    kpp_sec_total: row.kpp_sec_total,
-    kpp_time: buildKppTimeLabel(minutesByShift.get(row.ww_shift_id) ?? []),
-  })).filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+  return filterAnalyticsShiftRows(
+    rows.map((row) => ({
+      full_name: row.full_name,
+      employee_number: row.employee_number,
+      supervisor_name: row.supervisor_name,
+      kpp_sec_total: row.kpp_sec_total,
+      kpp_time: buildKppTimeLabel(minutesByShift.get(row.ww_shift_id) ?? []),
+      work_sec_total: Number(row.work_sec_total),
+      total_sec_total: Number(row.total_sec_total),
+    })),
+    minActivityPct,
+  )
 }
 
 function formatShiftDuration(totalSeconds: number) {
@@ -885,8 +895,16 @@ function filterAnalyticsSupervisors<T extends { supervisor_name: string }>(rows:
   return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
 }
 
-function filterAnalyticsShiftRows<T extends { supervisor_name: string | null }>(rows: T[]) {
-  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+function filterAnalyticsShiftRows<T extends {
+  supervisor_name: string | null
+  work_sec_total: number
+  total_sec_total: number
+}>(rows: T[], minActivityPct: number) {
+  return rows.filter(
+    (row) =>
+      isAnalyticsSupervisor(row.supervisor_name) &&
+      isAnalyticsEligibleShift(row, minActivityPct),
+  )
 }
 
 function formatDeltaPercent(delta: number | null) {
@@ -1175,8 +1193,23 @@ function brigadeCardsEmailWeekly(rows: BrigadeWeeklyRow[], volumeCards: BrigadeV
   )
 }
 
+async function loadAnalyticsMinActivityPct(supabase: ReturnType<typeof getAdminClient>) {
+  const { data, error } = await supabase!.rpc('get_metric_settings')
+  if (error || !data || typeof data !== 'object') return DEFAULT_ANALYTICS_MIN_ACTIVITY_PCT
+  const value = Number((data as Record<string, unknown>).analytics_min_activity_pct)
+  return Number.isFinite(value) ? value : DEFAULT_ANALYTICS_MIN_ACTIVITY_PCT
+}
+
 function shiftActivityPct(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
   return row.total_sec_total > 0 ? (row.work_sec_total / row.total_sec_total) * 100 : 0
+}
+
+function isAnalyticsEligibleShift(
+  row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>,
+  minActivityPct: number,
+) {
+  if (row.total_sec_total <= 0) return false
+  return shiftActivityPct(row) >= minActivityPct
 }
 
 function filterLowActivityDaily(rows: ShiftMetricRow[]) {

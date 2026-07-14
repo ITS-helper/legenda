@@ -230,8 +230,15 @@ export function filterAnalyticsSupervisors<T extends { supervisor_name: string }
   return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
 }
 
-export function filterAnalyticsShiftRows<T extends { supervisor_name: string | null }>(rows: T[]) {
-  return rows.filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+export function filterAnalyticsShiftRows<
+  T extends { supervisor_name: string | null; work_sec_total: number; total_sec_total: number },
+>(rows: T[]) {
+  const minPct = getMetricSettings().analyticsMinActivityPct
+  return rows.filter((row) => {
+    if (!isAnalyticsSupervisor(row.supervisor_name)) return false
+    if (row.total_sec_total <= 0) return false
+    return ratio(row.work_sec_total, row.total_sec_total) >= minPct
+  })
 }
 
 export function formatSeconds(totalSeconds: number) {
@@ -707,6 +714,11 @@ export function getShiftProductivity(row: Pick<ShiftMetricRow, 'work_sec_total' 
   return ratio(row.work_sec_total, row.total_sec_total)
 }
 
+export function isAnalyticsEligibleShift(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
+  if (row.total_sec_total <= 0) return false
+  return getShiftProductivity(row) >= getMetricSettings().analyticsMinActivityPct
+}
+
 /** @deprecated use getMetricSettings().lowActivityPct */
 export const LOW_ACTIVITY_THRESHOLD = DEFAULT_METRIC_SETTINGS.lowActivityPct
 
@@ -842,7 +854,7 @@ export async function loadKppEmployees(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
     .from('shift_daily_metrics')
-    .select('ww_shift_id, employee_number, full_name, supervisor_name, kpp_sec_total')
+    .select('ww_shift_id, employee_number, full_name, supervisor_name, kpp_sec_total, work_sec_total, total_sec_total')
     .eq('report_date', reportDate)
     .gt('kpp_sec_total', 0)
     .order('kpp_sec_total', { ascending: false })
@@ -856,6 +868,8 @@ export async function loadKppEmployees(reportDate: string) {
       full_name: String(row.full_name),
       supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
       kpp_sec: Number(row.kpp_sec_total),
+      work_sec_total: Number(row.work_sec_total),
+      total_sec_total: Number(row.total_sec_total),
     })),
   )
 
@@ -926,7 +940,7 @@ export async function loadNotWornEmployees(reportDate: string) {
     not_worn_shift_min_sec: number | null
   }
 
-  const employees = filterAnalyticsShiftRows(
+  const employees = filterAnalyticsSupervisors(
     ((data ?? []) as NotWornShiftRpcRow[])
       .map((row) => {
         const not_worn_sec = Number(row.not_worn_sec_total)
