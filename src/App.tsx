@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { MetricSettingsPage } from './pages/MetricSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { ScrollToTopButton } from './components/ScrollToTopButton'
 import './App.css'
 
 type AppRoute = 'dashboard' | 'mailing' | 'metrics'
@@ -124,6 +125,8 @@ function AppContent() {
       ) : null}
 
       {route === 'dashboard' && !uiTextLoading ? <DashboardPage uiText={uiText} /> : null}
+
+      <ScrollToTopButton />
     </main>
   )
 }
