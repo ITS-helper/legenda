@@ -23,7 +23,7 @@ export type SubblockDefinition = {
 }
 
 export const DASHBOARD_SUBBLOCKS: SubblockDefinition[] = [
-  { id: 'block1_summary', blockId: 'block1', title: 'Сводные метрики', note: 'Карточки: смена, активность, КПП, ПВ…' },
+  { id: 'block1_summary', blockId: 'block1', title: 'Сводные метрики', note: 'Карточки: смена, активность, «требуют внимания», ПВ…' },
   { id: 'block1_brigades', blockId: 'block1', title: 'Карточки бригад' },
   { id: 'block1_top_activity', blockId: 'block1', title: 'Топ-3 по активности' },
   { id: 'block1_attention', blockId: 'block1', title: 'Требуют внимания' },

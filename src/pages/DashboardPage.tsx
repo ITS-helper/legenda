@@ -528,6 +528,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
   const topWeekly = useMemo(() => topActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
 
+  const visibleLowActivityDaily = useMemo(
+    () =>
+      lowActivityDaily.filter((employee) =>
+        comparisonBrigades.some((name) => brigadeNamesMatch(employee.supervisor_name, name)),
+      ),
+    [lowActivityDaily, comparisonBrigades],
+  )
+
   const dailyTotals = useMemo(() => sumDaily(visibleDailyRows), [visibleDailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
@@ -729,10 +737,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                 <p className="metric-note">перемещения между зонами от общего времени</p>
                 <strong className="metric-value">{formatPercent(dailyGo)}</strong>
               </article>
-              <article className={`metric-card${dailyTotals.kpp_workers > 0 ? ' metric-card-alert' : ''}`}>
-                <span className="metric-label">Замечены на КПП</span>
-                <p className="metric-note">{dailyTotals.kpp_workers > 0 ? 'чел. в зоне КПП' : 'в зоне КПП никого (обед 13:00–14:00 не учитывается)'}</p>
-                <strong className="metric-value">{dailyTotals.kpp_workers}</strong>
+              <article className={`metric-card${visibleLowActivityDaily.length > 0 ? ' metric-card-alert' : ''}`}>
+                <span className="metric-label">Требуют внимания</span>
+                <p className="metric-note">
+                  {visibleLowActivityDaily.length > 0
+                    ? `активность ниже ${settings.lowActivityPct}% за день`
+                    : `низкой активности (ниже ${settings.lowActivityPct}%) нет`}
+                </p>
+                <strong className="metric-value">{visibleLowActivityDaily.length}</strong>
               </article>
               <article className="metric-card">
                 <span className="metric-label">В рабочей зоне (ПВ)</span>
@@ -822,7 +834,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
             {showBlock1Attention ? (
             <AttentionPanel
-              employees={lowActivityDaily}
+              employees={visibleLowActivityDaily}
               brigades={visibleDailyRows.map((brigade) => brigade.supervisor_name)}
               open={attentionOpen}
               onToggle={() => setAttentionOpen((current) => !current)}
