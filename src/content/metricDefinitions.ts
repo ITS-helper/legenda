@@ -270,7 +270,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   {
     id: 'not_worn',
     block: 'Блок 1 · Ежедневная аналитика',
-    title: 'Не использовали устройство',
+    title: 'Бездействие в зоне проведения работ',
     description: 'Подозрительное бездействие в окне рабочей смены.',
     sources: [
       'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`, `event_at`',

@@ -66,8 +66,6 @@ import {
 import { isAlertZone } from '../lib/zones'
 import { filterDistributionZoneRows } from '../lib/zoneVisibility'
 import { brigadeLayoutClass } from '../lib/brigadeLayout'
-import { resolveNotWornRule } from '../lib/notWornProfessionRules'
-
 type SortKey = 'full_name' | 'profession' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity'
 type SortDirection = 'asc' | 'desc'
 
@@ -836,7 +834,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
             {showBlock1NotWorn ? (
             <div
-              className={`kpp-panel not-worn-panel${visibleNotWornEmployees.length > 0 ? ' kpp-panel-alert' : ''}${notWornOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}
+              className={`kpp-panel not-worn-panel${notWornOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}
             >
               <div className="kpp-panel-head">
                 <button
@@ -852,8 +850,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span className="panel-kicker">Требуют внимания</span>
                     <span className="kpp-panel-title">
                       {visibleNotWornEmployees.length > 0
-                        ? 'Сотрудники, которые не использовали устройство согласно инструкции'
-                        : 'Никто не использовал устройство согласно инструкции'}
+                        ? 'Бездействие в зоне проведения работ'
+                        : 'Бездействия в зоне проведения работ нет'}
                     </span>
                   </span>
                 </button>
@@ -882,11 +880,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                           <div className="zone-panel zone-panel--idle">
                             {brigadeEmployees.length > 0 ? (
                               <div className="kpp-list">
-                                {brigadeEmployees.map((employee) => {
-                                  const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
-                                  const isAlert = employee.not_worn_pct >= warnPct
-                                  return (
-                                    <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
+                                {brigadeEmployees.map((employee) => (
+                                    <div className="kpp-row" key={employee.ww_shift_id}>
                                       <div className="kpp-main">
                                         <strong>{employee.full_name}</strong>
                                         <span>
@@ -898,11 +893,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                                         <div className="kpp-time kpp-time-secondary">{formatSeconds(employee.not_worn_sec)}</div>
                                       </div>
                                     </div>
-                                  )
-                                })}
+                                  ))}
                               </div>
                             ) : (
-                              <p className="kpp-empty">Никто не использовал устройство согласно инструкции.</p>
+                              <p className="kpp-empty">Бездействия в зоне проведения работ нет.</p>
                             )}
                           </div>
                         </div>
@@ -910,7 +904,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     })}
                   </div>
                 ) : (
-                  <p className="kpp-empty">Никто не использовал устройство согласно инструкции за этот день.</p>
+                  <p className="kpp-empty">Бездействия в зоне проведения работ за этот день нет.</p>
                 )
               ) : null}
             </div>

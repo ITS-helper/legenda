@@ -21,7 +21,7 @@ export function AttentionPanel({
   lowActivityPct,
 }: AttentionPanelProps) {
   return (
-    <div className={`kpp-panel${employees.length > 0 ? ' kpp-panel-alert' : ''}${open ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
+    <div className={`kpp-panel${open ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
       <div className="kpp-panel-head">
         <button type="button" className="kpp-panel-toggle" onClick={onToggle} aria-expanded={open}>
           <span className={`kpp-panel-chevron${open ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
