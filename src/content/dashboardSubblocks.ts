@@ -14,9 +14,6 @@ export type SubblockId =
   | 'block3_volume_dynamics'
   | 'block4_location'
   | 'block4_idle'
-  | 'block7_summary'
-  | 'block7_brigades'
-  | 'block7_employees'
 
 export type SubblockDefinition = {
   id: SubblockId
@@ -39,9 +36,6 @@ export const DASHBOARD_SUBBLOCKS: SubblockDefinition[] = [
   { id: 'block3_volume_dynamics', blockId: 'block3', title: 'Динамика объёмов', note: 'Требует блок 5' },
   { id: 'block4_location', blockId: 'block4', title: 'Местоположение по зонам' },
   { id: 'block4_idle', blockId: 'block4', title: 'Длительные простои' },
-  { id: 'block7_summary', blockId: 'block7', title: 'Сводные метрики' },
-  { id: 'block7_brigades', blockId: 'block7', title: 'Карточки бригад' },
-  { id: 'block7_employees', blockId: 'block7', title: 'Список сотрудников', note: 'Простой без движения вне зон отдыха' },
 ]
 
 export const SUBBLOCK_IDS = DASHBOARD_SUBBLOCKS.map((item) => item.id)

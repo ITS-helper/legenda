@@ -57,9 +57,6 @@ const SUBBLOCK_IDS = [
   'block3_volume_dynamics',
   'block4_location',
   'block4_idle',
-  'block7_summary',
-  'block7_brigades',
-  'block7_employees',
 ] as const
 
 const ZONE_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const

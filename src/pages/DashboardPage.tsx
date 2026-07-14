@@ -179,9 +179,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock3Volume = isSubblockEnabled('block3_volume_dynamics', settings)
   const showBlock4Location = isSubblockEnabled('block4_location', settings)
   const showBlock4Idle = isSubblockEnabled('block4_idle', settings)
-  const showBlock7Summary = isSubblockEnabled('block7_summary', settings)
-  const showBlock7Brigades = isSubblockEnabled('block7_brigades', settings)
-  const showBlock7Employees = isSubblockEnabled('block7_employees', settings)
   const comparisonBrigades = settings.comparisonBrigades
   const trackedBrigadeCount = comparisonBrigades.filter((name) => name.trim().length > 0).length || 2
   const comparisonBrigadesLabel =
@@ -236,7 +233,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [kppOpen, setKppOpen] = useState(false)
-  const [notWornOpen, setNotWornOpen] = useState(false)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
@@ -547,39 +543,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       ),
     [notWornEmployees, comparisonBrigades],
   )
-
-  const notWornEligibleSec = useMemo(
-    () =>
-      shiftRows
-        .filter((row) =>
-          comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, name)),
-        )
-        .reduce((sum, row) => sum + Number(row.not_worn_eligible_sec_total ?? 0), 0),
-    [shiftRows, comparisonBrigades],
-  )
-
-  const notWornSecTotal = useMemo(
-    () => visibleNotWornEmployees.reduce((sum, employee) => sum + employee.not_worn_sec, 0),
-    [visibleNotWornEmployees],
-  )
-
-  const block7NotWornPct = ratio(notWornSecTotal, notWornEligibleSec)
-
-  function brigadeNotWornStat(supervisorName: string) {
-    const workers = visibleNotWornEmployees.filter((employee) =>
-      brigadeNamesMatch(employee.supervisor_name, supervisorName),
-    )
-    const not_worn_sec = workers.reduce((sum, employee) => sum + employee.not_worn_sec, 0)
-    const eligible = shiftRows
-      .filter((row) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, supervisorName))
-      .reduce((sum, row) => sum + Number(row.not_worn_eligible_sec_total ?? 0), 0)
-
-    return {
-      not_worn_workers: workers.length,
-      not_worn_sec,
-      not_worn_pct: ratio(not_worn_sec, eligible),
-    }
-  }
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -1252,115 +1215,50 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
 
         {!dailyLoading && !dailyError && visibleDailyRows.length > 0 ? (
-          <>
-            {showBlock7Summary ? (
-            <div className="metrics-grid">
-              <article className={`metric-card${block7NotWornPct >= settings.notWornWarnPct ? ' metric-card-alert' : ''}`}>
-                <span className="metric-label">Не носил</span>
-                <p className="metric-note">простой без движения вне зон отдыха</p>
-                <strong className="metric-value">{formatPercent(block7NotWornPct)}</strong>
-              </article>
-              <article className={`metric-card${visibleNotWornEmployees.length > 0 ? ' metric-card-alert' : ''}`}>
-                <span className="metric-label">Сотрудников</span>
-                <p className="metric-note">
-                  {visibleNotWornEmployees.length > 0
-                    ? `≥ ${Math.round(settings.notWornMinSec / 60)} мин подозрительного простоя`
-                    : 'без длительного простоя без движения'}
-                </p>
-                <strong className="metric-value">{visibleNotWornEmployees.length}</strong>
-              </article>
-            </div>
-            ) : null}
+          <div className={brigadeLayoutClass('zones-brigade-matrix', visibleDailyRows.length)}>
+            {visibleDailyRows.map((brigade) => {
+              const brigadeEmployees = visibleNotWornEmployees.filter((employee) =>
+                brigadeNamesMatch(employee.supervisor_name, brigade.supervisor_name),
+              )
 
-            {showBlock7Brigades ? (
-            <div className={brigadeLayoutClass('brigade-grid', visibleDailyRows.length)}>
-              {visibleDailyRows.map((brigade) => {
-                const notWorn = brigadeNotWornStat(brigade.supervisor_name)
-                return (
-                <article className="brigade-card" key={brigade.supervisor_name}>
-                  <div className="brigade-card-head">
-                    <div>
-                      <strong>{brigade.supervisor_name}</strong>
-                      <p>{brigade.workers} чел. · {notWorn.not_worn_workers} не носил</p>
-                    </div>
-                    <div className={`brigade-badge${notWorn.not_worn_pct >= settings.notWornWarnPct ? ' brigade-badge-warn' : ''}`}>
-                      {formatPercent(notWorn.not_worn_pct)}
-                    </div>
+              return (
+                <div className="zones-brigade-column" key={brigade.supervisor_name}>
+                  <div className="zones-brigade-matrix-head">
+                    <strong>{brigade.supervisor_name}</strong>
                   </div>
-                  <div className="brigade-stats-grid">
-                    <div className="brigade-stat">
-                      <span>Не носил</span>
-                      <strong>{formatPercent(notWorn.not_worn_pct)}</strong>
-                    </div>
-                    <div className="brigade-stat">
-                      <span>Сотрудников</span>
-                      <strong>{notWorn.not_worn_workers}</strong>
-                    </div>
-                    <div className="brigade-stat">
-                      <span>Подозрительный простой</span>
-                      <strong>{formatSeconds(notWorn.not_worn_sec)}</strong>
-                    </div>
-                  </div>
-                </article>
-              )})}
-            </div>
-            ) : null}
 
-            {showBlock7Employees ? (
-            <div className={`kpp-panel not-worn-panel${visibleNotWornEmployees.length > 0 ? ' kpp-panel-alert' : ''}${notWornOpen ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
-              <div className="kpp-panel-head">
-                <button
-                  type="button"
-                  className="kpp-panel-toggle"
-                  onClick={() => setNotWornOpen((current) => !current)}
-                  aria-expanded={notWornOpen}
-                >
-                  <span className={`kpp-panel-chevron${notWornOpen ? ' kpp-panel-chevron-open' : ''}`} aria-hidden="true">
-                    ▸
-                  </span>
-                  <span className="kpp-panel-titles">
-                    <span className="panel-kicker">Контроль ношения</span>
-                    <span className="kpp-panel-title">
-                      {visibleNotWornEmployees.length > 0
-                        ? 'Сотрудники с подозрительным простоем'
-                        : 'Подозрительного простоя не было'}
-                    </span>
-                  </span>
-                </button>
-                {visibleNotWornEmployees.length > 0 ? (
-                  <span className="kpp-count">{visibleNotWornEmployees.length}</span>
-                ) : null}
-              </div>
-              {notWornOpen ? (
-                visibleNotWornEmployees.length > 0 ? (
-                  <div className="kpp-list">
-                    {visibleNotWornEmployees.map((employee) => {
-                      const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
-                      const isAlert = employee.not_worn_pct >= warnPct
-                      return (
-                      <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
-                        <div className="kpp-main">
-                          <strong>{employee.full_name}</strong>
-                          <span>
-                            {employee.profession?.trim() || '—'} · #{employee.employee_number} · {employee.supervisor_name}
-                          </span>
-                        </div>
-                        <div className="kpp-metrics">
-                          <div className="kpp-time">{employee.not_worn_time}</div>
-                          <div className="kpp-time kpp-time-secondary">
-                            {formatSeconds(employee.not_worn_sec)} · {formatPercent(employee.not_worn_pct)}
-                          </div>
-                        </div>
+                  <div
+                    className={`zone-panel zone-panel--idle not-worn-panel${brigadeEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}
+                  >
+                    {brigadeEmployees.length > 0 ? (
+                      <div className="kpp-list">
+                        {brigadeEmployees.map((employee) => {
+                          const warnPct = resolveNotWornRule(employee.profession, settings).warnPct
+                          const isAlert = employee.not_worn_pct >= warnPct
+                          return (
+                            <div className={`kpp-row${isAlert ? ' kpp-row-alert' : ''}`} key={employee.ww_shift_id}>
+                              <div className="kpp-main">
+                                <strong>{employee.full_name}</strong>
+                                <span>
+                                  {employee.profession?.trim() || '—'} · #{employee.employee_number}
+                                </span>
+                              </div>
+                              <div className="kpp-metrics">
+                                <div className="kpp-time">{employee.not_worn_time}</div>
+                                <div className="kpp-time kpp-time-secondary">{formatSeconds(employee.not_worn_sec)}</div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    )})}
+                    ) : (
+                      <p className="kpp-empty">Подозрительного простоя нет.</p>
+                    )}
                   </div>
-                ) : (
-                  <p className="kpp-empty">Никто не превысил порог подозрительного простоя за этот день.</p>
-                )
-              ) : null}
-            </div>
-            ) : null}
-          </>
+                </div>
+              )
+            })}
+          </div>
         ) : null}
       </CollapsibleBlock>
       ) : null}
