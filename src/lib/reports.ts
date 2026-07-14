@@ -342,14 +342,11 @@ export function getWeekStart(dateIso: string) {
 }
 
 export async function loadAvailableDates() {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('brigade_daily_metrics')
-    .select('report_date')
-    .order('report_date', { ascending: false })
+  const { data, error } = await supabase.schema('analytics').rpc('list_report_dates')
 
   if (error) throw error
-  return [...new Set((data ?? []).map((row) => row.report_date as string))]
+
+  return (data ?? []).map((value: string) => String(value).slice(0, 10))
 }
 
 export function buildAvailableWeeksFromDates(dates: string[]) {

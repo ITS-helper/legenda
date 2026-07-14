@@ -215,7 +215,7 @@ select
   coalesce(sum(b.work_sec), 0) as work_sec_total,
   coalesce(sum(b.total_sec), 0) as total_sec_total,
   coalesce(sum(case when b.wear = 1 then b.total_sec else 0 end), 0) as wear_sec_total,
-  coalesce(nw.not_worn_sec_total, 0) as not_worn_sec_total,
+  analytics.not_worn_sec_for_shift(s.report_date, s.ww_shift_id) as not_worn_sec_total,
   coalesce(
     sum(
       case
@@ -240,12 +240,7 @@ from analytics.shifts s
 join analytics.employees e on e.id = s.employee_id
 left join analytics.supervisors sup on sup.id = s.supervisor_id
 left join analytics.schedules sch on sch.id = s.schedule_id
-left join (
-  select report_date, ww_shift_id, sum(total_sec) as not_worn_sec_total
-  from analytics.not_worn_minutes_daily
-  group by report_date, ww_shift_id
-) nw on nw.report_date = s.report_date and nw.ww_shift_id = s.ww_shift_id
-left join analytics.ble_minute_facts b on b.ww_shift_id = s.ww_shift_id
+left join analytics.ble_minute_facts b on b.ww_shift_id = s.ww_shift_id and b.report_date = s.report_date
 left join (
   select
     ww_shift_id,
@@ -265,8 +260,7 @@ group by
   sch.name,
   s.on_watch_duration_seconds,
   s.late_seconds,
-  s.early_return_seconds,
-  nw.not_worn_sec_total;
+  s.early_return_seconds;
 
 create or replace view analytics.brigade_daily_metrics as
 select

@@ -384,6 +384,13 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   useEffect(() => {
     if (!detailDate) return
+    if (detailDate === selectedDate && shiftRows.length > 0) {
+      setDetailShiftRows(shiftRows)
+      setDetailLoading(false)
+      setDetailError(null)
+      return
+    }
+
     let cancelled = false
 
     async function loadDetail() {
@@ -404,7 +411,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [detailDate])
+  }, [detailDate, selectedDate, shiftRows])
 
   useEffect(() => {
     if (!dynamicsDate || !metricSettingsLoaded) return
