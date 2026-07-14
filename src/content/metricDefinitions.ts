@@ -273,7 +273,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
       'View `analytics.not_worn_minutes_daily` → интервалы в списке сотрудников',
     ],
     formula:
-      'Подозрительная минута вне зон отдыха (не обед): idle_sec ≥ порог И work_sec + go_sec ≤ порог\nnot_worn_pct = 100 × not_worn_sec / eligible_sec',
+      'Подозрительная минута вне зон отдыха (не обед): idle_sec ≥ порог И work_sec + go_sec ≤ порог\nВ метрику попадают только непрерывные эпизоды ≥ 30 мин\nnot_worn_pct = 100 × not_worn_sec / eligible_sec',
     configFields: [
       {
         key: 'notWornIdleSecMin',
@@ -290,6 +290,14 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         min: 0,
         max: 30,
         hint: 'work_sec + go_sec должны быть не выше этого значения',
+      },
+      {
+        key: 'notWornMinIntervalSec',
+        label: 'Минимальная длительность эпизода',
+        unit: 'сек',
+        min: 60,
+        max: 14400,
+        hint: 'Считать «не носил» только если подозрительный простой идёт непрерывно не меньше этого времени (по умолчанию 1800 = 30 мин)',
       },
       {
         key: 'notWornMinSec',

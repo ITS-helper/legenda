@@ -28,6 +28,7 @@ export type MetricSettings = {
   notWornWarnPct: number
   notWornIdleSecMin: number
   notWornActiveSecMax: number
+  notWornMinIntervalSec: number
   notWornProfessionRules: NotWornProfessionRules
   comparisonBrigades: string[]
   subblockVisibility: Record<SubblockId, boolean>
@@ -70,6 +71,7 @@ type MetricSettingsRow = {
   not_worn_warn_pct?: number
   not_worn_idle_sec_min?: number
   not_worn_active_sec_max?: number
+  not_worn_min_interval_sec?: number
   not_worn_profession_rules?: Record<string, unknown>
   block_7_enabled?: boolean
   block_1_enabled?: boolean
@@ -100,6 +102,7 @@ export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   notWornWarnPct: 5,
   notWornIdleSecMin: 54,
   notWornActiveSecMax: 6,
+  notWornMinIntervalSec: 1800,
   notWornProfessionRules: {},
   comparisonBrigades: [...DEFAULT_COMPARISON_BRIGADES],
   subblockVisibility: { ...DEFAULT_SUBBLOCK_VISIBILITY },
@@ -189,6 +192,7 @@ function normalizeRow(row: MetricSettingsRow | null | undefined): MetricSettings
     notWornWarnPct: row?.not_worn_warn_pct ?? DEFAULT_METRIC_SETTINGS.notWornWarnPct,
     notWornIdleSecMin: row?.not_worn_idle_sec_min ?? DEFAULT_METRIC_SETTINGS.notWornIdleSecMin,
     notWornActiveSecMax: row?.not_worn_active_sec_max ?? DEFAULT_METRIC_SETTINGS.notWornActiveSecMax,
+    notWornMinIntervalSec: row?.not_worn_min_interval_sec ?? DEFAULT_METRIC_SETTINGS.notWornMinIntervalSec,
     notWornProfessionRules: normalizeNotWornProfessionRules(row?.not_worn_profession_rules),
     comparisonBrigades: normalizeComparisonBrigades(row?.comparison_brigades),
     subblockVisibility: normalizeSubblockVisibility(row?.subblock_visibility),
@@ -248,6 +252,7 @@ function toPayload(settings: MetricSettings): Record<string, unknown> {
     not_worn_warn_pct: settings.notWornWarnPct,
     not_worn_idle_sec_min: settings.notWornIdleSecMin,
     not_worn_active_sec_max: settings.notWornActiveSecMax,
+    not_worn_min_interval_sec: settings.notWornMinIntervalSec,
     not_worn_profession_rules: toNotWornProfessionRulesPayload(settings.notWornProfessionRules),
     comparison_brigades: settings.comparisonBrigades,
     subblock_visibility: settings.subblockVisibility,
