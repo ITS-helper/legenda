@@ -24,7 +24,7 @@ import {
   formatBrigadeShiftHeadcount,
   formatWeekRange,
   loadAvailableDates,
-  loadAvailableWeeks,
+  buildAvailableWeeksFromDates,
   loadBrigadeActivityDynamics,
   loadBrigadeVolumeDynamics,
   loadBrigadeDaily,
@@ -246,9 +246,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     async function bootstrap() {
       try {
         const passwordValue = password.trim()
-        const [dates, weeks, savedVolumeDates] = await Promise.all([
+        const [dates, savedVolumeDates] = await Promise.all([
           loadAvailableDates(),
-          loadAvailableWeeks(),
           passwordValue ? loadVolumeDates(passwordValue).catch(() => [] as string[]) : Promise.resolve([] as string[]),
         ])
         if (cancelled) return
@@ -259,8 +258,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         setDetailDate((current) => current || mergedDates[0] || '')
         setDynamicsDate((current) => current || mergedDates[0] || '')
         setVolumesDate((current) => current || mergedDates[0] || '')
-        setAvailableWeeks(weeks)
-        setSelectedWeek((current) => current || weeks[0]?.week_start || '')
+        setAvailableWeeks(buildAvailableWeeksFromDates(dates))
       } catch (error) {
         if (!cancelled) setBootstrapError(getErrorMessage(error))
       }
@@ -330,7 +328,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }
 
   useEffect(() => {
-    if (!selectedWeek || availableWeeks.length === 0 || dailyLoading) return
+    if (!selectedWeek) {
+      setWeeklyRows([])
+      setWeeklyShiftRows([])
+      setWeeklyVolumeTotals([])
+      setWeeklyError(null)
+      setWeeklyLoading(false)
+      return
+    }
+
+    if (availableWeeks.length === 0) return
 
     const weekMeta = availableWeeks.find((week) => week.week_start === selectedWeek)
     if (!weekMeta) return
@@ -373,7 +380,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedWeek, availableWeeks, dailyLoading])
+  }, [selectedWeek, availableWeeks])
 
   useEffect(() => {
     if (!detailDate) return
@@ -850,6 +857,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           <label className="filter-field">
             <span>Неделя</span>
             <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
+              <option value="">Выберите неделю</option>
               {availableWeeks.map((week) => (
                 <option key={week.week_start} value={week.week_start}>
                   {formatWeekRange(week.week_start, week.week_end)}
@@ -859,14 +867,18 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           </label>
         </div>
 
-        {weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
-        {weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
+        {!selectedWeek ? (
+          <div className="empty-state">Выберите неделю, чтобы загрузить сводку по бригадам.</div>
+        ) : null}
 
-        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length === 0 ? (
+        {selectedWeek && weeklyLoading ? <div className="empty-state">Загружаем недельную аналитику...</div> : null}
+        {selectedWeek && weeklyError ? <div className="empty-state error-state">Ошибка: {weeklyError}</div> : null}
+
+        {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length === 0 ? (
           <div className="empty-state">Нет данных за выбранную неделю.</div>
         ) : null}
 
-        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Brigades ? (
+        {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Brigades ? (
           <div className={brigadeLayoutClass('brigade-grid', visibleWeeklyRows.length)}>
             {visibleWeeklyRows.map((brigade) => (
               <article className="brigade-card" key={brigade.supervisor_name}>
@@ -922,7 +934,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           </div>
         ) : null}
 
-        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Top ? (
+        {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Top ? (
           <TopActivityPanel
             employees={topWeekly}
             periodLabel="за неделю"
@@ -931,7 +943,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           />
         ) : null}
 
-        {!weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Attention ? (
+        {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 && showBlock2Attention ? (
           <AttentionPanel
             employees={lowActivityWeekly}
             open={weeklyAttentionOpen}
