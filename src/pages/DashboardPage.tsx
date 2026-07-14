@@ -1230,7 +1230,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       <CollapsibleBlock
         id={dashboardBlockDomId('block7')}
         title="Не носил"
-        description="Подозрительное бездействие в учитываемых зонах: минуты с высоким простоем и почти без движения (AA_BLE). Не учитываются зоны отдыха (столовые, курилки, отдых, стройгородок) и zona 0 (вне зоны / без маячка)."
+        description="Подозрительное бездействие после выдачи часов: минуты с высоким простоем и почти без движения (AA_BLE). Не учитываются зоны отдыха, zona 0 и время до watch_received_at (faceID)."
         defaultOpen={visibleNotWornEmployees.length > 0}
       >
         <div className="filter-row">

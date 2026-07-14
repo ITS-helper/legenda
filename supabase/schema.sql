@@ -211,6 +211,21 @@ as $$
     and coalesce(trim(p_zona), '') <> '0';
 $$;
 
+create or replace function analytics.is_not_worn_on_watch_minute(
+  p_event_at timestamptz,
+  p_watch_received_at timestamptz,
+  p_watch_returned_at timestamptz
+)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select p_event_at is not null
+    and (p_watch_received_at is null or p_event_at >= p_watch_received_at)
+    and (p_watch_returned_at is null or p_event_at <= p_watch_returned_at);
+$$;
+
 create or replace function analytics.is_not_worn_metric_minute(
   p_idle_sec integer,
   p_work_sec integer,
@@ -257,6 +272,7 @@ as $$
     join analytics.employees e on e.id = s.employee_id
     where b.report_date = p_report_date
       and (p_shift_ids is null or b.ww_shift_id = any(p_shift_ids))
+      and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
       and analytics.is_not_worn_metric_minute(
         b.idle_sec,
         b.work_sec,
@@ -324,6 +340,7 @@ as $$
     join analytics.employees e on e.id = s.employee_id
     where b.report_date = p_report_date
       and (p_shift_ids is null or b.ww_shift_id = any(p_shift_ids))
+      and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
       and analytics.is_not_worn_metric_minute(
         b.idle_sec,
         b.work_sec,
@@ -459,6 +476,7 @@ select
       case
         when analytics.is_not_worn_eligible_zone(b.zona)
           and not analytics.is_lunch_minute(b.event_at)
+          and analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
         then b.total_sec
         else 0
       end
@@ -652,7 +670,8 @@ with suspicious as (
   from analytics.ble_minute_facts b
   join analytics.shifts s on s.ww_shift_id = b.ww_shift_id and s.report_date = b.report_date
   join analytics.employees e on e.id = s.employee_id
-  where analytics.is_not_worn_metric_minute(
+  where analytics.is_not_worn_on_watch_minute(b.event_at, s.watch_received_at, s.watch_returned_at)
+    and analytics.is_not_worn_metric_minute(
     b.idle_sec,
     b.work_sec,
     b.go_sec,

@@ -265,10 +265,11 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     block: 'Блок 7 · Не носил',
     title: 'Не носил часы',
     description:
-      'Поведенческая оценка: минуты почти полного простоя без движения в учитываемых зонах — вне зон отдыха (2, 4, 5, 14) и вне zona 0 (вне зоны / без маячка). Датчик wear не используется. Обед 13:00–14:00 МСК не учитывается.',
+      'Поведенческая оценка: минуты почти полного простоя без движения только после выдачи часов (faceID → watch_received_at). Учитываемые зоны — вне отдыха (2, 4, 5, 14) и вне zona 0. Обед 13:00–14:00 МСК не учитывается.',
     sources: [
       'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`, `event_at`',
-      'Функции `analytics.is_not_worn_eligible_zone`, `analytics.is_lunch_minute`, `analytics.is_not_worn_metric_minute`',
+      'Отчёт 6 · faceID → `watch_received_at`, `watch_returned_at`',
+      'Функции `analytics.is_not_worn_on_watch_minute`, `analytics.is_not_worn_eligible_zone`, `analytics.is_lunch_minute`, `analytics.is_not_worn_metric_minute`',
       'View `analytics.shift_daily_metrics` → `not_worn_sec_total`, `not_worn_eligible_sec_total`',
       'View `analytics.not_worn_minutes_daily` → интервалы в списке сотрудников',
     ],
