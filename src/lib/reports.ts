@@ -923,11 +923,20 @@ export async function loadAvailableProfessions() {
 
 export async function loadNotWornEmployees(reportDate: string) {
   const settings = getMetricSettings()
-  const { data, error } = await supabase
-    .schema('analytics')
-    .rpc('list_not_worn_shifts_for_date', { p_report_date: reportDate })
 
-  if (error) throw error
+  const [{ data: shiftData, error: shiftError }, { data: rpcData, error: rpcError }] = await Promise.all([
+    supabase
+      .schema('analytics')
+      .from('shift_daily_metrics')
+      .select(
+        'ww_shift_id, employee_number, full_name, profession, supervisor_name, work_sec_total, total_sec_total, not_worn_eligible_sec_total',
+      )
+      .eq('report_date', reportDate),
+    supabase.schema('analytics').rpc('list_not_worn_shifts_for_date', { p_report_date: reportDate }),
+  ])
+
+  if (shiftError) throw shiftError
+  if (rpcError) throw rpcError
 
   type NotWornShiftRpcRow = {
     ww_shift_id: number | string
@@ -940,13 +949,29 @@ export async function loadNotWornEmployees(reportDate: string) {
     not_worn_shift_min_sec: number | null
   }
 
-  const employees = filterAnalyticsSupervisors(
-    ((data ?? []) as NotWornShiftRpcRow[])
-      .map((row) => {
-        const not_worn_sec = Number(row.not_worn_sec_total)
-        const shiftMinSec = Number(row.not_worn_shift_min_sec ?? settings.notWornMinSec)
-        return {
-          ww_shift_id: Number(row.ww_shift_id),
+  const rpcByShift = new Map<number, NotWornShiftRpcRow>()
+  for (const row of (rpcData ?? []) as NotWornShiftRpcRow[]) {
+    rpcByShift.set(Number(row.ww_shift_id), row)
+  }
+
+  type NotWornCandidate = NotWornEmployee & {
+    belowMinActivity: boolean
+    activity_pct: number
+  }
+
+  const employees = ((shiftData ?? []) as ShiftMetricRow[])
+    .filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+    .flatMap((row) => {
+      const rpc = rpcByShift.get(row.ww_shift_id)
+      const shiftMinSec = Number(rpc?.not_worn_shift_min_sec ?? settings.notWornMinSec)
+      const not_worn_sec = Number(rpc?.not_worn_sec_total ?? 0)
+      const belowMinActivity = !isAnalyticsEligibleShift(row)
+      const hasNotWornEpisode = not_worn_sec >= shiftMinSec
+      if (!belowMinActivity && !hasNotWornEpisode) return [] satisfies NotWornCandidate[]
+
+      return [
+        {
+          ww_shift_id: row.ww_shift_id,
           employee_number: String(row.employee_number),
           full_name: String(row.full_name),
           profession: row.profession ?? null,
@@ -954,14 +979,16 @@ export async function loadNotWornEmployees(reportDate: string) {
           not_worn_sec,
           not_worn_pct: getNotWornPct({
             not_worn_sec_total: not_worn_sec,
-            not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total),
+            not_worn_eligible_sec_total: Number(
+              rpc?.not_worn_eligible_sec_total ?? row.not_worn_eligible_sec_total ?? 0,
+            ),
           }),
-          shiftMinSec,
-        }
-      })
-      .filter((row) => row.not_worn_sec >= row.shiftMinSec)
-      .map(({ shiftMinSec: _shiftMinSec, ...row }) => row),
-  )
+          not_worn_time: '—',
+          belowMinActivity,
+          activity_pct: getShiftProductivity(row),
+        } satisfies NotWornCandidate,
+      ]
+    })
 
   if (employees.length === 0) return [] satisfies NotWornEmployee[]
 
@@ -995,11 +1022,20 @@ export async function loadNotWornEmployees(reportDate: string) {
   }
 
   return employees
-    .map((employee) => ({
-      ...employee,
-      not_worn_time: buildNotWornEpisodeTimeLabel(episodesByShift.get(employee.ww_shift_id) ?? []),
-    }))
-    .sort((left, right) => right.not_worn_sec - left.not_worn_sec)
+    .map(({ belowMinActivity, activity_pct, ...employee }) => {
+      const episodes = episodesByShift.get(employee.ww_shift_id) ?? []
+      const episodeLabel = buildNotWornEpisodeTimeLabel(episodes)
+      return {
+        ...employee,
+        not_worn_time:
+          episodeLabel !== '—'
+            ? episodeLabel
+            : belowMinActivity
+              ? `активность ${formatPercent(activity_pct)}`
+              : '—',
+      } satisfies NotWornEmployee
+    })
+    .sort((left, right) => right.not_worn_sec - left.not_worn_sec || left.full_name.localeCompare(right.full_name, 'ru'))
 }
 
 export function sumDaily(rows: BrigadeDailyRow[]) {
