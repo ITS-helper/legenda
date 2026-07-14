@@ -52,7 +52,7 @@ export function AttentionPanel({
                     <strong>{brigadeName}</strong>
                   </div>
 
-                  <div className={`zone-panel zone-panel--idle${brigadeEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}>
+                  <div className="zone-panel zone-panel--idle">
                     {brigadeEmployees.length > 0 ? (
                       <div className="kpp-list">
                         {brigadeEmployees.map((employee) => (

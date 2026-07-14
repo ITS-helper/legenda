@@ -2890,14 +2890,14 @@
   padding: 18px 20px;
   border-radius: 20px;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
   display: grid;
   gap: 14px;
 }
 
 .kpp-panel-alert {
   border-color: var(--alert-strong);
-  background: var(--alert-soft);
+  background: var(--surface);
 }
 
 .kpp-panel + .kpp-panel,
@@ -2921,6 +2921,12 @@
 
 .attention-brigade-matrix .zones-brigade-column {
   min-width: 0;
+}
+
+.attention-brigade-matrix .zone-panel,
+.not-worn-brigade-matrix .zone-panel {
+  background: var(--surface);
+  border-color: var(--border);
 }
 
 .top-activity-panel {

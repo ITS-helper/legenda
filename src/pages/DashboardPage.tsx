@@ -852,8 +852,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     <span className="panel-kicker">Не использовали устройство</span>
                     <span className="kpp-panel-title">
                       {visibleNotWornEmployees.length > 0
-                        ? 'Сотрудники с подозрительным простоем'
-                        : 'Подозрительного простоя не было'}
+                        ? 'Сотрудники, которые не использовали устройство согласно инструкции'
+                        : 'Никто не использовал устройство согласно инструкции'}
                     </span>
                   </span>
                 </button>
@@ -879,9 +879,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                             <strong>{brigade.supervisor_name}</strong>
                           </div>
 
-                          <div
-                            className={`zone-panel zone-panel--idle${brigadeEmployees.length > 0 ? ' kpp-panel-alert' : ''}`}
-                          >
+                          <div className="zone-panel zone-panel--idle">
                             {brigadeEmployees.length > 0 ? (
                               <div className="kpp-list">
                                 {brigadeEmployees.map((employee) => {
@@ -904,7 +902,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                                 })}
                               </div>
                             ) : (
-                              <p className="kpp-empty">Подозрительного простоя нет.</p>
+                              <p className="kpp-empty">Никто не использовал устройство согласно инструкции.</p>
                             )}
                           </div>
                         </div>
@@ -912,7 +910,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     })}
                   </div>
                 ) : (
-                  <p className="kpp-empty">Никто не превысил порог подозрительного простоя за этот день.</p>
+                  <p className="kpp-empty">Никто не использовал устройство согласно инструкции за этот день.</p>
                 )
               ) : null}
             </div>
