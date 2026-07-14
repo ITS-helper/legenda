@@ -225,6 +225,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [volumeDynamicsError, setVolumeDynamicsError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
+  const [notWornLoading, setNotWornLoading] = useState(false)
+  const [notWornError, setNotWornError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!selectedDate) return
@@ -278,10 +280,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, kpp, notWorn, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
+        const [brigades, kpp, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
           loadKppEmployees(selectedDate),
-          loadNotWornEmployees(selectedDate),
           loadShiftRows(selectedDate),
           loadZoneDaily(selectedDate),
           loadZoneDailyByBrigade(selectedDate),
@@ -291,7 +292,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         if (cancelled) return
         setDailyRows(brigades)
         setKppEmployees(kpp)
-        setNotWornEmployees(notWorn)
         setShiftRows(shifts)
         setZoneRows(zones)
         setZoneRowsByBrigade(zonesByBrigade)
@@ -308,7 +308,36 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, password, settings.notWornMinSec, settings.notWornProfessionRules])
+  }, [selectedDate, password])
+
+  useEffect(() => {
+    if (!selectedDate || !showBlock7) {
+      setNotWornEmployees([])
+      setNotWornLoading(false)
+      setNotWornError(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadNotWorn() {
+      setNotWornLoading(true)
+      setNotWornError(null)
+      try {
+        const employees = await loadNotWornEmployees(selectedDate)
+        if (!cancelled) setNotWornEmployees(employees)
+      } catch (error) {
+        if (!cancelled) setNotWornError(getErrorMessage(error))
+      } finally {
+        if (!cancelled) setNotWornLoading(false)
+      }
+    }
+
+    void loadNotWorn()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate, showBlock7, settings.notWornMinSec, settings.notWornProfessionRules])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
@@ -510,7 +539,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     () => pvPercentFromZoneRows(zoneRows),
     [zoneRows, settings.zoneVisibility],
   )
-  const dailyNotWorn = ratio(dailyTotals.not_worn_sec, dailyTotals.not_worn_eligible_sec)
 
   const visibleNotWornEmployees = useMemo(
     () =>
@@ -519,6 +547,39 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       ),
     [notWornEmployees, comparisonBrigades],
   )
+
+  const notWornEligibleSec = useMemo(
+    () =>
+      shiftRows
+        .filter((row) =>
+          comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, name)),
+        )
+        .reduce((sum, row) => sum + Number(row.not_worn_eligible_sec_total ?? 0), 0),
+    [shiftRows, comparisonBrigades],
+  )
+
+  const notWornSecTotal = useMemo(
+    () => visibleNotWornEmployees.reduce((sum, employee) => sum + employee.not_worn_sec, 0),
+    [visibleNotWornEmployees],
+  )
+
+  const block7NotWornPct = ratio(notWornSecTotal, notWornEligibleSec)
+
+  function brigadeNotWornStat(supervisorName: string) {
+    const workers = visibleNotWornEmployees.filter((employee) =>
+      brigadeNamesMatch(employee.supervisor_name, supervisorName),
+    )
+    const not_worn_sec = workers.reduce((sum, employee) => sum + employee.not_worn_sec, 0)
+    const eligible = shiftRows
+      .filter((row) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, supervisorName))
+      .reduce((sum, row) => sum + Number(row.not_worn_eligible_sec_total ?? 0), 0)
+
+    return {
+      not_worn_workers: workers.length,
+      not_worn_sec,
+      not_worn_pct: ratio(not_worn_sec, eligible),
+    }
+  }
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -1182,10 +1243,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           />
         </div>
 
-        {dailyLoading ? <div className="empty-state">Загружаем данные по ношению часов...</div> : null}
+        {dailyLoading || notWornLoading ? <div className="empty-state">Загружаем данные по ношению часов...</div> : null}
         {dailyError ? <div className="empty-state error-state">Ошибка: {dailyError}</div> : null}
+        {notWornError ? <div className="empty-state error-state">Ошибка: {notWornError}</div> : null}
 
-        {!dailyLoading && !dailyError && visibleDailyRows.length === 0 ? (
+        {!dailyLoading && !dailyError && !notWornLoading && visibleDailyRows.length === 0 ? (
           <div className="empty-state">Нет данных за выбранный день.</div>
         ) : null}
 
@@ -1193,52 +1255,54 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
           <>
             {showBlock7Summary ? (
             <div className="metrics-grid">
-              <article className={`metric-card${dailyNotWorn >= settings.notWornWarnPct ? ' metric-card-alert' : ''}`}>
+              <article className={`metric-card${block7NotWornPct >= settings.notWornWarnPct ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Не носил</span>
                 <p className="metric-note">простой без движения вне зон отдыха</p>
-                <strong className="metric-value">{formatPercent(dailyNotWorn)}</strong>
+                <strong className="metric-value">{formatPercent(block7NotWornPct)}</strong>
               </article>
-              <article className={`metric-card${dailyTotals.not_worn_workers > 0 ? ' metric-card-alert' : ''}`}>
+              <article className={`metric-card${visibleNotWornEmployees.length > 0 ? ' metric-card-alert' : ''}`}>
                 <span className="metric-label">Сотрудников</span>
                 <p className="metric-note">
-                  {dailyTotals.not_worn_workers > 0
+                  {visibleNotWornEmployees.length > 0
                     ? `≥ ${Math.round(settings.notWornMinSec / 60)} мин подозрительного простоя`
                     : 'без длительного простоя без движения'}
                 </p>
-                <strong className="metric-value">{dailyTotals.not_worn_workers}</strong>
+                <strong className="metric-value">{visibleNotWornEmployees.length}</strong>
               </article>
             </div>
             ) : null}
 
             {showBlock7Brigades ? (
             <div className={brigadeLayoutClass('brigade-grid', visibleDailyRows.length)}>
-              {visibleDailyRows.map((brigade) => (
+              {visibleDailyRows.map((brigade) => {
+                const notWorn = brigadeNotWornStat(brigade.supervisor_name)
+                return (
                 <article className="brigade-card" key={brigade.supervisor_name}>
                   <div className="brigade-card-head">
                     <div>
                       <strong>{brigade.supervisor_name}</strong>
-                      <p>{brigade.workers} чел. · {brigade.not_worn_workers} не носил</p>
+                      <p>{brigade.workers} чел. · {notWorn.not_worn_workers} не носил</p>
                     </div>
-                    <div className={`brigade-badge${brigade.not_worn_pct >= settings.notWornWarnPct ? ' brigade-badge-warn' : ''}`}>
-                      {formatPercent(brigade.not_worn_pct)}
+                    <div className={`brigade-badge${notWorn.not_worn_pct >= settings.notWornWarnPct ? ' brigade-badge-warn' : ''}`}>
+                      {formatPercent(notWorn.not_worn_pct)}
                     </div>
                   </div>
                   <div className="brigade-stats-grid">
                     <div className="brigade-stat">
                       <span>Не носил</span>
-                      <strong>{formatPercent(brigade.not_worn_pct)}</strong>
+                      <strong>{formatPercent(notWorn.not_worn_pct)}</strong>
                     </div>
                     <div className="brigade-stat">
                       <span>Сотрудников</span>
-                      <strong>{brigade.not_worn_workers}</strong>
+                      <strong>{notWorn.not_worn_workers}</strong>
                     </div>
                     <div className="brigade-stat">
                       <span>Подозрительный простой</span>
-                      <strong>{formatSeconds(brigade.not_worn_sec)}</strong>
+                      <strong>{formatSeconds(notWorn.not_worn_sec)}</strong>
                     </div>
                   </div>
                 </article>
-              ))}
+              )})}
             </div>
             ) : null}
 

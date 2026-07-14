@@ -192,6 +192,51 @@ as $$
     );
 $$;
 
+create or replace function analytics.list_not_worn_shifts_for_date(p_report_date date)
+returns table (
+  ww_shift_id bigint,
+  employee_number text,
+  full_name text,
+  profession text,
+  supervisor_name text,
+  not_worn_sec_total bigint,
+  not_worn_eligible_sec_total bigint,
+  not_worn_shift_min_sec integer
+)
+language sql
+stable
+security definer
+set search_path = analytics, public, pg_temp
+as $$
+  with base as (
+    select
+      s.ww_shift_id,
+      e.employee_number,
+      e.full_name,
+      e.profession,
+      coalesce(sup.name, 'Без начальника') as supervisor_name,
+      analytics.not_worn_sec_for_shift(s.report_date, s.ww_shift_id) as not_worn_sec_total,
+      (
+        select coalesce(sum(b.total_sec), 0)::bigint
+        from analytics.ble_minute_facts b
+        where b.report_date = s.report_date
+          and b.ww_shift_id = s.ww_shift_id
+          and not analytics.is_rest_zone(b.zona)
+          and not analytics.is_lunch_minute(b.event_at)
+      ) as not_worn_eligible_sec_total,
+      analytics.not_worn_min_sec_for(e.profession)::integer as not_worn_shift_min_sec
+    from analytics.shifts s
+    join analytics.employees e on e.id = s.employee_id
+    left join analytics.supervisors sup on sup.id = s.supervisor_id
+    where s.report_date = p_report_date
+  )
+  select *
+  from base
+  where not_worn_sec_total > 0;
+$$;
+
+grant execute on function analytics.list_not_worn_shifts_for_date(date) to anon, authenticated, service_role;
+
 create or replace view analytics.shift_daily_metrics as
 select
   s.report_date,
@@ -215,7 +260,7 @@ select
   coalesce(sum(b.work_sec), 0) as work_sec_total,
   coalesce(sum(b.total_sec), 0) as total_sec_total,
   coalesce(sum(case when b.wear = 1 then b.total_sec else 0 end), 0) as wear_sec_total,
-  analytics.not_worn_sec_for_shift(s.report_date, s.ww_shift_id) as not_worn_sec_total,
+  0::bigint as not_worn_sec_total,
   coalesce(
     sum(
       case
