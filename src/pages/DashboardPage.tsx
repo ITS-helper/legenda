@@ -849,7 +849,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     ▸
                   </span>
                   <span className="kpp-panel-titles">
-                    <span className="panel-kicker">Не использовали устройство</span>
+                    <span className="panel-kicker">Требуют внимания</span>
                     <span className="kpp-panel-title">
                       {visibleNotWornEmployees.length > 0
                         ? 'Сотрудники, которые не использовали устройство согласно инструкции'
