@@ -60,6 +60,7 @@ import {
   loadVolumeEntries,
   mergeDateLists,
   normalizeReportDate,
+  parseVolumeM3,
   type VolumeEntry,
 } from '../lib/volumes'
 import { isAlertZone } from '../lib/zones'
@@ -515,6 +516,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return '—'
   }
 
+  function formatDailyBrigadeVolume(supervisorName: string) {
+    for (const entry of visibleVolumeEntries) {
+      if (brigadeNamesMatch(entry.label, supervisorName)) {
+        return formatVolumeM3(parseVolumeM3(entry.value_text))
+      }
+    }
+    return '—'
+  }
+
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
@@ -787,9 +797,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     </div>
                   </div>
                   <div className="brigade-card-footer">
-                    <div className={`brigade-stat${brigade.kpp_workers > 0 ? ' brigade-stat-alert' : ''}`}>
-                      <span>На КПП</span>
-                      <strong>{brigade.kpp_workers > 0 ? `${brigade.kpp_workers} чел.` : 'нет'}</strong>
+                    <div className="brigade-stat brigade-stat-volume">
+                      <span>Выполненный объём</span>
+                      <strong>{formatDailyBrigadeVolume(brigade.supervisor_name)}</strong>
                     </div>
                     <div className="brigade-stat">
                       <span>Длительность смены</span>
@@ -838,7 +848,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     ▸
                   </span>
                   <span className="kpp-panel-titles">
-                    <span className="panel-kicker">Не носил</span>
+                    <span className="panel-kicker">Не использовали устройство</span>
                     <span className="kpp-panel-title">
                       {visibleNotWornEmployees.length > 0
                         ? 'Сотрудники с подозрительным простоем'

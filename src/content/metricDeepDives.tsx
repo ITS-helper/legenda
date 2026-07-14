@@ -551,7 +551,7 @@ export function NotWornMetricDeepDive() {
 
       <DeepDiveSection title="Цепочка данных">
         <DeepDiveFlow
-          label="Схема «Не носил»"
+          label="Схема «Не использовали устройство»"
           steps={[
             {
               kind: 'excel',

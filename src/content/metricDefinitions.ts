@@ -270,7 +270,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   {
     id: 'not_worn',
     block: 'Блок 1 · Ежедневная аналитика',
-    title: 'Не носил часы',
+    title: 'Не использовали устройство',
     description: 'Подозрительное бездействие в окне рабочей смены.',
     sources: [
       'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`, `event_at`',
@@ -303,7 +303,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         unit: 'сек',
         min: 60,
         max: 14400,
-        hint: 'Считать «не носил» только если подозрительный простой идёт непрерывно не меньше этого времени (по умолчанию 1800 = 30 мин)',
+        hint: 'Считать только если подозрительный простой идёт непрерывно не меньше этого времени (по умолчанию 1800 = 30 мин)',
       },
       {
         key: 'notWornMinSec',

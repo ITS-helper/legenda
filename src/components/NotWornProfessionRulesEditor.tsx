@@ -65,7 +65,7 @@ export function NotWornProfessionRulesEditor({ professions, globalDefaults, rule
     <div className="metric-settings-subblocks not-worn-profession-rules">
       <p className="metric-settings-label">Параметры по профессиям</p>
       <p className="metric-settings-block-note">
-        Для каждой профессии можно переопределить пороги блока «Не носил». Пустые значения берутся из общих
+        Для каждой профессии можно переопределить пороги блока «Не использовали устройство». Пустые значения берутся из общих
         настроек карточки метрики ниже.
       </p>
       {professionList.length === 0 ? (

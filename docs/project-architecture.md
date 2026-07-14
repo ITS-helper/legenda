@@ -192,13 +192,14 @@ flowchart LR
 
 | № | Блок | Компоненты / данные |
 |---|------|---------------------|
-| 1 | **Ежедневная аналитика** | 8 карточек метрик, карточки бригад, топ-3, «требуют внимания», КПП | `brigade_daily_metrics`, `shift_daily_metrics`, `kpp_minutes_daily`, `volume_entries` |
+| 1 | **Ежедневная аналитика** | 8 карточек метрик, карточки бригад (в т.ч. объём за день), топ-3, «требуют внимания», список «Не использовали устройство» | `brigade_daily_metrics`, `shift_daily_metrics`, RPC `not_worn_episode_ranges_for_date`, `volume_entries` |
 | 2 | **Еженедельная аналитика** | Карточки бригад за неделю, топ-3, внимание | `brigade_weekly_metrics`, смены за диапазон |
 | 3 | **Динамика активности** | Джалол / ЛИ СОН ХАК: день vs вчера, спарклайн 7 дней | `brigade_daily_metrics` |
 | 4 | **Местоположение и простои** | Распределение по зонам, эпизоды простоя | `zone_daily_metrics`, `idle_episodes_daily` |
 | 5 | **Объёмы** | Ручной ввод таблицей | [`VolumesPanel`](../src/components/VolumesPanel.tsx), `volume-entries` |
 | 6 | **Детализация** | Сортируемая таблица смен | `shift_daily_metrics` |
-| 7 | **Не носил** | Поведенческий простой без движения вне зон отдыха, список сотрудников с интервалами; обед 13:00–14:00 МСК не учитывается | `shift_daily_metrics` → `not_worn_sec_total`; `not_worn_minutes_daily` → интервалы; **не в рассылке** |
+
+Список «Не использовали устройство» (поведенческий простой без движения, окно 07:00–23:00 МСК) — подблок блока 1, **не в рассылке**; RPC `not_worn_episode_ranges_for_date`.
 
 Загрузчики и типы: [`src/lib/reports.ts`](../src/lib/reports.ts).  
 Объёмы: [`src/lib/volumes.ts`](../src/lib/volumes.ts).  
