@@ -271,8 +271,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
     id: 'not_worn',
     block: 'Блок 7 · Не носил',
     title: 'Не носил часы',
-    description:
-      'Поведенческая оценка: минуты почти полного простоя без движения в окне рабочей смены 07:00–23:00 МСК. Учитываемые зоны — вне отдыха (2, 4, 5, 14) и вне zona 0. Обед 13:00–14:00 МСК не учитывается.',
+    description: 'Подозрительное бездействие в окне рабочей смены.',
     sources: [
       'Отчёт 11 · AA_BLE → `idle_sec`, `work_sec`, `go_sec`, `zona`, `event_at`',
       'Функции `analytics.is_ble_shift_window_minute`, `analytics.is_not_worn_eligible_zone`, `analytics.is_lunch_minute`, `analytics.is_not_worn_metric_minute`',
@@ -323,7 +322,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         hint: 'Подсветка карточки бригады и сотрудника при превышении доли',
       },
     ],
-    notes: 'В рассылку не входит. Только дашборд. На старых часах wear ненадёжен — метрика строится по простою и отсутствию движения. Ниже в блоке — отдельные пороги по профессиям.',
+    notes: 'Только дашборд, в рассылку не входит. Пороги по профессиям — ниже в этом же блоке.',
   },
 ]
 

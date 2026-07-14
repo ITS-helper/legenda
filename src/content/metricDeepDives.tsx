@@ -534,6 +534,176 @@ export function ShiftDurationMetricDeepDive() {
   )
 }
 
+export function NotWornMetricDeepDive() {
+  return (
+    <DeepDiveShell>
+      <DeepDiveSection title="Зачем нужна метрика">
+        <DeepDiveText>
+          Блок показывает сотрудников, у которых в рабочее время почти не было движения: рука с часами лежит
+          неподвижно, хотя человек находится не в зоне отдыха. Это не датчик «снял часы» — на старых моделях он
+          ненадёжен. Мы смотрим на <strong>простой и отсутствие ходьбы/работы</strong> по поминутной телеметрии
+          AA_BLE.
+        </DeepDiveText>
+        <DeepDiveNote>
+          На дашборде — списки по бригадам: ФИО, интервалы подозрительного простоя и суммарная длительность.
+        </DeepDiveNote>
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Цепочка данных">
+        <DeepDiveFlow
+          label="Схема «Не носил»"
+          steps={[
+            {
+              kind: 'excel',
+              kindLabel: 'Excel · отчёт 11',
+              title: 'AA_BLE',
+              detail: 'idle_sec, work_sec, go_sec, zona, event_at · 1 строка = 1 минута',
+            },
+            {
+              kind: 'sql',
+              title: 'ble_minute_facts',
+              detail: 'фильтр по окну смены, зонам и порогам',
+            },
+            {
+              kind: 'calc',
+              title: 'Эпизоды',
+              detail: 'склеивание соседних минут · отбор по длительности',
+            },
+            {
+              kind: 'ui',
+              title: 'Блок 7 · Не носил',
+              detail: 'список сотрудников по бригадам · интервалы времени',
+              accent: true,
+            },
+          ]}
+        />
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Окно рабочей смены">
+        <DeepDiveText>
+          Учитываются только минуты с <strong>07:00 до 23:00 по Москве</strong>. Всё, что раньше 07:00 или с 23:00
+          и позже, в расчёт не попадает — до выдачи часов и после окончания смены телеметрия не влияет на метрику.
+        </DeepDiveText>
+        <div className="metric-timeline" aria-label="Окно рабочей смены">
+          <div className="metric-timeline-point metric-timeline-muted">
+            <strong>До 07:00</strong>
+            <span>не считаем</span>
+          </div>
+          <div className="metric-timeline-track">
+            <span>07:00 – 23:00 МСК</span>
+          </div>
+          <div className="metric-timeline-point metric-timeline-muted">
+            <strong>С 23:00</strong>
+            <span>не считаем</span>
+          </div>
+        </div>
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Где считаем, а где нет">
+        <DeepDiveText>
+          Минута попадает в расчёт только если сотрудник в <strong>рабочей или служебной зоне</strong>, а не в
+          месте отдыха или без привязки к зоне.
+        </DeepDiveText>
+        <div className="metric-deep-dive-table-wrap">
+          <table className="metric-deep-dive-table">
+            <thead>
+              <tr>
+                <th>Не учитываем</th>
+                <th>Почему</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>zona 0</td>
+                <td>нет привязки к маяку — местоположение не определено</td>
+              </tr>
+              <tr>
+                <td>2, 4, 5, 14</td>
+                <td>столовые, курилки, зоны отдыха, стройгородок</td>
+              </tr>
+              <tr>
+                <td>13:00–14:00 МСК</td>
+                <td>обед — как и для метрики КПП</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <DeepDiveNote>
+          В остальных зонах (ПВ, склады, КПП, туалеты и т.д.) минута может быть признана подозрительной, если
+          выполнены пороги простоя и движения.
+        </DeepDiveNote>
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Подозрительная минута">
+        <DeepDiveText>
+          Для каждой минуты AA_BLE проверяем три условия одновременно. Если все выполнены — минута «подозрительная»:
+        </DeepDiveText>
+        <DeepDiveFormula>{`1. idle_sec ≥ порог простоя в минуте     (по умолчанию 54 сек ≈ 90% минуты)
+2. work_sec + go_sec ≤ порог активности   (по умолчанию 6 сек)
+3. зона и время — см. таблицу выше`}</DeepDiveFormula>
+        <DeepDiveNote>
+          Пороги можно задать общие или отдельно для каждой профессии — см. «Настройка» и блок правил по профессиям
+          ниже.
+        </DeepDiveNote>
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Эпизоды и список на дашборде">
+        <DeepDiveText>
+          Отдельные подозрительные минуты склеиваются в <strong>эпизоды</strong>: если между минутами перерыв не
+          больше 90 секунд, они считаются одним непрерывным простоем. В метрику попадают только эпизоды не короче
+          порога «Минимальная длительность эпизода» (по умолчанию 30 мин).
+        </DeepDiveText>
+        <DeepDiveFormula>{`Сотрудник в списке  ⇔  сумма секунд всех эпизодов ≥ «Минимум за смену для списка»
+                         (по умолчанию 15 мин)
+
+В карточке: интервалы эпизодов (07:20–08:25, …) и общая длительность`}</DeepDiveFormula>
+        <DeepDiveNote>
+          Строка подсвечивается, если доля подозрительного простоя от учитываемого времени превышает порог
+          предупреждения (по умолчанию 5 %).
+        </DeepDiveNote>
+      </DeepDiveSection>
+
+      <DeepDiveSection title="Пример">
+        <div className="metric-deep-dive-table-wrap">
+          <table className="metric-deep-dive-table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Зона</th>
+                <th>Что происходит</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>06:50</td>
+                <td>ПВ</td>
+                <td>Вне окна смены — не считаем</td>
+              </tr>
+              <tr>
+                <td>07:20–08:25</td>
+                <td>ПВ</td>
+                <td>
+                  <strong>Эпизод ≥ 30 мин</strong> — попадёт в список
+                </td>
+              </tr>
+              <tr>
+                <td>13:15</td>
+                <td>Склад</td>
+                <td>Обед — не считаем</td>
+              </tr>
+              <tr>
+                <td>14:05–14:20</td>
+                <td>Курилка (4)</td>
+                <td>Зона отдыха — не считаем</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DeepDiveSection>
+    </DeepDiveShell>
+  )
+}
+
 const METRIC_DEEP_DIVES: Record<string, ComponentType> = {
   activity: ActivityMetricDeepDive,
   weak_activity: WeakActivityMetricDeepDive,
@@ -541,6 +711,7 @@ const METRIC_DEEP_DIVES: Record<string, ComponentType> = {
   go: GoMetricDeepDive,
   pv: PvMetricDeepDive,
   shift_duration: ShiftDurationMetricDeepDive,
+  not_worn: NotWornMetricDeepDive,
 }
 
 export function getMetricDeepDive(metricId: string) {
