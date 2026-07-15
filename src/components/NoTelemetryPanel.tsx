@@ -55,7 +55,6 @@ export function NoTelemetryPanel({
                               <strong>{employee.full_name}</strong>
                               <span>{employee.profession?.trim() || '—'} · #{employee.employee_number}</span>
                             </div>
-                            <div className="kpp-time">нет минут</div>
                           </div>
                         ))}
                       </div>

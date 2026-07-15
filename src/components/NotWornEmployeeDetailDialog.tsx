@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  formatIdleEpisodeTimeLabel,
-  formatMinutes,
-  formatSeconds,
-  PV_ZONE,
-  type NotWornEmployee,
-} from '../lib/reports'
+import { formatPercent, formatSeconds, type NotWornEmployee } from '../lib/reports'
 import {
   loadShiftInactivityDetail,
   type ShiftInactivityDetail,
@@ -15,7 +9,6 @@ import { ShiftActivityTimeline } from './ShiftActivityTimeline'
 type Props = {
   employee: NotWornEmployee | null
   reportDate: string
-  longIdleMin: number
   open: boolean
   onClose: () => void
 }
@@ -26,7 +19,7 @@ function formatReportDateLabel(reportDate: string) {
   return `${day}.${month}.${year}`
 }
 
-export function NotWornEmployeeDetailDialog({ employee, reportDate, longIdleMin, open, onClose }: Props) {
+export function NotWornEmployeeDetailDialog({ employee, reportDate, open, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<ShiftInactivityDetail | null>(null)
@@ -77,9 +70,6 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, longIdleMin,
 
   if (!open || !employee) return null
 
-  const pvIdleEpisodes = detail?.idleEpisodes.filter((episode) => episode.ble_tag_zone === PV_ZONE) ?? []
-  const pvTotalMin = pvIdleEpisodes.reduce((sum, episode) => sum + episode.duration_min, 0)
-
   return (
     <div className="detail-dialog-overlay" onClick={onClose}>
       <div
@@ -96,6 +86,24 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, longIdleMin,
             <p className="detail-dialog-subtitle">
               {employee.profession?.trim() || '—'} · #{employee.employee_number} · {employee.supervisor_name}
             </p>
+            <div className="detail-dialog-metrics">
+              <div className="detail-dialog-metric">
+                <span className="detail-dialog-metric-label">Активность</span>
+                <span className="detail-dialog-metric-value">{formatPercent(employee.activity_pct)}</span>
+              </div>
+              <div className="detail-dialog-metric">
+                <span className="detail-dialog-metric-label">Слабая активность</span>
+                <span className="detail-dialog-metric-value">{formatPercent(employee.weak_activity_pct)}</span>
+              </div>
+              <div className="detail-dialog-metric">
+                <span className="detail-dialog-metric-label">Длительный простой</span>
+                <span className="detail-dialog-metric-value">{formatPercent(employee.long_idle_pct)}</span>
+              </div>
+              <div className="detail-dialog-metric">
+                <span className="detail-dialog-metric-label">Ходьба между зонами</span>
+                <span className="detail-dialog-metric-value">{formatPercent(employee.go_pct)}</span>
+              </div>
+            </div>
           </div>
           <button type="button" className="detail-dialog-close" onClick={onClose} aria-label="Закрыть">
             ×
@@ -118,7 +126,7 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, longIdleMin,
             </section>
 
             <section className="detail-dialog-section">
-              <h3>Бездействие в зоне (наша модель)</h3>
+              <h3>Бездействие в зоне</h3>
               <p className="detail-dialog-note">
                 Поминутный отбор: почти нулевая активность в учитываемых зонах, эпизоды от 30 мин.
               </p>
@@ -126,29 +134,6 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, longIdleMin,
                 <strong>{employee.not_worn_time}</strong>
                 <span>{formatSeconds(employee.not_worn_sec)}</span>
               </div>
-            </section>
-
-            <section className="detail-dialog-section">
-              <h3>Длительные простои в ПВ (отчёт 10)</h3>
-              <p className="detail-dialog-note">
-                Эпизоды ≥ {longIdleMin} мин в зоне проведения работ — как «простои» на основном фронте.
-                {pvTotalMin > 0 ? ` Всего: ${formatMinutes(pvTotalMin * 60)}.` : ''}
-              </p>
-              {pvIdleEpisodes.length > 0 ? (
-                <div className="detail-dialog-episodes">
-                  {pvIdleEpisodes.map((episode) => (
-                    <div className="detail-dialog-episode" key={`${episode.session_id}-${episode.dt_start}`}>
-                      <div className="detail-dialog-episode-main">
-                        <strong>{formatIdleEpisodeTimeLabel(episode.dt_start, episode.dt_end)}</strong>
-                        <span>{episode.zonaName}</span>
-                      </div>
-                      <div className="detail-dialog-episode-duration">{formatMinutes(episode.duration_min * 60)}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="detail-dialog-empty">Длительных простоев в ПВ нет.</p>
-              )}
             </section>
           </>
         ) : null}

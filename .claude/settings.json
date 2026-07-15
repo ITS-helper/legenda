@@ -1,4 +1,27 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(bd ready *)",
+      "Bash(bd show *)",
+      "Bash(bd list *)",
+      "Bash(bd stats *)",
+      "Bash(bd --help)",
+      "Bash(bd blocked *)",
+      "Bash(bd search *)",
+      "Bash(bd doctor *)",
+      "Bash(bd stale *)",
+      "Bash(bd orphans *)",
+      "Bash(bd memories *)",
+      "Bash(bd prime *)",
+      "Bash(npx tsc *)",
+      "Bash(tsc *)",
+      "Bash(npm run build)",
+      "Bash(npm run build *)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint *)",
+      "mcp__mcp-registry__list_connectors"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

@@ -21,16 +21,19 @@ export function ShiftActivityTimeline({ rows, axisStartMin, axisEndMin, title }:
       {title ? <h4 className="shift-timeline-title">{title}</h4> : null}
 
       <div className="shift-timeline-chart">
-        <div className="shift-timeline-axis" aria-hidden="true">
-          {ticks.map((tick) => (
-            <span
-              key={tick}
-              className="shift-timeline-axis-tick"
-              style={{ left: `${segmentLeftPct(tick, axisStartMin, axisEndMin)}%` }}
-            >
-              {formatMskTimeFromMinutes(tick)}
-            </span>
-          ))}
+        <div className="shift-timeline-axis-row" aria-hidden="true">
+          <div className="shift-timeline-axis-spacer" />
+          <div className="shift-timeline-axis">
+            {ticks.map((tick) => (
+              <span
+                key={tick}
+                className="shift-timeline-axis-tick"
+                style={{ left: `${segmentLeftPct(tick, axisStartMin, axisEndMin)}%` }}
+              >
+                {formatMskTimeFromMinutes(tick)}
+              </span>
+            ))}
+          </div>
         </div>
 
         <div className="shift-timeline-rows">

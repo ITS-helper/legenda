@@ -57,6 +57,33 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
 
+## Локальная разработка и деплой
+
+Перенесено из `.cursor/rules/` (использовались с Cursor, теперь действуют и здесь).
+
+- Разрабатываем локально: `npm run dev` (фронт), правки в `supabase/functions/` — тестируем локально/ручным вызовом.
+- **Не коммитить и не пушить в `main`**, пока пользователь явно не попросит («закоммить», «запушь», «отправь на деплой»). Не деплоить GitHub Pages и не запускать `supabase functions deploy` без явной команды. Не предлагать push «на всякий случай» в конце задачи. (Согласуется с conservative-профилем выше.)
+- Когда пользователь явно просит commit/push/deploy:
+  1. Закоммитить, `git push origin main`.
+  2. Сразу после push проверить workflow **Deploy Pages**: `gh run list --workflow=deploy-pages.yml --limit 1`, затем `gh run watch <run-id> --exit-status` (если run ещё не появился — подождать 10–20 с и повторить `gh run list`).
+  3. В ответе явно указать: хеш коммита, статус деплоя (успех / в процессе / ошибка с причиной), ссылку на run.
+  4. Если менялись файлы в `supabase/functions/` — напомнить про `supabase functions deploy <name> --no-verify-jwt` (отдельно от GitHub Pages).
+  - Не спрашивать «закоммитить?»/«запушить?» лишний раз в рамках уже данной командой на деплой — но новую команду на deploy в новом чате/задаче нужно получить явно заново.
+
+## Supabase и БД из терминала — постоянное разрешение
+
+Пользователь заранее разрешил без переспроса в каждом случае:
+
+- читать и дополнять `.env.local` (не коммитить в git);
+- подключаться к Postgres через `SUPABASE_DB_URL`/pooler (`npm run db:migrate`, `npm run setup:report-cron`);
+- выполнять `supabase secrets set`, `supabase functions deploy`, `supabase link`;
+- настраивать Vault (`vault.create_secret` / `vault.update_secret`) и `pg_cron` для рассылки.
+
+Секреты не дублировать в правилах, коммитах и ответах пользователю — только в `.env.local` и Supabase.
+
+При проблемах с рассылкой: сначала `npm run setup:report-cron`, затем проверить `net._http_response` и `analytics.email_log`.
+
+Это разрешение **не распространяется** на git push/деплой — см. раздел выше, там нужна явная команда каждый раз.
 
 ## Build & Test
 

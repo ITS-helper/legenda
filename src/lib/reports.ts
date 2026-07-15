@@ -125,6 +125,10 @@ export type NotWornEmployee = {
   not_worn_sec: number
   not_worn_pct: number
   not_worn_time: string
+  activity_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
+  go_pct: number
 }
 
 import { MSK_TIME_ZONE } from './mskTime'
@@ -1011,6 +1015,15 @@ export async function loadNotWornEmployees(reportDate: string, cachedShifts?: Sh
             not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total ?? 0),
           }),
           not_worn_time: episodeLabel !== '—' ? episodeLabel : '—',
+          activity_pct: ratio(row.work_sec_total, row.total_sec_total),
+          weak_activity_pct: ratio(row.weak_activity_sec_total, row.total_sec_total),
+          // Длительный простой (отчёт 10) может превышать общий простой телеметрии, если эпизоды
+          // тянутся после обрыва телеметрии — ограничиваем idle_sec_total, чтобы доля была ≤100%.
+          long_idle_pct: ratio(
+            Math.min(row.long_idle_sec_total, row.idle_sec_total),
+            row.total_sec_total,
+          ),
+          go_pct: ratio(row.go_sec_total, row.total_sec_total),
         } satisfies NotWornCandidate,
       ]
     })

@@ -1,6 +1,5 @@
 import { MSK_TIME_ZONE, formatMskTimeFromMinutes } from './mskTime'
 import { supabase } from './supabase'
-import { PV_ZONE } from './reports'
 import { zoneName } from './zones'
 
 export type TimelineSegment = {
@@ -58,8 +57,6 @@ type RawNotWornEpisode = {
   episode_sec: number
 }
 
-const SHIFT_WINDOW_START_MIN = 7 * 60
-const SHIFT_WINDOW_END_MIN = 23 * 60
 const AXIS_START_MIN = 6 * 60
 const AXIS_END_MIN = 24 * 60
 
@@ -115,33 +112,20 @@ function episodeToSegments(
   )
 }
 
-function minuteInSegments(minute: number, segments: TimelineSegment[]) {
-  return segments.some((segment) => minute >= segment.startMin && minute < segment.endMin)
-}
+// Порог активной минуты в детализации (секунд работы на минуту).
+const ACTIVE_WORK_SEC = 20
 
-function dominantMinuteKind(minute: RawMinute) {
-  const work = Number(minute.work_sec ?? 0)
-  const go = Number(minute.go_sec ?? 0)
-  const idle = Number(minute.idle_sec ?? 0)
-  if (work >= go && work >= idle && work > 0) return 'work'
-  if (go >= work && go >= idle && go > 0) return 'go'
-  if (idle > 0) return 'weak'
-  return null
-}
-
-function buildMinuteRowSegments(
+// Собирает поминутные сегменты по предикату (получает минуту и её начало в минутах МСК).
+function collectMinuteSegments(
   minutes: RawMinute[],
-  excludeWhen: (minute: number) => boolean,
-  pickKind: (minute: RawMinute) => string | null,
+  include: (minute: RawMinute, startMin: number) => boolean,
 ) {
   const items: Array<{ startMin: number; endMin: number }> = []
 
   for (const minute of minutes) {
     const startMin = isoToMskMinutes(minute.event_at)
-    const endMin = startMin + 1
-    if (excludeWhen(startMin)) continue
-    if (pickKind(minute) === null) continue
-    items.push({ startMin, endMin })
+    if (!include(minute, startMin)) continue
+    items.push({ startMin, endMin: startMin + 1 })
   }
 
   return mergeMinuteSegments(items)
@@ -152,72 +136,31 @@ export function buildShiftActivityTimeline(payload: {
   idleEpisodes: RawIdleEpisode[]
   notWornEpisodes: RawNotWornEpisode[]
 }): ShiftTimelineRow[] {
+  // episode_end — фактическая метка конца эпизода; длительность (episode_sec) НЕ добавляем к концу.
   const notWornSegments = episodeToSegments(
     payload.notWornEpisodes.map((episode) => ({
       start: episode.episode_start,
       end: episode.episode_end,
-      endSec: Number(episode.episode_sec ?? 60),
     })),
   )
 
-  const longIdlePvSegments = episodeToSegments(
-    payload.idleEpisodes
-      .filter((episode) => Number(episode.ble_tag_zone) === PV_ZONE)
-      .map((episode) => ({ start: episode.dt_start, end: episode.dt_end })),
-  )
+  // Минута попадает в «Бездействие в зоне» — активность/слабая её не показывают,
+  // чтобы не противоречить выводу «человек бездействовал» (активность и бездействие не пересекаются).
+  const inNotWorn = (startMin: number) =>
+    notWornSegments.some((segment) => startMin >= segment.startMin && startMin < segment.endMin)
 
-  const longIdleOtherSegments = episodeToSegments(
-    payload.idleEpisodes
-      .filter((episode) => Number(episode.ble_tag_zone) !== PV_ZONE)
-      .map((episode) => ({ start: episode.dt_start, end: episode.dt_end })),
-  )
-
-  const excludeBusy = (minute: number) =>
-    minuteInSegments(minute, notWornSegments) || minuteInSegments(minute, longIdlePvSegments)
-
-  const workSegments = buildMinuteRowSegments(
+  const workSegments = collectMinuteSegments(
     payload.minutes,
-    excludeBusy,
-    (minute) => (dominantMinuteKind(minute) === 'work' ? 'work' : null),
+    (minute, startMin) => !inNotWorn(startMin) && (Number(minute.work_sec) || 0) >= ACTIVE_WORK_SEC,
   )
 
-  const goSegments = buildMinuteRowSegments(
-    payload.minutes,
-    (minute) => excludeBusy(minute) || minuteInSegments(minute, workSegments),
-    (minute) => (dominantMinuteKind(minute) === 'go' ? 'go' : null),
-  )
-
-  const weakSegments = buildMinuteRowSegments(
-    payload.minutes,
-    (minute) =>
-      excludeBusy(minute) ||
-      minuteInSegments(minute, workSegments) ||
-      minuteInSegments(minute, goSegments) ||
-      minuteInSegments(minute, longIdleOtherSegments),
-    (minute) => (dominantMinuteKind(minute) === 'weak' ? 'weak' : null),
-  )
-
-  const shiftWindowSegments: TimelineSegment[] = [
-    {
-      startMin: SHIFT_WINDOW_START_MIN,
-      endMin: SHIFT_WINDOW_END_MIN,
-      label: `${formatMskTimeFromMinutes(SHIFT_WINDOW_START_MIN)}–${formatMskTimeFromMinutes(SHIFT_WINDOW_END_MIN)}`,
-    },
-  ]
+  const weakSegments = collectMinuteSegments(payload.minutes, (minute, startMin) => {
+    if (inNotWorn(startMin)) return false
+    const work = Number(minute.work_sec) || 0
+    return work > 0 && work < ACTIVE_WORK_SEC
+  })
 
   const rows: ShiftTimelineRow[] = [
-    {
-      id: 'shift_window',
-      label: 'Окно аналитики',
-      colorClass: 'shift-timeline-window',
-      segments: shiftWindowSegments,
-    },
-    {
-      id: 'long_idle_pv',
-      label: 'Длительный простой в ПВ',
-      colorClass: 'shift-timeline-long-idle',
-      segments: longIdlePvSegments,
-    },
     {
       id: 'not_worn',
       label: 'Бездействие в зоне',
@@ -236,24 +179,9 @@ export function buildShiftActivityTimeline(payload: {
       colorClass: 'shift-timeline-weak',
       segments: weakSegments,
     },
-    {
-      id: 'go',
-      label: 'Ходьба между зонами',
-      colorClass: 'shift-timeline-go',
-      segments: goSegments,
-    },
   ]
 
-  if (longIdleOtherSegments.length > 0) {
-    rows.splice(2, 0, {
-      id: 'long_idle_other',
-      label: 'Длительный простой (другие зоны)',
-      colorClass: 'shift-timeline-long-idle-other',
-      segments: longIdleOtherSegments,
-    })
-  }
-
-  return rows.filter((row) => row.id === 'shift_window' || row.segments.length > 0)
+  return rows.filter((row) => row.id === 'work' || row.segments.length > 0)
 }
 
 export async function loadShiftInactivityDetail(
