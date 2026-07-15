@@ -5,6 +5,7 @@ import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
 import { DatePickerField } from '../components/DatePickerField'
 import { AttentionPanel } from '../components/AttentionPanel'
 import { NoTelemetryPanel } from '../components/NoTelemetryPanel'
+import { NotWornEmployeeDetailDialog } from '../components/NotWornEmployeeDetailDialog'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
@@ -201,6 +202,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [notWornEmployees, setNotWornEmployees] = useState<NotWornEmployee[]>([])
   const [noTelemetryEmployees, setNoTelemetryEmployees] = useState<NoTelemetryEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
+  const [allShiftRows, setAllShiftRows] = useState<ShiftMetricRow[]>([])
   const [detailShiftRows, setDetailShiftRows] = useState<ShiftMetricRow[]>([])
   const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
   const [zoneRowsByBrigade, setZoneRowsByBrigade] = useState<BrigadeZoneDaily[]>([])
@@ -234,6 +236,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [notWornOpen, setNotWornOpen] = useState(false)
+  const [selectedNotWornEmployee, setSelectedNotWornEmployee] = useState<NotWornEmployee | null>(null)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [noTelemetryOpen, setNoTelemetryOpen] = useState(false)
@@ -287,6 +290,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ])
         if (cancelled) return
         setDailyRows(brigades)
+        setAllShiftRows(allShifts)
         setShiftRows(filterAnalyticsShiftRows(allShifts))
         setNoTelemetryEmployees(filterNoTelemetryDaily(allShifts))
         setZoneRows(zoneBundle.daily)
@@ -307,10 +311,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }, [selectedDate, password])
 
   useEffect(() => {
-    if (!selectedDate || !showBlock1 || !showBlock1NotWorn) {
-      setNotWornEmployees([])
-      setNotWornLoading(false)
-      setNotWornError(null)
+    if (!selectedDate || !showBlock1 || !showBlock1NotWorn || allShiftRows.length === 0) {
+      if (!selectedDate || !showBlock1 || !showBlock1NotWorn) {
+        setNotWornEmployees([])
+        setNotWornLoading(false)
+        setNotWornError(null)
+      }
       return
     }
 
@@ -320,7 +326,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setNotWornLoading(true)
       setNotWornError(null)
       try {
-        const employees = await loadNotWornEmployees(selectedDate)
+        const employees = await loadNotWornEmployees(selectedDate, allShiftRows)
         if (!cancelled) setNotWornEmployees(employees)
       } catch (error) {
         if (!cancelled) setNotWornError(getErrorMessage(error))
@@ -333,7 +339,17 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [selectedDate, showBlock1, showBlock1NotWorn, settings.notWornMinSec, settings.notWornMinIntervalSec, settings.notWornProfessionRules])
+  }, [
+    selectedDate,
+    showBlock1,
+    showBlock1NotWorn,
+    allShiftRows,
+    settings.lowActivityPct,
+    settings.analyticsMinActivityPct,
+    settings.notWornMinSec,
+    settings.notWornMinIntervalSec,
+    settings.notWornProfessionRules,
+  ])
 
   async function refreshVolumesForBlock(date: string) {
     const normalized = normalizeReportDate(date)
@@ -561,13 +577,26 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     [zoneRows, settings.zoneVisibility],
   )
 
-  const visibleNotWornEmployees = useMemo(
-    () =>
-      notWornEmployees.filter((employee) =>
+  const visibleNotWornEmployees = useMemo(() => {
+    const lowActivityShiftIds = new Set(
+      visibleLowActivityDaily
+        .map((employee) => employee.ww_shift_id)
+        .filter((shiftId): shiftId is number => shiftId != null)
+        .map((shiftId) => Number(shiftId)),
+    )
+    const lowActivityEmployeeIds = new Set(
+      visibleLowActivityDaily.map((employee) => String(employee.employee_number)),
+    )
+    return notWornEmployees
+      .filter((employee) =>
         comparisonBrigades.some((name) => brigadeNamesMatch(employee.supervisor_name, name)),
-      ),
-    [notWornEmployees, comparisonBrigades],
-  )
+      )
+      .filter(
+        (employee) =>
+          !lowActivityShiftIds.has(Number(employee.ww_shift_id)) &&
+          !lowActivityEmployeeIds.has(String(employee.employee_number)),
+      )
+  }, [notWornEmployees, comparisonBrigades, visibleLowActivityDaily])
 
   const calendarDates = useMemo(() => mergeDateLists(availableDates, volumeDates), [availableDates, volumeDates])
 
@@ -886,9 +915,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   <span className="kpp-panel-titles">
                     <span className="panel-kicker">Требуют внимания</span>
                     <span className="kpp-panel-title">
-                      {visibleNotWornEmployees.length > 0
-                        ? 'Бездействие в зоне проведения работ'
-                        : 'Бездействия в зоне проведения работ нет'}
+                      {notWornLoading
+                        ? 'Загружаем бездействие в зоне...'
+                        : visibleNotWornEmployees.length > 0
+                          ? 'Бездействие в зоне проведения работ'
+                          : 'Бездействия в зоне проведения работ нет'}
                     </span>
                   </span>
                 </button>
@@ -918,7 +949,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                             {brigadeEmployees.length > 0 ? (
                               <div className="kpp-list">
                                 {brigadeEmployees.map((employee) => (
-                                    <div className="kpp-row" key={employee.ww_shift_id}>
+                                    <button
+                                      type="button"
+                                      className="kpp-row kpp-row-button"
+                                      key={employee.ww_shift_id}
+                                      onClick={() => setSelectedNotWornEmployee(employee)}
+                                    >
                                       <div className="kpp-main">
                                         <strong>{employee.full_name}</strong>
                                         <span>
@@ -929,7 +965,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                                         <div className="kpp-time">{employee.not_worn_time}</div>
                                         <div className="kpp-time kpp-time-secondary">{formatSeconds(employee.not_worn_sec)}</div>
                                       </div>
-                                    </div>
+                                    </button>
                                   ))}
                               </div>
                             ) : (
@@ -1374,6 +1410,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
       ) : null}
+
+      <NotWornEmployeeDetailDialog
+        employee={selectedNotWornEmployee}
+        reportDate={selectedDate}
+        longIdleMin={settings.longIdleMin}
+        open={selectedNotWornEmployee !== null}
+        onClose={() => setSelectedNotWornEmployee(null)}
+      />
     </>
   )
 }

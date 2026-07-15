@@ -192,14 +192,37 @@ flowchart LR
 
 | № | Блок | Компоненты / данные |
 |---|------|---------------------|
-| 1 | **Ежедневная аналитика** | 8 карточек метрик, карточки бригад (в т.ч. объём за день), топ-3, «требуют внимания», список «Не использовали устройство» | `brigade_daily_metrics`, `shift_daily_metrics`, RPC `not_worn_episode_ranges_for_date`, `volume_entries` |
+| 1 | **Ежедневная аналитика** | Карточки метрик, бригады, топ-3, подблоки «Требуют внимания» (низкая активность, нет телеметрии, бездействие в зоне) | `brigade_daily_metrics`, RPC `shift_daily_metrics_for_date`, `not_worn_episode_ranges_for_date`, `shift_inactivity_detail_for_shift`, `volume_entries` |
 | 2 | **Еженедельная аналитика** | Карточки бригад за неделю, топ-3, внимание | `brigade_weekly_metrics`, смены за диапазон |
 | 3 | **Динамика активности** | Джалол / ЛИ СОН ХАК: день vs вчера, спарклайн 7 дней | `brigade_daily_metrics` |
 | 4 | **Местоположение и простои** | Распределение по зонам, эпизоды простоя | `zone_daily_metrics`, `idle_episodes_daily` |
 | 5 | **Объёмы** | Ручной ввод таблицей | [`VolumesPanel`](../src/components/VolumesPanel.tsx), `volume-entries` |
 | 6 | **Детализация** | Сортируемая таблица смен | `shift_daily_metrics` |
 
-Список «Не использовали устройство» (поведенческий простой без движения, окно 07:00–23:00 МСК) — подблок блока 1, **не в рассылке**; RPC `not_worn_episode_ranges_for_date`.
+### Блок 1 — подблоки «Требуют внимания»
+
+| Подблок | ID | Источник | Правило отбора |
+|---------|-----|----------|----------------|
+| Активность ниже порога | `block1_attention` | `shift_daily_metrics` (≥ `analytics_min_activity_pct`) | `work_sec / total_sec < low_activity_pct` |
+| Не сдали часы | `block1_no_telemetry_panel` | `shift_daily_metrics` | нет телеметрии (`total_sec ≤ 0` или `telemetry_rows ≤ 0`) |
+| Бездействие в зоне проведения работ | `block1_not_worn_panel` | отчёт 11, RPC `not_worn_episode_ranges_for_date` | поминутный not_worn, эпизод ≥ 30 мин; **не дублировать** смены из «низкой активности» (≥ 11% и &lt; 30%); смены **ниже 11%** при эпизоде — только здесь |
+
+**Детализация по клику** (бездействие в зоне): диалог [`NotWornEmployeeDetailDialog`](../src/components/NotWornEmployeeDetailDialog.tsx) — таймлайн по часам [`ShiftActivityTimeline`](../src/components/ShiftActivityTimeline.tsx), данные RPC `shift_inactivity_detail_for_shift` (поминуты BLE + простои отчёта 10 + not_worn). Длительные простои в ПВ (отчёт 10) соответствуют розовой полосе «простои» на основном фронте WW.
+
+Загрузка списка бездействия: один RPC `not_worn_episode_ranges_for_date` + кэш смен из `loadAllShiftRowsForDate` (без повторного `list_not_worn_shifts_for_date`).
+
+Список бездействия — подблок блока 1, **не в рассылке**.
+
+### RPC аналитики по дате (PostgREST)
+
+| Функция | Назначение |
+|---------|------------|
+| `shift_daily_metrics_for_date` | Смены за день (вместо view без фильтра даты) |
+| `brigade_daily_metrics_for_date` | Бригады за день |
+| `zone_daily_metrics_for_date` | Зоны за день |
+| `idle_episodes_daily_for_date` | Простои ≥ порога (с фильтром analytics_min) |
+| `not_worn_episode_ranges_for_date` | Интервалы not_worn по сменам |
+| `shift_inactivity_detail_for_shift` | Детализация одной смены: минуты BLE + idle_episodes + not_worn |
 
 Загрузчики и типы: [`src/lib/reports.ts`](../src/lib/reports.ts).  
 Объёмы: [`src/lib/volumes.ts`](../src/lib/volumes.ts).  
@@ -208,7 +231,8 @@ flowchart LR
 ### Переиспользуемые компоненты
 
 - `CollapsibleBlock` — сворачиваемые секции
-- `ActivityDynamicsPanel`, `TopActivityPanel`, `AttentionPanel`
+- `ActivityDynamicsPanel`, `TopActivityPanel`, `AttentionPanel`, `NoTelemetryPanel`
+- `NotWornEmployeeDetailDialog`, `ShiftActivityTimeline` — детализация бездействия в блоке 1
 - `StructureBar` — полоса структуры времени (активность / слабая / простой / ходьба)
 
 Тексты UI: `analytics.site_settings` → [`src/content/uiText.ts`](../src/content/uiText.ts).
@@ -269,7 +293,7 @@ legenda/
 ├── src/                    # React-приложение
 │   ├── pages/              # DashboardPage, SettingsPage, LoginPage
 │   ├── components/         # UI-блоки дашборда
-│   ├── lib/                # reports, volumes, zones, supabase, edgeFunctions, …
+│   ├── lib/                # reports, shiftActivityTimeline, volumes, zones, …
 │   └── content/uiText.ts   # дефолтные тексты
 ├── supabase/
 │   ├── schema.sql          # полная схема analytics
@@ -315,3 +339,4 @@ legenda/
 - Средняя длительность смены из отчёта 6.
 - Карточки ПВ и объёмов в блоке 1; блок 5 — ручной ввод `volume_entries`.
 - Чтение объёмов через edge function + RLS policy (миграции `20260712`, `20260713`).
+- Блок 1: разделение «низкая активность» и «бездействие в зоне» без дублирования; детализация с таймлайном (отчёт 10 vs not_worn); RPC `shift_inactivity_detail_for_shift` (`20260741`).

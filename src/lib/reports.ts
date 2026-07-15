@@ -688,6 +688,7 @@ export async function loadBrigadeVolumeDynamics(referenceDate: string) {
 }
 
 export type AttentionEmployee = {
+  ww_shift_id?: number
   employee_number: string
   full_name: string
   supervisor_name: string
@@ -707,6 +708,28 @@ export function isNoTelemetryShift(
   row: Pick<ShiftMetricRow, 'total_sec_total' | 'telemetry_rows'>,
 ) {
   return Number(row.total_sec_total) <= 0 || Number(row.telemetry_rows ?? 0) <= 0
+}
+
+/** Смена с телеметрией и низкой активностью — часы носил, но работал слабо; не путать с «не носил часы». */
+export function isLowActivityWithWatch(
+  row: Pick<ShiftMetricRow, 'total_sec_total' | 'telemetry_rows' | 'work_sec_total'>,
+  lowActivityPct = getMetricSettings().lowActivityPct,
+) {
+  if (isNoTelemetryShift(row)) return false
+  return getShiftProductivity(row) < lowActivityPct
+}
+
+/**
+ * Пересечение с блоком «Активность ниже low_activity_pct»: смена в аналитике (≥ analytics_min)
+ * и при этом низкая активность. Таких не дублируем в «Бездействие в зоне».
+ * Ниже analytics_min (11%) в «низкой активности» не показываем — эпизод not_worn остаётся здесь.
+ */
+export function isLowActivityAttentionOverlap(
+  row: Pick<ShiftMetricRow, 'total_sec_total' | 'telemetry_rows' | 'work_sec_total'>,
+  lowActivityPct = getMetricSettings().lowActivityPct,
+) {
+  if (!isAnalyticsEligibleShift(row)) return false
+  return isLowActivityWithWatch(row, lowActivityPct)
 }
 
 export function filterNoTelemetryDaily(rows: ShiftMetricRow[]) {
@@ -749,11 +772,12 @@ export const VOLUME_DYNAMICS_SPARKLINE_DAYS = DEFAULT_METRIC_SETTINGS.volumeSpar
 export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
   const threshold = getMetricSettings().lowActivityPct
   return rows
-    .filter((row) => row.total_sec_total > 0 && getShiftProductivity(row) < threshold)
+    .filter((row) => isLowActivityWithWatch(row, threshold))
     .map(
       (row) =>
         ({
-          employee_number: row.employee_number,
+          ww_shift_id: row.ww_shift_id,
+          employee_number: String(row.employee_number),
           full_name: row.full_name,
           supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
           profession: row.profession ?? null,
@@ -811,7 +835,8 @@ export function topActivityDaily(rows: ShiftMetricRow[], limit = 3) {
     .map(
       (row) =>
         ({
-          employee_number: row.employee_number,
+          ww_shift_id: row.ww_shift_id,
+          employee_number: String(row.employee_number),
           full_name: row.full_name,
           supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
           profession: row.profession ?? null,
@@ -919,78 +944,20 @@ export async function loadAvailableProfessions() {
   return names
 }
 
-export async function loadNotWornEmployees(reportDate: string) {
+export async function loadNotWornEmployees(reportDate: string, cachedShifts?: ShiftMetricRow[]) {
   const settings = getMetricSettings()
 
-  const [{ data: shiftData, error: shiftError }, { data: rpcData, error: rpcError }] = await Promise.all([
-    supabase.schema('analytics').rpc('shift_daily_metrics_for_date', { p_report_date: reportDate }),
-    supabase.schema('analytics').rpc('list_not_worn_shifts_for_date', { p_report_date: reportDate }),
-  ])
+  const shiftPromise = cachedShifts
+    ? Promise.resolve(cachedShifts)
+    : loadAllShiftRowsForDate(reportDate)
 
-  if (shiftError) throw shiftError
-  if (rpcError) throw rpcError
-
-  type NotWornShiftRpcRow = {
-    ww_shift_id: number | string
-    employee_number: string
-    full_name: string
-    profession: string | null
-    supervisor_name: string | null
-    not_worn_sec_total: number | string
-    not_worn_eligible_sec_total: number | string
-    not_worn_shift_min_sec: number | null
-  }
-
-  const rpcByShift = new Map<number, NotWornShiftRpcRow>()
-  for (const row of (rpcData ?? []) as NotWornShiftRpcRow[]) {
-    rpcByShift.set(Number(row.ww_shift_id), row)
-  }
-
-  type NotWornCandidate = NotWornEmployee & {
-    belowMinActivity: boolean
-    activity_pct: number
-  }
-
-  const employees = ((shiftData ?? []) as ShiftMetricRow[])
-    .filter((row) => isAnalyticsSupervisor(row.supervisor_name))
-    .flatMap((row) => {
-      const rpc = rpcByShift.get(row.ww_shift_id)
-      const shiftMinSec = Number(rpc?.not_worn_shift_min_sec ?? settings.notWornMinSec)
-      const not_worn_sec = Number(rpc?.not_worn_sec_total ?? 0)
-      const belowMinActivity = !isAnalyticsEligibleShift(row)
-      const hasNotWornEpisode = not_worn_sec >= shiftMinSec
-      if (!belowMinActivity && !hasNotWornEpisode) return [] satisfies NotWornCandidate[]
-
-      return [
-        {
-          ww_shift_id: row.ww_shift_id,
-          employee_number: String(row.employee_number),
-          full_name: String(row.full_name),
-          profession: row.profession ?? null,
-          supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
-          not_worn_sec,
-          not_worn_pct: getNotWornPct({
-            not_worn_sec_total: not_worn_sec,
-            not_worn_eligible_sec_total: Number(
-              rpc?.not_worn_eligible_sec_total ?? row.not_worn_eligible_sec_total ?? 0,
-            ),
-          }),
-          not_worn_time: '—',
-          belowMinActivity,
-          activity_pct: getShiftProductivity(row),
-        } satisfies NotWornCandidate,
-      ]
-    })
-
-  if (employees.length === 0) return [] satisfies NotWornEmployee[]
-
-  const shiftIds = employees.map((employee) => employee.ww_shift_id)
-  const { data: episodeData, error: episodeError } = await supabase
-    .schema('analytics')
-    .rpc('not_worn_episode_ranges_for_date', {
+  const [{ data: episodeData, error: episodeError }, shiftData] = await Promise.all([
+    supabase.schema('analytics').rpc('not_worn_episode_ranges_for_date', {
       p_report_date: reportDate,
-      p_shift_ids: shiftIds,
-    })
+      p_shift_ids: null,
+    }),
+    shiftPromise,
+  ])
 
   if (episodeError) throw episodeError
 
@@ -1002,9 +969,13 @@ export async function loadNotWornEmployees(reportDate: string) {
   }
 
   const episodesByShift = new Map<number, Array<{ episode_start: string; episode_end: string }>>()
+  const totalSecByShift = new Map<number, number>()
+
   for (const row of (episodeData ?? []) as NotWornEpisodeRow[]) {
     if (!row.episode_start || !row.episode_end) continue
     const shiftId = Number(row.ww_shift_id)
+    const episodeSec = Number(row.episode_sec ?? 0)
+    totalSecByShift.set(shiftId, (totalSecByShift.get(shiftId) ?? 0) + episodeSec)
     const episodes = episodesByShift.get(shiftId) ?? []
     episodes.push({
       episode_start: String(row.episode_start),
@@ -1013,21 +984,76 @@ export async function loadNotWornEmployees(reportDate: string) {
     episodesByShift.set(shiftId, episodes)
   }
 
-  return employees
-    .map(({ belowMinActivity, activity_pct, ...employee }) => {
-      const episodes = episodesByShift.get(employee.ww_shift_id) ?? []
+  type NotWornCandidate = NotWornEmployee
+
+  const employees = (shiftData as ShiftMetricRow[])
+    .filter((row) => isAnalyticsSupervisor(row.supervisor_name))
+    .flatMap((row) => {
+      const shiftMinSec = Number(row.not_worn_shift_min_sec ?? settings.notWornMinSec)
+      const not_worn_sec = totalSecByShift.get(row.ww_shift_id) ?? 0
+      const hasNotWornEpisode = not_worn_sec >= shiftMinSec
+      if (!hasNotWornEpisode) return [] satisfies NotWornCandidate[]
+      if (isLowActivityAttentionOverlap(row, settings.lowActivityPct)) return [] satisfies NotWornCandidate[]
+
+      const episodes = episodesByShift.get(row.ww_shift_id) ?? []
       const episodeLabel = buildNotWornEpisodeTimeLabel(episodes)
-      return {
-        ...employee,
-        not_worn_time:
-          episodeLabel !== '—'
-            ? episodeLabel
-            : belowMinActivity
-              ? `активность ${formatPercent(activity_pct)}`
-              : '—',
-      } satisfies NotWornEmployee
+
+      return [
+        {
+          ww_shift_id: row.ww_shift_id,
+          employee_number: String(row.employee_number),
+          full_name: String(row.full_name),
+          profession: row.profession ?? null,
+          supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
+          not_worn_sec,
+          not_worn_pct: getNotWornPct({
+            not_worn_sec_total: not_worn_sec,
+            not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total ?? 0),
+          }),
+          not_worn_time: episodeLabel !== '—' ? episodeLabel : '—',
+        } satisfies NotWornCandidate,
+      ]
     })
-    .sort((left, right) => right.not_worn_sec - left.not_worn_sec || left.full_name.localeCompare(right.full_name, 'ru'))
+
+  return employees.sort(
+    (left, right) => right.not_worn_sec - left.not_worn_sec || left.full_name.localeCompare(right.full_name, 'ru'),
+  )
+}
+
+export function formatIdleEpisodeTimeLabel(dtStart: string | null, dtEnd: string | null) {
+  if (!dtStart || !dtEnd) return '—'
+  const start = formatMoscowTime(dtStart)
+  const end = formatMoscowTime(dtEnd)
+  return start === end ? start : `${start}–${end}`
+}
+
+/** Длительные простои по отчёту 10 для смены (без фильтра analytics_min). */
+export async function loadLongIdleEpisodesForShift(reportDate: string, wwShiftId: number) {
+  const threshold = getMetricSettings().longIdleMin
+
+  const { data, error } = await supabase
+    .schema('analytics')
+    .from('idle_episodes_daily')
+    .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
+    .eq('report_date', reportDate)
+    .eq('ww_shift_id', wwShiftId)
+    .gte('duration_min', threshold)
+    .order('dt_start')
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    ww_shift_id: Number(row.ww_shift_id),
+    session_id: row.session_id === null ? null : Number(row.session_id),
+    employee_number: row.employee_number ?? null,
+    full_name: row.full_name ?? null,
+    supervisor_name: NO_SUPERVISOR,
+    dt_start: row.dt_start ?? null,
+    dt_end: row.dt_end ?? null,
+    duration_min: Number(row.duration_min),
+    ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
+    zonaName: zoneName(row.ble_tag_zone),
+  })) satisfies IdleEpisode[]
 }
 
 export function sumDaily(rows: BrigadeDailyRow[]) {

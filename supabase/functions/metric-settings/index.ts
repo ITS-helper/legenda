@@ -48,6 +48,7 @@ const SUBBLOCK_IDS = [
   'block1_brigades',
   'block1_top_activity',
   'block1_attention',
+  'block1_no_telemetry_panel',
   'block1_not_worn_panel',
   'block1_volume_card',
   'block2_brigades',

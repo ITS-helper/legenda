@@ -162,6 +162,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         max: 100,
       },
     ],
+    notes: 'Из «Бездействия в зоне» исключаются только смены, которые одновременно попадают в блок «Активность ниже low_activity_pct» (активность ≥ analytics_min_activity_pct и < low_activity_pct). Смены ниже 11% в «низкой активности» не показываются — при эпизоде not_worn они остаются в «Бездействии».',
   },
   {
     id: 'brigade_warn',
@@ -322,7 +323,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         hint: 'Подсветка карточки бригады и сотрудника при превышении доли',
       },
     ],
-    notes: 'Считаются все смены за день. Проценты активности и структура времени — только по сменам с активностью ≥ analytics_min_activity_pct (по умолчанию 11%).',
+    notes: 'В список попадают только смены с эпизодом подозрительного бездействия ≥ порога. Не дублируем смены из «Активность ниже low_activity_pct» (≥ analytics_min и < low_activity_pct). Ниже analytics_min при эпизоде not_worn — только здесь.',
   },
 ]
 
