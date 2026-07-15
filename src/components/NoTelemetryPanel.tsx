@@ -26,9 +26,7 @@ export function NoTelemetryPanel({
           <span className="kpp-panel-titles">
             <span className="panel-kicker">Нет телеметрии</span>
             <span className="kpp-panel-title">
-              {employees.length > 0
-                ? 'Смена есть, минут AA/BLE за день нет'
-                : 'Смен без телеметрии нет'}
+              {employees.length > 0 ? 'Не сдали часы' : 'Все сдали часы'}
             </span>
           </span>
         </button>

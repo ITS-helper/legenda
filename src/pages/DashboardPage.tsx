@@ -865,7 +865,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               brigades={visibleDailyRows.map((brigade) => brigade.supervisor_name)}
               open={noTelemetryOpen}
               onToggle={() => setNoTelemetryOpen((current) => !current)}
-              emptyMessage="Нет сотрудников на смене без минут AA/BLE за этот день."
+              emptyMessage="Нет сотрудников, которые не сдали часы за этот день."
             />
             ) : null}
 
