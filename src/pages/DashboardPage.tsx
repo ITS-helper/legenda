@@ -4,6 +4,7 @@ import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
 import { DatePickerField } from '../components/DatePickerField'
 import { AttentionPanel } from '../components/AttentionPanel'
+import { NoTelemetryPanel } from '../components/NoTelemetryPanel'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
@@ -15,8 +16,10 @@ import { isBlockEnabled, isSubblockEnabled } from '../lib/metricSettings'
 import {
   aggregateLowActivityWeekly,
   brigadeNamesMatch,
+  filterAnalyticsShiftRows,
   filterComparisonBrigades,
   filterLowActivityDaily,
+  filterNoTelemetryDaily,
   formatEpisodeCount,
   formatPercent,
   formatSeconds,
@@ -32,6 +35,7 @@ import {
   loadBrigadeWeekly,
   loadBrigadeWeeklyVolumeTotals,
   loadIdleEpisodes,
+  loadAllShiftRowsForDate,
   loadNotWornEmployees,
   loadShiftRows,
   loadShiftRowsForRange,
@@ -49,6 +53,7 @@ import {
   type BrigadeWeeklyRow,
   type IdleEpisode,
   type NotWornEmployee,
+  type NoTelemetryEmployee,
   type ShiftMetricRow,
   type ZoneDailyRow,
 } from '../lib/reports'
@@ -165,6 +170,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const showBlock1Brigades = isSubblockEnabled('block1_brigades', settings)
   const showBlock1Top = isSubblockEnabled('block1_top_activity', settings)
   const showBlock1Attention = isSubblockEnabled('block1_attention', settings)
+  const showBlock1NoTelemetry = isSubblockEnabled('block1_no_telemetry_panel', settings)
   const showBlock1NotWorn = isSubblockEnabled('block1_not_worn_panel', settings)
   const showBlock1VolumeCard = isSubblockEnabled('block1_volume_card', settings)
   const showBlock2Brigades = isSubblockEnabled('block2_brigades', settings)
@@ -193,6 +199,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const [dailyRows, setDailyRows] = useState<BrigadeDailyRow[]>([])
   const [notWornEmployees, setNotWornEmployees] = useState<NotWornEmployee[]>([])
+  const [noTelemetryEmployees, setNoTelemetryEmployees] = useState<NoTelemetryEmployee[]>([])
   const [shiftRows, setShiftRows] = useState<ShiftMetricRow[]>([])
   const [detailShiftRows, setDetailShiftRows] = useState<ShiftMetricRow[]>([])
   const [zoneRows, setZoneRows] = useState<ZoneDailyRow[]>([])
@@ -229,6 +236,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [notWornOpen, setNotWornOpen] = useState(false)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
+  const [noTelemetryOpen, setNoTelemetryOpen] = useState(false)
   const [topWeeklyOpen, setTopWeeklyOpen] = useState(false)
   const [weeklyAttentionOpen, setWeeklyAttentionOpen] = useState(false)
 
@@ -270,16 +278,17 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, shifts, zoneBundle, episodes, volumes] = await Promise.all([
+        const [brigades, allShifts, zoneBundle, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
-          loadShiftRows(selectedDate),
+          loadAllShiftRowsForDate(selectedDate),
           loadZoneDailyBundle(selectedDate),
           loadIdleEpisodes(selectedDate),
           loadVolumeEntries(password, selectedDate).catch(() => [] as VolumeEntry[]),
         ])
         if (cancelled) return
         setDailyRows(brigades)
-        setShiftRows(shifts)
+        setShiftRows(filterAnalyticsShiftRows(allShifts))
+        setNoTelemetryEmployees(filterNoTelemetryDaily(allShifts))
         setZoneRows(zoneBundle.daily)
         setZoneRowsByBrigade(zoneBundle.byBrigade)
         setIdleEpisodes(episodes)
@@ -525,6 +534,14 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
   const topWeekly = useMemo(() => topActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
+
+  const visibleNoTelemetryDaily = useMemo(
+    () =>
+      noTelemetryEmployees.filter((employee) =>
+        comparisonBrigades.some((name) => brigadeNamesMatch(employee.supervisor_name, name)),
+      ),
+    [noTelemetryEmployees, comparisonBrigades],
+  )
 
   const visibleLowActivityDaily = useMemo(
     () =>
@@ -839,6 +856,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               emptyMessage={`Нет сотрудников с активностью ниже ${settings.lowActivityPct}% за этот день.`}
               periodLabel="за день"
               lowActivityPct={settings.lowActivityPct}
+            />
+            ) : null}
+
+            {showBlock1NoTelemetry ? (
+            <NoTelemetryPanel
+              employees={visibleNoTelemetryDaily}
+              brigades={visibleDailyRows.map((brigade) => brigade.supervisor_name)}
+              open={noTelemetryOpen}
+              onToggle={() => setNoTelemetryOpen((current) => !current)}
+              emptyMessage="Нет сотрудников на смене без минут AA/BLE за этот день."
             />
             ) : null}
 

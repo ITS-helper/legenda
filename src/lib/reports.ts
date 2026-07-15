@@ -92,6 +92,7 @@ export type ShiftMetricRow = {
   on_watch_duration_seconds: number | null
   late_seconds: number | null
   early_return_seconds: number | null
+  telemetry_rows?: number
   idle_sec_total: number
   weak_activity_sec_total: number
   long_idle_sec_total: number
@@ -694,6 +695,36 @@ export type AttentionEmployee = {
   activity_pct: number
 }
 
+export type NoTelemetryEmployee = {
+  ww_shift_id: number
+  employee_number: string
+  full_name: string
+  supervisor_name: string
+  profession: string | null
+}
+
+export function isNoTelemetryShift(
+  row: Pick<ShiftMetricRow, 'total_sec_total' | 'telemetry_rows'>,
+) {
+  return Number(row.total_sec_total) <= 0 || Number(row.telemetry_rows ?? 0) <= 0
+}
+
+export function filterNoTelemetryDaily(rows: ShiftMetricRow[]) {
+  return rows
+    .filter((row) => isNoTelemetryShift(row) && isAnalyticsSupervisor(row.supervisor_name))
+    .map(
+      (row) =>
+        ({
+          ww_shift_id: row.ww_shift_id,
+          employee_number: row.employee_number,
+          full_name: row.full_name,
+          supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+          profession: row.profession ?? null,
+        }) satisfies NoTelemetryEmployee,
+    )
+    .sort((left, right) => left.full_name.localeCompare(right.full_name, 'ru'))
+}
+
 export function getShiftProductivity(row: Pick<ShiftMetricRow, 'work_sec_total' | 'total_sec_total'>) {
   return ratio(row.work_sec_total, row.total_sec_total)
 }
@@ -807,13 +838,17 @@ export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
 
-export async function loadShiftRows(reportDate: string) {
+export async function loadAllShiftRowsForDate(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
     .rpc('shift_daily_metrics_for_date', { p_report_date: reportDate })
 
   if (error) throw error
-  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
+  return (data ?? []) as ShiftMetricRow[]
+}
+
+export async function loadShiftRows(reportDate: string) {
+  return filterAnalyticsShiftRows(await loadAllShiftRowsForDate(reportDate))
 }
 
 export async function loadKppEmployees(reportDate: string) {
