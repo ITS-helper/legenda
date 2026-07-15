@@ -79,6 +79,7 @@ async function loadBlockVisibility(supabase: ReturnType<typeof getAdminClient>):
 }
 
 type BrigadeDailyRow = {
+  report_date: string
   supervisor_name: string
   workers: number
   work_sec: number
@@ -128,6 +129,7 @@ type ShiftMetricRow = {
   employee_number: string
   full_name: string
   supervisor_name: string | null
+  profession: string | null
   work_sec_total: number
   total_sec_total: number
 }
@@ -136,6 +138,7 @@ type AttentionRow = {
   full_name: string
   employee_number: string
   supervisor_name: string | null
+  profession: string | null
   activity_pct: number
 }
 
@@ -243,6 +246,87 @@ function listDatesInclusive(startIso: string, endIso: string) {
     current = addDaysIso(current, 1)
   }
   return dates
+}
+
+function roundPct(part: number, total: number) {
+  return total > 0 ? Math.round((1000 * part) / total) / 10 : 0
+}
+
+function aggregateBrigadeDailyToWeekly(
+  weekStart: string,
+  weekEnd: string,
+  dailyRows: BrigadeDailyRow[],
+): BrigadeWeeklyRow[] {
+  const byBrigade = new Map<string, BrigadeDailyRow[]>()
+
+  for (const row of dailyRows) {
+    const rows = byBrigade.get(row.supervisor_name) ?? []
+    rows.push(row)
+    byBrigade.set(row.supervisor_name, rows)
+  }
+
+  return [...byBrigade.entries()]
+    .map(([supervisor_name, rows]) => {
+      const days = new Set(rows.map((row) => row.report_date)).size
+      const workers = rows.reduce((sum, row) => sum + row.workers, 0)
+      const work_sec = rows.reduce((sum, row) => sum + row.work_sec, 0)
+      const weak_activity_sec = rows.reduce((sum, row) => sum + row.weak_activity_sec, 0)
+      const long_idle_sec = rows.reduce((sum, row) => sum + row.long_idle_sec, 0)
+      const go_sec = rows.reduce((sum, row) => sum + row.go_sec, 0)
+      const total_sec = rows.reduce((sum, row) => sum + row.total_sec, 0)
+      const kpp_sec = rows.reduce((sum, row) => sum + row.kpp_sec, 0)
+      const kpp_shifts = rows.reduce((sum, row) => sum + row.kpp_workers, 0)
+      const durationRows = rows.filter((row) => row.avg_shift_duration_sec > 0)
+      const durationWorkers = durationRows.reduce((sum, row) => sum + row.workers, 0)
+      const avg_shift_duration_sec =
+        durationWorkers > 0
+          ? Math.round(
+              durationRows.reduce(
+                (sum, row) => sum + row.avg_shift_duration_sec * row.workers,
+                0,
+              ) / durationWorkers,
+            )
+          : 0
+
+      return {
+        week_start: weekStart,
+        week_end: weekEnd,
+        supervisor_name,
+        days,
+        unique_employees: 0,
+        avg_workers: days > 0 ? Math.round((workers / days) * 10) / 10 : 0,
+        work_sec,
+        weak_activity_sec,
+        long_idle_sec,
+        go_sec,
+        total_sec,
+        kpp_sec,
+        kpp_shifts,
+        activity_pct: roundPct(work_sec, total_sec),
+        weak_activity_pct: roundPct(weak_activity_sec, total_sec),
+        long_idle_pct: roundPct(long_idle_sec, total_sec),
+        go_pct: roundPct(go_sec, total_sec),
+        avg_shift_duration_sec,
+      } satisfies BrigadeWeeklyRow
+    })
+    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
+}
+
+function weeklyActivityPctFromDaily(
+  dailyRows: Array<Pick<BrigadeDailyRow, 'report_date' | 'supervisor_name' | 'work_sec' | 'total_sec'>>,
+  weekStart: string,
+  weekEnd: string,
+  brigadeName: string,
+) {
+  const rows = dailyRows.filter(
+    (row) =>
+      row.report_date >= weekStart &&
+      row.report_date <= weekEnd &&
+      brigadeNamesMatch(row.supervisor_name, brigadeName),
+  )
+  const work_sec = rows.reduce((sum, row) => sum + row.work_sec, 0)
+  const total_sec = rows.reduce((sum, row) => sum + row.total_sec, 0)
+  return total_sec > 0 ? roundPct(work_sec, total_sec) : null
 }
 
 const KPP_LUNCH_START_MIN = 13 * 60
@@ -368,11 +452,10 @@ async function loadZoneRowsByBrigade(
   dateEnd: string,
   zoneVisibility: Record<number, boolean>,
 ) {
-  const { data, error } = await supabase!
-    .from('zone_daily_metrics')
-    .select('supervisor_name, zona, sec')
-    .gte('report_date', dateStart)
-    .lte('report_date', dateEnd)
+  const { data, error } =
+    dateStart === dateEnd
+      ? await supabase!.rpc('zone_daily_metrics_for_date', { p_report_date: dateStart })
+      : await supabase!.rpc('zone_daily_metrics_for_dates', { p_date_from: dateStart, p_date_to: dateEnd })
   if (error) throw error
 
   const totals = new Map<string, Map<number, number>>()
@@ -409,23 +492,10 @@ async function loadIdleEpisodes(
   dateEnd: string,
   zoneVisibility: Record<number, boolean>,
 ): Promise<IdleEpisodeRow[]> {
-  const { data: shiftData, error: shiftError } = await supabase!
-    .from('shift_daily_metrics')
-    .select('ww_shift_id, supervisor_name')
-    .gte('report_date', dateStart)
-    .lte('report_date', dateEnd)
-  if (shiftError) throw shiftError
-
-  const supervisorByShift = new Map<number, string>()
-  for (const row of shiftData ?? []) {
-    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? NO_SUPERVISOR)
-  }
-
-  const { data, error } = await supabase!
-    .from('idle_episodes_daily')
-    .select('ww_shift_id, duration_min, ble_tag_zone')
-    .gte('report_date', dateStart)
-    .lte('report_date', dateEnd)
+  const { data, error } =
+    dateStart === dateEnd
+      ? await supabase!.rpc('idle_episodes_daily_for_date', { p_report_date: dateStart })
+      : await supabase!.rpc('idle_episodes_daily_for_dates', { p_date_from: dateStart, p_date_to: dateEnd })
   if (error) throw error
 
   return (data ?? [])
@@ -434,7 +504,7 @@ async function loadIdleEpisodes(
       ww_shift_id: Number(row.ww_shift_id),
       duration_min: Number(row.duration_min),
       ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
-      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? NO_SUPERVISOR,
+      supervisor_name: (row.supervisor_name as string | null) ?? NO_SUPERVISOR,
     }))
     .filter((episode) => isAnalyticsSupervisor(episode.supervisor_name))
 }
@@ -727,14 +797,12 @@ async function loadKppRows(
   minActivityPct: number,
 ) {
   const { data: kppData, error: kppError } = await supabase!
-    .from('shift_daily_metrics')
-    .select('ww_shift_id, full_name, employee_number, supervisor_name, kpp_sec_total, work_sec_total, total_sec_total')
-    .eq('report_date', date)
-    .gt('kpp_sec_total', 0)
-    .order('kpp_sec_total', { ascending: false })
+    .rpc('shift_daily_metrics_for_date', { p_report_date: date })
   if (kppError) throw kppError
 
-  const rows = (kppData ?? []) as Array<KppRow & { ww_shift_id: number }>
+  const rows = ((kppData ?? []) as Array<KppRow & { ww_shift_id: number }>)
+    .filter((row) => Number(row.kpp_sec_total) > 0)
+    .sort((left, right) => Number(right.kpp_sec_total) - Number(left.kpp_sec_total))
   if (rows.length === 0) return [] as KppRow[]
 
   const shiftIds = rows.map((row) => row.ww_shift_id)
@@ -1225,9 +1293,7 @@ async function loadShiftRowsForDate(
   minActivityPct: number,
 ) {
   const { data, error } = await supabase!
-    .from('shift_daily_metrics')
-    .select('employee_number, full_name, supervisor_name, work_sec_total, total_sec_total')
-    .eq('report_date', date)
+    .rpc('shift_daily_metrics_for_date', { p_report_date: date })
   if (error) throw error
   return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[], minActivityPct)
 }
@@ -1239,10 +1305,7 @@ async function loadShiftRowsForRange(
   minActivityPct: number,
 ) {
   const { data, error } = await supabase!
-    .from('shift_daily_metrics')
-    .select('employee_number, full_name, supervisor_name, work_sec_total, total_sec_total')
-    .gte('report_date', dateStart)
-    .lte('report_date', dateEnd)
+    .rpc('shift_daily_metrics_for_dates', { p_date_from: dateStart, p_date_to: dateEnd })
   if (error) throw error
   return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[], minActivityPct)
 }
@@ -1267,6 +1330,7 @@ function filterLowActivityDaily(rows: ShiftMetricRow[], lowActivityPct: number) 
       full_name: row.full_name,
       employee_number: row.employee_number,
       supervisor_name: row.supervisor_name,
+      profession: row.profession ?? null,
       activity_pct: shiftActivityPct(row),
     }))
     .sort((left, right) => left.activity_pct - right.activity_pct)
@@ -1275,7 +1339,13 @@ function filterLowActivityDaily(rows: ShiftMetricRow[], lowActivityPct: number) 
 function aggregateLowActivityWeekly(rows: ShiftMetricRow[], lowActivityPct: number) {
   const totals = new Map<
     string,
-    { work_sec: number; total_sec: number; full_name: string; supervisor_name: string | null }
+    {
+      work_sec: number
+      total_sec: number
+      full_name: string
+      supervisor_name: string | null
+      profession: string | null
+    }
   >()
 
   for (const row of rows) {
@@ -1284,9 +1354,13 @@ function aggregateLowActivityWeekly(rows: ShiftMetricRow[], lowActivityPct: numb
       total_sec: 0,
       full_name: row.full_name,
       supervisor_name: row.supervisor_name,
+      profession: row.profession ?? null,
     }
     current.work_sec += row.work_sec_total
     current.total_sec += row.total_sec_total
+    if (!current.profession && row.profession) {
+      current.profession = row.profession
+    }
     totals.set(row.employee_number, current)
   }
 
@@ -1295,6 +1369,7 @@ function aggregateLowActivityWeekly(rows: ShiftMetricRow[], lowActivityPct: numb
       employee_number,
       full_name: row.full_name,
       supervisor_name: row.supervisor_name,
+      profession: row.profession,
       activity_pct: row.total_sec > 0 ? (row.work_sec / row.total_sec) * 100 : 0,
       total_sec: row.total_sec,
     }))
@@ -1392,7 +1467,7 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string, lowActivityPc
       (row) =>
         personRowHtml(
           escapeHtml(row.full_name),
-          `#${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}`,
+          `${escapeHtml(row.profession?.trim() || '—')} &#183; #${escapeHtml(row.employee_number)} &#183; ${escapeHtml(row.supervisor_name ?? 'Без начальника')}`,
           pct(row.activity_pct),
           true,
         ),
@@ -1406,6 +1481,19 @@ function attentionBlock(rows: AttentionRow[], periodLabel: string, lowActivityPc
     </summary>
     <div style="padding:0 16px 16px;">${items}</div>
   </details>`
+}
+
+function attentionPdfSection(rows: AttentionRow[], periodLabel: string, lowActivityPct: number) {
+  return {
+    title: 'Требуют внимания',
+    description: `Активность ниже ${lowActivityPct}% ${periodLabel}`,
+    rows: rows.map((row) => ({
+      name: row.full_name,
+      meta: `${row.profession?.trim() || '—'} · #${row.employee_number} · ${row.supervisor_name ?? 'Без начальника'}`,
+      value: pct(row.activity_pct),
+    })),
+    emptyText: `Сотрудников с активностью ниже ${lowActivityPct}% ${periodLabel} нет.`,
+  }
 }
 
 type BrigadeDynamicsPoint = {
@@ -1705,11 +1793,10 @@ async function loadBrigadeActivityDynamics(
   const priorDate = addDaysIso(referenceDate, -1)
 
   const { data, error } = await supabase!
-    .from('brigade_daily_metrics')
-    .select('report_date, supervisor_name, activity_pct')
-    .gte('report_date', sparklineStart)
-    .lte('report_date', referenceDate)
-    .order('report_date', { ascending: true })
+    .rpc('brigade_daily_metrics_for_dates', {
+      p_date_from: sparklineStart,
+      p_date_to: referenceDate,
+    })
   if (error) throw error
 
   const dailyRows = (data ?? []) as Array<{
@@ -1742,42 +1829,25 @@ async function loadBrigadeWeeklyActivityDynamics(
   comparisonBrigades: string[],
 ) {
   const priorWeekStart = addDaysIso(weekStart, -7)
+  const priorWeekEnd = addDaysIso(priorWeekStart, 6)
   const weekDates = listDatesInclusive(weekStart, weekEnd)
 
-  const { data: weeklyData, error: weeklyError } = await supabase!
-    .from('brigade_weekly_metrics')
-    .select('week_start, supervisor_name, activity_pct')
-    .in('week_start', [weekStart, priorWeekStart])
-  if (weeklyError) throw weeklyError
-
   const { data: dailyData, error: dailyError } = await supabase!
-    .from('brigade_daily_metrics')
-    .select('report_date, supervisor_name, activity_pct')
-    .gte('report_date', weekStart)
-    .lte('report_date', weekEnd)
-    .order('report_date', { ascending: true })
+    .rpc('brigade_daily_metrics_for_dates', { p_date_from: priorWeekStart, p_date_to: weekEnd })
   if (dailyError) throw dailyError
-
-  const weeklyRows = (weeklyData ?? []) as Array<{
-    week_start: string
-    supervisor_name: string
-    activity_pct: number
-  }>
 
   const dailyRows = (dailyData ?? []) as Array<{
     report_date: string
     supervisor_name: string
     activity_pct: number
+    work_sec: number
+    total_sec: number
   }>
 
   return comparisonBrigades.map((brigadeName) => {
-    const brigadeWeekly = weeklyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
     const brigadeDaily = dailyRows.filter((row) => brigadeNamesMatch(row.supervisor_name, brigadeName))
-    const weekRow = brigadeWeekly.find((row) => row.week_start === weekStart) ?? null
-    const priorRow = brigadeWeekly.find((row) => row.week_start === priorWeekStart) ?? null
-    const weekPct = weekRow?.activity_pct ?? null
-    const priorPct = priorRow?.activity_pct ?? null
-
+    const weekPct = weeklyActivityPctFromDaily(dailyRows, weekStart, weekEnd, brigadeName)
+    const priorPct = weeklyActivityPctFromDaily(dailyRows, priorWeekStart, priorWeekEnd, brigadeName)
     const dailyByDate = new Map(brigadeDaily.map((row) => [row.report_date, row.activity_pct]))
 
     return {
@@ -1982,12 +2052,10 @@ async function buildDailyHtml(
   const comparisonBrigades = await loadComparisonBrigades(supabase)
   const zoneVisibility = await loadZoneVisibility(supabase)
   const { data: brigadesData, error: brigadesError } = await supabase!
-    .from('brigade_daily_metrics')
-    .select('*')
-    .eq('report_date', date)
-    .order('supervisor_name', { ascending: true })
+    .rpc('brigade_daily_metrics_for_date', { p_report_date: date })
   if (brigadesError) throw brigadesError
   let brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter)
+    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
   if (!brigadeFilter) {
     brigades = brigades.filter((row) =>
       comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
@@ -2117,6 +2185,7 @@ async function buildDailyHtml(
     pdfPayload.metricsColumns = 5
     pdfPayload.brigadeSectionTitle = brigadeSectionTitle
     pdfPayload.brigadeCards = brigades.map(brigadeCardPayloadDaily)
+    pdfPayload.attentionSection = attentionPdfSection(lowActivityRows, 'за день', lowActivityPct)
   }
   if (blocks.block3) {
     pdfPayload.dynamicsTitle = 'Динамика показателей активности'
@@ -2163,37 +2232,38 @@ async function buildWeeklyHtml(
   const blocks = await loadBlockVisibility(supabase)
   const comparisonBrigades = await loadComparisonBrigades(supabase)
   const zoneVisibility = await loadZoneVisibility(supabase)
-  const { data, error } = await supabase!
-    .from('brigade_weekly_metrics')
-    .select('*')
-    .eq('week_start', weekStart)
-    .order('supervisor_name', { ascending: true })
+  const weekEnd = addDaysIso(weekStart, 6)
+  const { data: dailyData, error } = await supabase!
+    .rpc('brigade_daily_metrics_for_dates', { p_date_from: weekStart, p_date_to: weekEnd })
   if (error) throw error
-  let brigades = filterRowsByBrigade((data ?? []) as BrigadeWeeklyRow[], brigadeFilter)
+  let brigades = filterRowsByBrigade(
+    aggregateBrigadeDailyToWeekly(weekStart, weekEnd, (dailyData ?? []) as BrigadeDailyRow[]),
+    brigadeFilter,
+  )
   if (!brigadeFilter) {
     brigades = brigades.filter((row) =>
       comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
     )
   }
-  const weekEnd = brigades[0]?.week_end ?? addDaysIso(weekStart, 6)
+  const weekEndResolved = brigades[0]?.week_end ?? weekEnd
 
   const dynamics = blocks.block3
     ? filterRowsByBrigade(
-        await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEnd, comparisonBrigades),
+        await loadBrigadeWeeklyActivityDynamics(supabase, weekStart, weekEndResolved, comparisonBrigades),
         brigadeFilter,
       )
     : []
   const volumeDynamics = blocks.block5
     ? filterRowsByBrigade(
-        await loadBrigadeWeeklyVolumeDynamics(supabase, weekStart, weekEnd, comparisonBrigades),
+        await loadBrigadeWeeklyVolumeDynamics(supabase, weekStart, weekEndResolved, comparisonBrigades),
         brigadeFilter,
       )
     : []
   const zoneRowsByBrigade = blocks.block4
-    ? await loadZoneRowsByBrigade(supabase, weekStart, weekEnd, zoneVisibility)
+    ? await loadZoneRowsByBrigade(supabase, weekStart, weekEndResolved, zoneVisibility)
     : new Map<string, ZoneRow[]>()
   const idleEpisodes = blocks.block4
-    ? filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEnd, zoneVisibility), brigadeFilter)
+    ? filterRowsByBrigade(await loadIdleEpisodes(supabase, weekStart, weekEndResolved, zoneVisibility), brigadeFilter)
     : []
   const idleByZoneByBrigade = aggregateIdleByZoneByBrigade(idleEpisodes)
   const zoneSections = blocks.block4
@@ -2332,6 +2402,7 @@ async function buildWeeklyHtml(
         blocks.block5 ? weekVolumeM3ForBrigade(volumeDynamics, row.supervisor_name) : null,
       ),
     )
+    pdfPayload.attentionSection = attentionPdfSection(lowActivityRows, 'за неделю', lowActivityPct)
   }
   if (blocks.block3) {
     pdfPayload.dynamicsTitle = 'Динамика показателей активности'

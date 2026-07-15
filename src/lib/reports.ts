@@ -391,24 +391,21 @@ export async function loadAvailableWeeks() {
 export async function loadBrigadeDaily(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
-    .from('brigade_daily_metrics')
-    .select('*')
-    .eq('report_date', reportDate)
-    .order('supervisor_name', { ascending: true })
+    .rpc('brigade_daily_metrics_for_date', { p_report_date: reportDate })
 
   if (error) throw error
-  return filterAnalyticsSupervisors((data ?? []) as BrigadeDailyRow[])
+  return filterAnalyticsSupervisors((data ?? []) as BrigadeDailyRow[]).sort((left, right) =>
+    left.supervisor_name.localeCompare(right.supervisor_name, 'ru'),
+  )
 }
 
 export async function loadBrigadeDailyForRange(weekStart: string, weekEnd: string) {
-  const dates = listDatesInclusive(weekStart, weekEnd)
-  const rows: BrigadeDailyRow[] = []
+  const { data, error } = await supabase
+    .schema('analytics')
+    .rpc('brigade_daily_metrics_for_dates', { p_date_from: weekStart, p_date_to: weekEnd })
 
-  for (const reportDate of dates) {
-    rows.push(...(await loadBrigadeDaily(reportDate)))
-  }
-
-  return rows
+  if (error) throw error
+  return (data ?? []) as BrigadeDailyRow[]
 }
 
 function roundPct(part: number, total: number) {
@@ -481,31 +478,19 @@ export function enrichBrigadeWeeklyWithShiftStats(
   weeklyRows: BrigadeWeeklyRow[],
   shifts: ShiftMetricRow[],
 ): BrigadeWeeklyRow[] {
-  const uniqueByBrigade = new Map<string, Set<string>>()
-  const shiftCountByBrigade = new Map<string, number>()
   const kppByBrigade = new Map<string, number>()
 
   for (const row of shifts) {
     const supervisorName = row.supervisor_name ?? NO_SUPERVISOR
-    const unique = uniqueByBrigade.get(supervisorName) ?? new Set<string>()
-    unique.add(row.employee_number)
-    uniqueByBrigade.set(supervisorName, unique)
-    shiftCountByBrigade.set(supervisorName, (shiftCountByBrigade.get(supervisorName) ?? 0) + 1)
     if (row.kpp_sec_total > 0) {
       kppByBrigade.set(supervisorName, (kppByBrigade.get(supervisorName) ?? 0) + 1)
     }
   }
 
-  return weeklyRows.map((row) => {
-    const days = row.days
-    const shiftCount = shiftCountByBrigade.get(row.supervisor_name) ?? 0
-    return {
-      ...row,
-      unique_employees: uniqueByBrigade.get(row.supervisor_name)?.size ?? row.unique_employees,
-      avg_workers: days > 0 ? Math.round((shiftCount / days) * 10) / 10 : row.avg_workers,
-      kpp_shifts: kppByBrigade.get(row.supervisor_name) ?? row.kpp_shifts,
-    }
-  })
+  return weeklyRows.map((row) => ({
+    ...row,
+    kpp_shifts: kppByBrigade.get(row.supervisor_name) ?? row.kpp_shifts,
+  }))
 }
 
 /** Агрегирует дневные метрики бригад за неделю — без тяжёлого view brigade_weekly_metrics. */
@@ -562,11 +547,10 @@ export async function loadBrigadeActivityDynamics(referenceDate: string) {
 
   const { data: dailyData, error: dailyError } = await supabase
     .schema('analytics')
-    .from('brigade_daily_metrics')
-    .select('report_date, supervisor_name, activity_pct')
-    .gte('report_date', sparklineStart)
-    .lte('report_date', referenceDate)
-    .order('report_date', { ascending: true })
+    .rpc('brigade_daily_metrics_for_dates', {
+      p_date_from: sparklineStart,
+      p_date_to: referenceDate,
+    })
 
   if (dailyError) throw dailyError
 
@@ -748,30 +732,14 @@ export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
     .sort((left, right) => left.activity_pct - right.activity_pct)
 }
 
-const WEEKLY_SHIFT_ROW_COLUMNS =
-  'employee_number, full_name, supervisor_name, profession, work_sec_total, total_sec_total, kpp_sec_total'
-
-async function loadShiftRowsForDay(reportDate: string) {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('shift_daily_metrics')
-    .select(WEEKLY_SHIFT_ROW_COLUMNS)
-    .eq('report_date', reportDate)
-
-  if (error) throw error
-  return (data ?? []) as ShiftMetricRow[]
-}
 
 export async function loadShiftRowsForRange(weekStart: string, weekEnd: string) {
-  const dates = listDatesInclusive(weekStart, weekEnd)
-  const rows: ShiftMetricRow[] = []
+  const { data, error } = await supabase
+    .schema('analytics')
+    .rpc('shift_daily_metrics_for_dates', { p_date_from: weekStart, p_date_to: weekEnd })
 
-  for (const reportDate of dates) {
-    const dayRows = await loadShiftRowsForDay(reportDate)
-    rows.push(...dayRows)
-  }
-
-  return filterAnalyticsShiftRows(rows)
+  if (error) throw error
+  return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
 }
 
 function aggregateShiftActivity(rows: ShiftMetricRow[]) {
@@ -842,9 +810,7 @@ export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
 export async function loadShiftRows(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
-    .from('shift_daily_metrics')
-    .select('*')
-    .eq('report_date', reportDate)
+    .rpc('shift_daily_metrics_for_date', { p_report_date: reportDate })
 
   if (error) throw error
   return filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
@@ -853,16 +819,13 @@ export async function loadShiftRows(reportDate: string) {
 export async function loadKppEmployees(reportDate: string) {
   const { data, error } = await supabase
     .schema('analytics')
-    .from('shift_daily_metrics')
-    .select('ww_shift_id, employee_number, full_name, supervisor_name, kpp_sec_total, work_sec_total, total_sec_total')
-    .eq('report_date', reportDate)
-    .gt('kpp_sec_total', 0)
-    .order('kpp_sec_total', { ascending: false })
+    .rpc('shift_daily_metrics_for_date', { p_report_date: reportDate })
 
   if (error) throw error
 
-  const employees = filterAnalyticsShiftRows(
-    (data ?? []).map((row) => ({
+  const employees = filterAnalyticsShiftRows((data ?? []) as ShiftMetricRow[])
+    .filter((row) => row.kpp_sec_total > 0)
+    .map((row) => ({
       ww_shift_id: Number(row.ww_shift_id),
       employee_number: String(row.employee_number),
       full_name: String(row.full_name),
@@ -870,8 +833,8 @@ export async function loadKppEmployees(reportDate: string) {
       kpp_sec: Number(row.kpp_sec_total),
       work_sec_total: Number(row.work_sec_total),
       total_sec_total: Number(row.total_sec_total),
-    })),
-  )
+    }))
+    .sort((left, right) => right.kpp_sec - left.kpp_sec)
 
   if (employees.length === 0) return [] satisfies KppEmployee[]
 
@@ -925,13 +888,7 @@ export async function loadNotWornEmployees(reportDate: string) {
   const settings = getMetricSettings()
 
   const [{ data: shiftData, error: shiftError }, { data: rpcData, error: rpcError }] = await Promise.all([
-    supabase
-      .schema('analytics')
-      .from('shift_daily_metrics')
-      .select(
-        'ww_shift_id, employee_number, full_name, profession, supervisor_name, work_sec_total, total_sec_total, not_worn_eligible_sec_total',
-      )
-      .eq('report_date', reportDate),
+    supabase.schema('analytics').rpc('shift_daily_metrics_for_date', { p_report_date: reportDate }),
     supabase.schema('analytics').rpc('list_not_worn_shifts_for_date', { p_report_date: reportDate }),
   ])
 
@@ -1087,22 +1044,28 @@ export function pvPercentFromZoneRows(zoneRows: ZoneDailyRow[]) {
   return ratio(pvSec, totalSec)
 }
 
-export async function loadZoneDaily(reportDate: string, supervisor?: string) {
-  let query = supabase
+type ZoneDailyMetricRow = {
+  zona: number | string
+  sec: number | string
+  shifts: number | string
+  supervisor_name: string | null
+}
+
+async function fetchZoneDailyRows(reportDate: string, supervisor?: string) {
+  const { data, error } = await supabase
     .schema('analytics')
-    .from('zone_daily_metrics')
-    .select('zona, sec, shifts, supervisor_name')
-    .eq('report_date', reportDate)
+    .rpc('zone_daily_metrics_for_date', { p_report_date: reportDate })
 
-  if (supervisor && supervisor !== 'all') {
-    query = query.eq('supervisor_name', supervisor)
-  }
-
-  const { data, error } = await query
   if (error) throw error
 
+  const rows = (data ?? []) as ZoneDailyMetricRow[]
+  if (!supervisor || supervisor === 'all') return rows
+  return rows.filter((row) => (row.supervisor_name ?? NO_SUPERVISOR) === supervisor)
+}
+
+function aggregateZoneDailyFromRows(rows: ZoneDailyMetricRow[], supervisor?: string) {
   const totals = new Map<number, { sec: number; shifts: number }>()
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
     if (!supervisor || supervisor === 'all') {
       if (!isAnalyticsSupervisor(supervisorName)) continue
@@ -1120,17 +1083,9 @@ export async function loadZoneDaily(reportDate: string, supervisor?: string) {
     .sort((left, right) => right.sec - left.sec) satisfies ZoneDailyRow[]
 }
 
-export async function loadZoneDailyByBrigade(reportDate: string) {
-  const { data, error } = await supabase
-    .schema('analytics')
-    .from('zone_daily_metrics')
-    .select('zona, sec, shifts, supervisor_name')
-    .eq('report_date', reportDate)
-
-  if (error) throw error
-
+function aggregateZoneDailyByBrigadeFromRows(rows: ZoneDailyMetricRow[]) {
   const supervisors = new Map<string, Map<number, { sec: number; shifts: number }>>()
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const supervisorName = (row.supervisor_name as string | null) ?? NO_SUPERVISOR
     if (!isAnalyticsSupervisor(supervisorName)) continue
     const zona = Number(row.zona)
@@ -1153,42 +1108,59 @@ export async function loadZoneDailyByBrigade(reportDate: string) {
     .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru')) satisfies BrigadeZoneDaily[]
 }
 
+export async function loadZoneDaily(reportDate: string, supervisor?: string) {
+  const rows = await fetchZoneDailyRows(reportDate, supervisor)
+  return aggregateZoneDailyFromRows(rows, supervisor)
+}
+
+export async function loadZoneDailyBundle(reportDate: string) {
+  const rows = await fetchZoneDailyRows(reportDate)
+  return {
+    daily: aggregateZoneDailyFromRows(rows),
+    byBrigade: aggregateZoneDailyByBrigadeFromRows(rows),
+  }
+}
+
+export async function loadZoneDailyByBrigade(reportDate: string) {
+  const rows = await fetchZoneDailyRows(reportDate)
+  return aggregateZoneDailyByBrigadeFromRows(rows)
+}
+
 export async function loadIdleEpisodes(reportDate: string) {
+  type IdleEpisodeRpcRow = {
+    ble_tag_zone: number | null
+    ww_shift_id: number | string
+    session_id: number | string | null
+    employee_number: string | null
+    full_name: string | null
+    supervisor_name: string | null
+    dt_start: string | null
+    dt_end: string | null
+    duration_min: number | string
+  }
+
   const { data, error } = await supabase
     .schema('analytics')
-    .from('idle_episodes_daily')
-    .select('ww_shift_id, session_id, employee_number, full_name, dt_start, dt_end, duration_min, ble_tag_zone')
-    .eq('report_date', reportDate)
-    .order('duration_min', { ascending: false })
+    .rpc('idle_episodes_daily_for_date', { p_report_date: reportDate })
 
   if (error) throw error
 
-  const { data: shifts, error: shiftsError } = await supabase
-    .schema('analytics')
-    .from('shift_daily_metrics')
-    .select('ww_shift_id, supervisor_name')
-    .eq('report_date', reportDate)
+  const rows = (data ?? []) as IdleEpisodeRpcRow[]
 
-  if (shiftsError) throw shiftsError
-
-  const supervisorByShift = new Map<number, string>()
-  for (const row of shifts ?? []) {
-    supervisorByShift.set(Number(row.ww_shift_id), (row.supervisor_name as string | null) ?? NO_SUPERVISOR)
-  }
-
-  return (data ?? [])
-    .filter((row) => isZoneVisibleInDistribution(row.ble_tag_zone as number | null, getMetricSettings().zoneVisibility))
+  return rows
+    .filter((row) => isZoneVisibleInDistribution(row.ble_tag_zone, getMetricSettings().zoneVisibility))
     .map((row) => ({
       ww_shift_id: Number(row.ww_shift_id),
       session_id: row.session_id === null ? null : Number(row.session_id),
-      employee_number: (row.employee_number as string | null) ?? null,
-      full_name: (row.full_name as string | null) ?? null,
-      supervisor_name: supervisorByShift.get(Number(row.ww_shift_id)) ?? NO_SUPERVISOR,
-      dt_start: (row.dt_start as string | null) ?? null,
-      dt_end: (row.dt_end as string | null) ?? null,
+      employee_number: row.employee_number ?? null,
+      full_name: row.full_name ?? null,
+      supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+      dt_start: row.dt_start ?? null,
+      dt_end: row.dt_end ?? null,
       duration_min: Number(row.duration_min),
       ble_tag_zone: row.ble_tag_zone === null ? null : Number(row.ble_tag_zone),
-      zonaName: zoneName(row.ble_tag_zone as number | null),
+      zonaName: zoneName(row.ble_tag_zone),
     }))
+    .sort((left, right) => right.duration_min - left.duration_min)
     .filter((row) => isAnalyticsSupervisor(row.supervisor_name)) satisfies IdleEpisode[]
 }

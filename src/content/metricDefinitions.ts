@@ -38,7 +38,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
       'View `analytics.brigade_daily_metrics` → поле `workers`',
       'Смены из отчёта faceID (или LongIDLE, если faceID ещё не импортирован)',
     ],
-    formula: 'workers = COUNT(*) по сменам бригады за report_date',
+    formula: 'workers = COUNT(*) по всем сменам бригады за report_date',
     configFields: [
       { key: 'shiftTargetTotal', label: 'Целевой показатель (всего)', unit: 'чел.', min: 1, max: 500 },
       { key: 'brigadeTargetJalol', label: 'Цель · бригада Джалол', unit: 'чел.', min: 1, max: 200 },
@@ -322,7 +322,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
         hint: 'Подсветка карточки бригады и сотрудника при превышении доли',
       },
     ],
-    notes: 'Смены с активностью ниже analytics_min_activity_pct (по умолчанию 11%) не входят в агрегаты бригад и рассылку, но показываются только в этом списке блока 1.',
+    notes: 'Считаются все смены за день. Проценты активности и структура времени — только по сменам с активностью ≥ analytics_min_activity_pct (по умолчанию 11%).',
   },
 ]
 

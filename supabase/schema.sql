@@ -539,32 +539,108 @@ select
   report_date,
   coalesce(supervisor_name, 'Без начальника') as supervisor_name,
   count(*) as workers,
-  sum(work_sec_total) as work_sec,
-  sum(weak_activity_sec_total) as weak_activity_sec,
-  sum(long_idle_sec_total) as long_idle_sec,
-  sum(go_sec_total) as go_sec,
-  sum(total_sec_total) as total_sec,
-  sum(pv_sec_total) as pv_sec,
-  sum(kpp_sec_total) as kpp_sec,
-  sum(not_worn_sec_total) as not_worn_sec,
-  sum(not_worn_eligible_sec_total) as not_worn_eligible_sec,
+  coalesce(sum(work_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as work_sec,
+  coalesce(sum(weak_activity_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as weak_activity_sec,
+  coalesce(sum(long_idle_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as long_idle_sec,
+  coalesce(sum(go_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as go_sec,
+  coalesce(sum(total_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as total_sec,
+  coalesce(sum(pv_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as pv_sec,
+  coalesce(sum(kpp_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as kpp_sec,
+  coalesce(sum(not_worn_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as not_worn_sec,
+  coalesce(sum(not_worn_eligible_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as not_worn_eligible_sec,
   count(*) filter (where kpp_sec_total > 0) as kpp_workers,
-  count(*) filter (where not_worn_sec_total >= not_worn_shift_min_sec) as not_worn_workers,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(work_sec_total) / sum(total_sec_total), 1)
-    else 0 end as activity_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(weak_activity_sec_total) / sum(total_sec_total), 1)
-    else 0 end as weak_activity_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(long_idle_sec_total) / sum(total_sec_total), 1)
-    else 0 end as long_idle_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
-    else 0 end as go_pct,
-  case when sum(not_worn_eligible_sec_total) > 0
-    then round(100.0 * sum(not_worn_sec_total) / sum(not_worn_eligible_sec_total), 1)
-    else 0 end as not_worn_pct,
+  count(*) filter (
+    where not_worn_sec_total >= not_worn_shift_min_sec
+      and analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ) as not_worn_workers,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(work_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as activity_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(weak_activity_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as weak_activity_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(long_idle_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as long_idle_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(go_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as go_pct,
+  case
+    when coalesce(sum(not_worn_eligible_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(not_worn_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(not_worn_eligible_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as not_worn_pct,
   coalesce(
     round(avg(on_watch_duration_seconds) filter (where on_watch_duration_seconds > 0)),
     0
@@ -580,26 +656,84 @@ select
   count(distinct report_date) as days,
   count(distinct employee_number) as unique_employees,
   round(count(*)::numeric / nullif(count(distinct report_date), 0), 1) as avg_workers,
-  sum(work_sec_total) as work_sec,
-  sum(weak_activity_sec_total) as weak_activity_sec,
-  sum(long_idle_sec_total) as long_idle_sec,
-  sum(go_sec_total) as go_sec,
-  sum(total_sec_total) as total_sec,
-  sum(pv_sec_total) as pv_sec,
-  sum(kpp_sec_total) as kpp_sec,
+  coalesce(sum(work_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as work_sec,
+  coalesce(sum(weak_activity_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as weak_activity_sec,
+  coalesce(sum(long_idle_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as long_idle_sec,
+  coalesce(sum(go_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as go_sec,
+  coalesce(sum(total_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as total_sec,
+  coalesce(sum(pv_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as pv_sec,
+  coalesce(sum(kpp_sec_total) filter (
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  ), 0) as kpp_sec,
   count(*) filter (where kpp_sec_total > 0) as kpp_shifts,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(work_sec_total) / sum(total_sec_total), 1)
-    else 0 end as activity_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(weak_activity_sec_total) / sum(total_sec_total), 1)
-    else 0 end as weak_activity_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(long_idle_sec_total) / sum(total_sec_total), 1)
-    else 0 end as long_idle_pct,
-  case when sum(total_sec_total) > 0
-    then round(100.0 * sum(go_sec_total) / sum(total_sec_total), 1)
-    else 0 end as go_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(work_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as activity_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(weak_activity_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as weak_activity_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(long_idle_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as long_idle_pct,
+  case
+    when coalesce(sum(total_sec_total) filter (
+      where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+    ), 0) > 0
+    then round(
+      100.0 * coalesce(sum(go_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0) / coalesce(sum(total_sec_total) filter (
+        where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+      ), 0),
+      1
+    )
+    else 0
+  end as go_pct,
   coalesce(
     round(avg(on_watch_duration_seconds) filter (where on_watch_duration_seconds > 0)),
     0
@@ -607,30 +741,134 @@ select
 from analytics.shift_daily_metrics
 group by 1, 2, 3;
 
+create index if not exists idx_ble_facts_report_shift
+  on analytics.ble_minute_facts(report_date, ww_shift_id);
+
 create or replace view analytics.zone_daily_metrics as
+with ble_window as (
+  select
+    b.report_date,
+    b.ww_shift_id,
+    b.zona,
+    b.event_at,
+    b.total_sec,
+    b.work_sec,
+    coalesce(sup.name, 'Без начальника') as supervisor_name
+  from analytics.ble_minute_facts b
+  join analytics.shifts s
+    on s.ww_shift_id = b.ww_shift_id
+   and s.report_date = b.report_date
+  left join analytics.supervisors sup on sup.id = s.supervisor_id
+  where b.zona is not null
+    and analytics.is_ble_shift_window_minute(b.event_at)
+),
+shift_totals as (
+  select
+    ww_shift_id,
+    report_date,
+    coalesce(sum(work_sec), 0) as work_sec_total,
+    coalesce(sum(total_sec), 0) as total_sec_total
+  from ble_window
+  group by ww_shift_id, report_date
+),
+eligible_shifts as (
+  select ww_shift_id, report_date
+  from shift_totals
+  where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+)
 select
-  b.report_date,
-  coalesce(sup.name, 'Без начальника') as supervisor_name,
-  b.zona,
+  w.report_date,
+  w.supervisor_name,
+  w.zona,
   sum(
     case
-      when analytics.is_kpp_metric_minute(b.zona, b.event_at) then b.total_sec
-      when b.zona = '13' then 0
-      else b.total_sec
+      when analytics.is_kpp_metric_minute(w.zona, w.event_at) then w.total_sec
+      when w.zona = '13' then 0
+      else w.total_sec
     end
   ) as sec,
   count(
     distinct case
-      when b.zona = '13' and not analytics.is_kpp_metric_minute(b.zona, b.event_at) then null
-      else b.ww_shift_id
+      when w.zona = '13' and not analytics.is_kpp_metric_minute(w.zona, w.event_at) then null
+      else w.ww_shift_id
     end
   ) as shifts
-from analytics.ble_minute_facts b
-left join analytics.shifts s on s.ww_shift_id = b.ww_shift_id
-left join analytics.supervisors sup on sup.id = s.supervisor_id
-where b.zona is not null
-  and analytics.is_ble_shift_window_minute(b.event_at)
-group by b.report_date, coalesce(sup.name, 'Без начальника'), b.zona;
+from ble_window w
+join eligible_shifts e
+  on e.ww_shift_id = w.ww_shift_id
+ and e.report_date = w.report_date
+group by w.report_date, w.supervisor_name, w.zona;
+
+create or replace function analytics.zone_daily_metrics_for_date(p_report_date date)
+returns table (
+  report_date date,
+  supervisor_name text,
+  zona text,
+  sec bigint,
+  shifts bigint
+)
+language sql
+stable
+security definer
+set search_path = analytics, public, pg_temp
+as $$
+  with ble_window as (
+    select
+      b.report_date,
+      b.ww_shift_id,
+      b.zona,
+      b.event_at,
+      b.total_sec,
+      b.work_sec,
+      coalesce(sup.name, 'Без начальника') as supervisor_name
+    from analytics.ble_minute_facts b
+    join analytics.shifts s
+      on s.ww_shift_id = b.ww_shift_id
+     and s.report_date = b.report_date
+    left join analytics.supervisors sup on sup.id = s.supervisor_id
+    where b.report_date = p_report_date
+      and b.zona is not null
+      and analytics.is_ble_shift_window_minute(b.event_at)
+  ),
+  shift_totals as (
+    select
+      ww_shift_id,
+      report_date,
+      coalesce(sum(work_sec), 0) as work_sec_total,
+      coalesce(sum(total_sec), 0) as total_sec_total
+    from ble_window
+    group by ww_shift_id, report_date
+  ),
+  eligible_shifts as (
+    select ww_shift_id, report_date
+    from shift_totals
+    where analytics.is_analytics_eligible_shift(work_sec_total, total_sec_total)
+  )
+  select
+    w.report_date,
+    w.supervisor_name,
+    w.zona,
+    sum(
+      case
+        when analytics.is_kpp_metric_minute(w.zona, w.event_at) then w.total_sec
+        when w.zona = '13' then 0
+        else w.total_sec
+      end
+    )::bigint as sec,
+    count(
+      distinct case
+        when w.zona = '13' and not analytics.is_kpp_metric_minute(w.zona, w.event_at) then null
+        else w.ww_shift_id
+      end
+    )::bigint as shifts
+  from ble_window w
+  join eligible_shifts e
+    on e.ww_shift_id = w.ww_shift_id
+   and e.report_date = w.report_date
+  group by w.report_date, w.supervisor_name, w.zona;
+$$;
+
+grant execute on function analytics.zone_daily_metrics_for_date(date) to anon, authenticated, service_role;
 
 create table if not exists analytics.idle_episodes (
   id bigint generated by default as identity primary key,

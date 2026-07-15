@@ -35,8 +35,7 @@ import {
   loadNotWornEmployees,
   loadShiftRows,
   loadShiftRowsForRange,
-  loadZoneDaily,
-  loadZoneDailyByBrigade,
+  loadZoneDailyBundle,
   pvPercentFromZoneRows,
   ratio,
   NO_SUPERVISOR,
@@ -271,19 +270,18 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       setDailyLoading(true)
       setDailyError(null)
       try {
-        const [brigades, shifts, zones, zonesByBrigade, episodes, volumes] = await Promise.all([
+        const [brigades, shifts, zoneBundle, episodes, volumes] = await Promise.all([
           loadBrigadeDaily(selectedDate),
           loadShiftRows(selectedDate),
-          loadZoneDaily(selectedDate),
-          loadZoneDailyByBrigade(selectedDate),
+          loadZoneDailyBundle(selectedDate),
           loadIdleEpisodes(selectedDate),
           loadVolumeEntries(password, selectedDate).catch(() => [] as VolumeEntry[]),
         ])
         if (cancelled) return
         setDailyRows(brigades)
         setShiftRows(shifts)
-        setZoneRows(zones)
-        setZoneRowsByBrigade(zonesByBrigade)
+        setZoneRows(zoneBundle.daily)
+        setZoneRowsByBrigade(zoneBundle.byBrigade)
         setIdleEpisodes(episodes)
         setVolumeEntries(volumes)
       } catch (error) {

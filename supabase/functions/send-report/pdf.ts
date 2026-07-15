@@ -70,6 +70,12 @@ export type ReportPdfPayload = {
   }>
   zonesTitle: string
   zonesBrigadeSections: BrigadeZonesPdfSection[]
+  attentionSection?: {
+    title: string
+    description: string
+    rows: Array<{ name: string; meta: string; value: string }>
+    emptyText: string
+  }
   dynamicsBeforeBrigades?: boolean
   singlePage?: boolean
 }
@@ -1093,6 +1099,13 @@ class PdfWriter {
 
     this.y = top + listHeight + 12
   }
+
+  attentionSection(section: NonNullable<ReportPdfPayload['attentionSection']>) {
+    this.sectionTitle(section.title, 10, personListHeight(section.rows))
+    this.text(section.description, MARGIN, this.y, 8, C.textMuted, CONTENT_WIDTH)
+    this.y += 14
+    this.personList(section.rows, section.emptyText, 'alert')
+  }
 }
 
 function brigadeBlockHeight(cardCount: number) {
@@ -1174,14 +1187,31 @@ function zonesBrigadeMatrixHeight(sections: BrigadeZonesPdfSection[]) {
   return introHeight + 18 + maxLocationHeight + 10 + maxIdleHeight + 12
 }
 
+function personListHeight(rows: Array<{ name: string; meta: string; value: string }>) {
+  if (rows.length === 0) return 20
+  const padY = 12
+  const rowHeights = rows.map((row) => {
+    const valueWidth = 96 // approximate check in personList
+    return row.value.length > 12 ? 40 : 34
+  })
+  return padY * 2 + rowHeights.reduce((sum, height) => sum + height, 0) + 12
+}
+
+function attentionSectionHeight(section?: ReportPdfPayload['attentionSection']) {
+  if (!section) return 0
+  return sectionTitleHeight(10) + 14 + personListHeight(section.rows) + 8
+}
+
 function estimateReportPdfHeight(payload: ReportPdfPayload) {
   let height = MARGIN + 85 + 24 + metricGridHeight(payload.metrics, payload.metricsColumns ?? 3)
 
   if (payload.dynamicsBeforeBrigades) {
     height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
     height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
+    height += attentionSectionHeight(payload.attentionSection)
   } else {
     height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
+    height += attentionSectionHeight(payload.attentionSection)
     height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
   }
 
@@ -1211,9 +1241,15 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
     writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
     writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
     writer.brigadeDashboardCards(payload.brigadeCards)
+    if (payload.attentionSection) {
+      writer.attentionSection(payload.attentionSection)
+    }
   } else {
     writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
     writer.brigadeDashboardCards(payload.brigadeCards)
+    if (payload.attentionSection) {
+      writer.attentionSection(payload.attentionSection)
+    }
     writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
     writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
   }
