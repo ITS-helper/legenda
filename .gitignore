@@ -29,6 +29,11 @@ dist-ssr
 # Local import/backfill logs
 backfill-log.txt
 
+# Временные отладочные скрипты и локальные скриншоты
+probe-tmp.mjs
+probe-*.mjs
+head-enlarged-*.png
+
 # Temporary docx/text extraction
 .docx-extract/
 
