@@ -5,9 +5,11 @@ import {
   segmentWidthPct,
   timelineAxisTicks,
   type ShiftTimelineRow,
+  type TimelineSegment,
 } from '../lib/shiftActivityTimeline'
 
 type Props = {
+  stripSegments: TimelineSegment[]
   rows: ShiftTimelineRow[]
   axisStartMin: number
   axisEndMin: number
@@ -17,6 +19,15 @@ type Props = {
 }
 
 type ShiftMarker = { id: string; label: string; frac: number; className: string }
+
+const LEGEND_ITEMS = [
+  { label: 'Активность', colorClass: 'shift-timeline-work' },
+  { label: 'Ходьба между зонами', colorClass: 'shift-timeline-strip-go' },
+  { label: 'Слабая активность', colorClass: 'shift-timeline-weak' },
+  { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
+  { label: 'Длительный простой', colorClass: 'shift-timeline-long-idle' },
+  { label: 'Бездействие в зоне', colorClass: 'shift-timeline-not-worn' },
+]
 
 function buildShiftMarkers(
   axisStartMin: number,
@@ -33,12 +44,32 @@ function buildShiftMarkers(
     markers.push({ id, label, className, frac: (min - axisStartMin) / span })
   }
 
-  push('shift-start', 'получил часы', 'shift-timeline-marker-start', shiftStartMin)
-  push('shift-end', 'сдал часы', 'shift-timeline-marker-end', shiftEndMin)
+  push('shift-start', 'начало смены', 'shift-timeline-marker-start', shiftStartMin)
+  push('shift-end', 'конец смены', 'shift-timeline-marker-end', shiftEndMin)
   return markers
 }
 
+function renderSegments(
+  segments: TimelineSegment[],
+  fallbackColorClass: string,
+  axisStartMin: number,
+  axisEndMin: number,
+) {
+  return segments.map((segment) => (
+    <div
+      key={`${segment.startMin}-${segment.endMin}-${segment.colorClass ?? fallbackColorClass}`}
+      className={`shift-timeline-segment ${segment.colorClass ?? fallbackColorClass}`}
+      style={{
+        left: `${segmentLeftPct(segment.startMin, axisStartMin, axisEndMin)}%`,
+        width: `${segmentWidthPct(segment.startMin, segment.endMin, axisStartMin, axisEndMin)}%`,
+      }}
+      title={segment.label}
+    />
+  ))
+}
+
 export function ShiftActivityTimeline({
+  stripSegments,
   rows,
   axisStartMin,
   axisEndMin,
@@ -61,7 +92,17 @@ export function ShiftActivityTimeline({
               className={`shift-timeline-marker ${marker.className}`}
               style={{ '--marker-frac': marker.frac } as CSSProperties}
             >
-              <span className="shift-timeline-marker-label">{marker.label}</span>
+              <span
+                className={`shift-timeline-marker-label${
+                  marker.frac > 0.92
+                    ? ' shift-timeline-marker-label-edge-end'
+                    : marker.frac < 0.08
+                      ? ' shift-timeline-marker-label-edge-start'
+                      : ''
+                }`}
+              >
+                {marker.label}
+              </span>
               <span className="shift-timeline-marker-line" />
             </div>
           ))}
@@ -82,26 +123,32 @@ export function ShiftActivityTimeline({
           </div>
 
           <div className="shift-timeline-rows">
+            <div className="shift-timeline-row" key="strip">
+              <div className="shift-timeline-row-label">Хронология смены</div>
+              <div className="shift-timeline-row-track shift-timeline-strip-track">
+                {renderSegments(stripSegments, 'shift-timeline-none', axisStartMin, axisEndMin)}
+              </div>
+            </div>
+
             {rows.map((row) => (
               <div className="shift-timeline-row" key={row.id}>
                 <div className="shift-timeline-row-label">{row.label}</div>
                 <div className="shift-timeline-row-track">
-                  {row.segments.map((segment) => (
-                    <div
-                      key={`${row.id}-${segment.startMin}-${segment.endMin}`}
-                      className={`shift-timeline-segment ${row.colorClass}`}
-                      style={{
-                        left: `${segmentLeftPct(segment.startMin, axisStartMin, axisEndMin)}%`,
-                        width: `${segmentWidthPct(segment.startMin, segment.endMin, axisStartMin, axisEndMin)}%`,
-                      }}
-                      title={segment.label}
-                    />
-                  ))}
+                  {renderSegments(row.segments, row.colorClass, axisStartMin, axisEndMin)}
                 </div>
               </div>
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="shift-timeline-legend">
+        {LEGEND_ITEMS.map((item) => (
+          <span className="shift-timeline-legend-item" key={item.label}>
+            <span className={`shift-timeline-legend-swatch ${item.colorClass}`} />
+            {item.label}
+          </span>
+        ))}
       </div>
     </div>
   )

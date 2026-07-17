@@ -6,6 +6,8 @@ export type TimelineSegment = {
   startMin: number
   endMin: number
   label: string
+  /** Цвет конкретного сегмента (для ленты хронологии); если нет — берётся цвет строки. */
+  colorClass?: string
 }
 
 export type ShiftTimelineRow = {
@@ -29,12 +31,15 @@ export type ShiftInactivityDetail = {
     episode_end: string
     episode_sec: number
   }>
+  /** Сплошная лента хронологии: каждая минута смены окрашена, без пустот. */
+  stripSegments: TimelineSegment[]
+  /** Строки эпизодов (длительный простой, бездействие в зоне). */
   timelineRows: ShiftTimelineRow[]
   axisStartMin: number
   axisEndMin: number
   /**
-   * Факт получения и сдачи часов (отчёт 6) в минутах МСК от начала суток.
-   * null — факта нет, метку не рисуем (подстановки по плану/телеметрии не делаем).
+   * Границы смены: самое раннее/позднее из факта часов (отчёт 6) и телеметрии.
+   * Телеметрия не может оказаться за пределами меток.
    */
   shiftStartMin: number | null
   shiftEndMin: number | null
@@ -63,8 +68,8 @@ type RawNotWornEpisode = {
   episode_sec: number
 }
 
-const AXIS_START_MIN = 6 * 60
-const AXIS_END_MIN = 24 * 60
+const FALLBACK_AXIS_START_MIN = 6 * 60
+const FALLBACK_AXIS_END_MIN = 24 * 60
 
 export function isoToMskMinutes(iso: string) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -84,6 +89,11 @@ function isoToMskMinutesEnd(iso: string, fallbackSec = 60) {
   return start + Math.max(1, Math.round(fallbackSec / 60))
 }
 
+function segmentLabel(startMin: number, endMin: number, prefix?: string) {
+  const range = `${formatMskTimeFromMinutes(startMin)}–${formatMskTimeFromMinutes(endMin)}`
+  return prefix ? `${prefix}: ${range}` : range
+}
+
 function mergeMinuteSegments(items: Array<{ startMin: number; endMin: number }>) {
   if (items.length === 0) return [] satisfies TimelineSegment[]
 
@@ -94,12 +104,12 @@ function mergeMinuteSegments(items: Array<{ startMin: number; endMin: number }>)
     const last = merged[merged.length - 1]
     if (last && item.startMin <= last.endMin + 1) {
       last.endMin = Math.max(last.endMin, item.endMin)
-      last.label = `${formatMskTimeFromMinutes(last.startMin)}–${formatMskTimeFromMinutes(last.endMin)}`
+      last.label = segmentLabel(last.startMin, last.endMin)
     } else {
       merged.push({
         startMin: item.startMin,
         endMin: item.endMin,
-        label: `${formatMskTimeFromMinutes(item.startMin)}–${formatMskTimeFromMinutes(item.endMin)}`,
+        label: segmentLabel(item.startMin, item.endMin),
       })
     }
   }
@@ -118,30 +128,93 @@ function episodeToSegments(
   )
 }
 
-// Порог активной минуты в детализации (секунд работы на минуту).
+// Порог «доминирующего» состояния минуты (секунд на минуту).
 const ACTIVE_WORK_SEC = 20
 
-// Собирает поминутные сегменты по предикату (получает минуту и её начало в минутах МСК).
-function collectMinuteSegments(
-  minutes: RawMinute[],
-  include: (minute: RawMinute, startMin: number) => boolean,
-) {
-  const items: Array<{ startMin: number; endMin: number }> = []
+type StripKind = 'work' | 'go' | 'weak' | 'none'
 
-  for (const minute of minutes) {
-    const startMin = isoToMskMinutes(minute.event_at)
-    if (!include(minute, startMin)) continue
-    items.push({ startMin, endMin: startMin + 1 })
-  }
-
-  return mergeMinuteSegments(items)
+const STRIP_KIND_META: Record<StripKind, { label: string; colorClass: string }> = {
+  work: { label: 'Активность', colorClass: 'shift-timeline-work' },
+  go: { label: 'Ходьба между зонами', colorClass: 'shift-timeline-strip-go' },
+  weak: { label: 'Слабая активность', colorClass: 'shift-timeline-weak' },
+  none: { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
 }
 
-export function buildShiftActivityTimeline(payload: {
-  minutes: RawMinute[]
+function minuteStripKind(minute: RawMinute): Exclude<StripKind, 'none'> {
+  const work = Number(minute.work_sec) || 0
+  if (work >= ACTIVE_WORK_SEC) return 'work'
+  const go = Number(minute.go_sec) || 0
+  if (go >= ACTIVE_WORK_SEC) return 'go'
+  // Всё остальное — «слабая активность»: idle-минуты и микродвижения
+  // (как в карточке метрики: простой, не попавший в длительные эпизоды).
+  return 'weak'
+}
+
+function makeStripSegment(startMin: number, endMin: number, kind: StripKind): TimelineSegment {
+  const meta = STRIP_KIND_META[kind]
+  return {
+    startMin,
+    endMin,
+    label: segmentLabel(startMin, endMin, meta.label),
+    colorClass: meta.colorClass,
+  }
+}
+
+/**
+ * Сплошная лента хронологии: каждая минута между началом и концом смены получает
+ * категорию (активность / ходьба / слабая), разрывы телеметрии закрашиваются
+ * «Нет телеметрии» — пустых мест на ленте не остаётся.
+ */
+export function buildShiftStrip(
+  minutes: RawMinute[],
+  coverStartMin: number | null,
+  coverEndMin: number | null,
+): TimelineSegment[] {
+  const perMinute = minutes
+    .map((minute) => ({ startMin: isoToMskMinutes(minute.event_at), kind: minuteStripKind(minute) }))
+    .sort((left, right) => left.startMin - right.startMin)
+
+  const segments: TimelineSegment[] = []
+  let cursor = coverStartMin
+
+  const pushGapUntil = (min: number) => {
+    if (cursor != null && min > cursor) segments.push(makeStripSegment(cursor, min, 'none'))
+  }
+
+  for (const item of perMinute) {
+    if (cursor != null && item.startMin < cursor) continue
+    pushGapUntil(item.startMin)
+
+    const last = segments[segments.length - 1]
+    if (
+      last &&
+      last.colorClass === STRIP_KIND_META[item.kind].colorClass &&
+      item.startMin <= last.endMin
+    ) {
+      last.endMin = item.startMin + 1
+      last.label = segmentLabel(last.startMin, last.endMin, STRIP_KIND_META[item.kind].label)
+    } else {
+      segments.push(makeStripSegment(item.startMin, item.startMin + 1, item.kind))
+    }
+    cursor = item.startMin + 1
+  }
+
+  if (coverEndMin != null) pushGapUntil(coverEndMin)
+
+  return segments
+}
+
+export function buildEpisodeRows(payload: {
   idleEpisodes: RawIdleEpisode[]
   notWornEpisodes: RawNotWornEpisode[]
 }): ShiftTimelineRow[] {
+  // Длительный простой (отчёт 10) — эпизоды как есть, без изъятий по активности:
+  // порог idle >90% относится к эпизоду целиком, поэтому отдельные рабочие
+  // минуты внутри полосы — норма (микродвижения).
+  const longIdleSegments = episodeToSegments(
+    payload.idleEpisodes.map((episode) => ({ start: episode.dt_start, end: episode.dt_end })),
+  )
+
   // episode_end — фактическая метка конца эпизода; длительность (episode_sec) НЕ добавляем к концу.
   const notWornSegments = episodeToSegments(
     payload.notWornEpisodes.map((episode) => ({
@@ -150,44 +223,32 @@ export function buildShiftActivityTimeline(payload: {
     })),
   )
 
-  // Минута попадает в «Бездействие в зоне» — активность/слабая её не показывают,
-  // чтобы не противоречить выводу «человек бездействовал» (активность и бездействие не пересекаются).
-  const inNotWorn = (startMin: number) =>
-    notWornSegments.some((segment) => startMin >= segment.startMin && startMin < segment.endMin)
-
-  const workSegments = collectMinuteSegments(
-    payload.minutes,
-    (minute, startMin) => !inNotWorn(startMin) && (Number(minute.work_sec) || 0) >= ACTIVE_WORK_SEC,
-  )
-
-  const weakSegments = collectMinuteSegments(payload.minutes, (minute, startMin) => {
-    if (inNotWorn(startMin)) return false
-    const work = Number(minute.work_sec) || 0
-    return work > 0 && work < ACTIVE_WORK_SEC
-  })
-
   const rows: ShiftTimelineRow[] = [
+    {
+      id: 'long_idle',
+      label: 'Длительный простой',
+      colorClass: 'shift-timeline-long-idle',
+      segments: longIdleSegments,
+    },
     {
       id: 'not_worn',
       label: 'Бездействие в зоне',
       colorClass: 'shift-timeline-not-worn',
       segments: notWornSegments,
     },
-    {
-      id: 'work',
-      label: 'Активность',
-      colorClass: 'shift-timeline-work',
-      segments: workSegments,
-    },
-    {
-      id: 'weak',
-      label: 'Слабая активность',
-      colorClass: 'shift-timeline-weak',
-      segments: weakSegments,
-    },
   ]
 
-  return rows.filter((row) => row.id === 'work' || row.segments.length > 0)
+  return rows.filter((row) => row.segments.length > 0)
+}
+
+function minDefined(values: Array<number | null>) {
+  const defined = values.filter((value): value is number => value != null)
+  return defined.length > 0 ? Math.min(...defined) : null
+}
+
+function maxDefined(values: Array<number | null>) {
+  const defined = values.filter((value): value is number => value != null)
+  return defined.length > 0 ? Math.max(...defined) : null
 }
 
 export async function loadShiftInactivityDetail(
@@ -224,23 +285,41 @@ export async function loadShiftInactivityDetail(
 
   const notWornEpisodes = payload.not_worn_episodes ?? []
   const minutes = payload.minutes ?? []
-  const timelineRows = buildShiftActivityTimeline({
-    minutes,
+
+  // Границы смены: факт часов (отчёт 6) расширяем телеметрией — если часы писали
+  // данные раньше отметки выдачи (или позже сдачи), смена по факту уже шла.
+  const watchStartMin = payload.shift_start ? isoToMskMinutes(payload.shift_start) : null
+  const watchEndMin = payload.shift_end ? isoToMskMinutes(payload.shift_end) : null
+  const minuteStarts = minutes.map((minute) => isoToMskMinutes(minute.event_at))
+  const telemetryStartMin = minuteStarts.length > 0 ? Math.min(...minuteStarts) : null
+  const telemetryEndMin = minuteStarts.length > 0 ? Math.max(...minuteStarts) + 1 : null
+
+  const shiftStartMin = minDefined([watchStartMin, telemetryStartMin])
+  const shiftEndMin = maxDefined([watchEndMin, telemetryEndMin])
+
+  const stripSegments = buildShiftStrip(minutes, shiftStartMin, shiftEndMin)
+  const timelineRows = buildEpisodeRows({
     idleEpisodes: payload.idle_episodes ?? [],
     notWornEpisodes,
   })
 
-  // Границы смены — только факт: когда получил и когда сдал часы (отчёт 6).
-  // Никаких подстановок по плану или краям телеметрии: нет факта — нет метки.
-  const shiftStartMin = payload.shift_start ? isoToMskMinutes(payload.shift_start) : null
-  const shiftEndMin = payload.shift_end ? isoToMskMinutes(payload.shift_end) : null
+  // Ось — по границам смены с запасом до целого часа; без данных — окно 06:00–24:00.
+  const axisStartMin =
+    shiftStartMin != null
+      ? Math.max(0, Math.floor((shiftStartMin - 10) / 60) * 60)
+      : FALLBACK_AXIS_START_MIN
+  const axisEndMin =
+    shiftEndMin != null
+      ? Math.min(24 * 60, Math.ceil((shiftEndMin + 10) / 60) * 60)
+      : FALLBACK_AXIS_END_MIN
 
   return {
     idleEpisodes,
     notWornEpisodes,
+    stripSegments,
     timelineRows,
-    axisStartMin: AXIS_START_MIN,
-    axisEndMin: AXIS_END_MIN,
+    axisStartMin,
+    axisEndMin,
     shiftStartMin,
     shiftEndMin,
   }

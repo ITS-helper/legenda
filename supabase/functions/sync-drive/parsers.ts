@@ -41,11 +41,55 @@ function normalizeBoolean(value: unknown) {
   return null
 }
 
-function parseDateValue(value: unknown) {
+/**
+ * «Настенные» цифры даты-времени из ячейки XLS, без интерпретации пояса.
+ * Date из cellDates:true собран так, что локальные компоненты равны цифрам файла.
+ */
+function wallClockParts(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return {
+      y: value.getFullYear(),
+      mo: value.getMonth() + 1,
+      d: value.getDate(),
+      h: value.getHours(),
+      mi: value.getMinutes(),
+      s: value.getSeconds(),
+    }
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(
+    String(value).trim(),
+  )
+  if (!match) return null
+  return {
+    y: Number(match[1]),
+    mo: Number(match[2]),
+    d: Number(match[3]),
+    h: Number(match[4] ?? 0),
+    mi: Number(match[5] ?? 0),
+    s: Number(match[6] ?? 0),
+  }
+}
+
+function toIsoWithOffset(value: unknown, offset: string) {
   if (!value) return null
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString()
-  const parsed = new Date(String(value))
+  const parts = wallClockParts(value)
+  if (!parts) return null
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const iso = `${parts.y}-${pad(parts.mo)}-${pad(parts.d)}T${pad(parts.h)}:${pad(parts.mi)}:${pad(parts.s)}${offset}`
+  const parsed = new Date(iso)
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+/**
+ * Пояса у источников РАЗНЫЕ: отчёты 6 (faceID), 8 (LongIDLE), 10 (простои) — МСК;
+ * отчёт 11 (AA_BLE, колонка `date`) — UTC. Парсить через таймзону машины нельзя.
+ */
+function parseMskDateValue(value: unknown) {
+  return toIsoWithOffset(value, '+03:00')
+}
+
+function parseUtcDateValue(value: unknown) {
+  return toIsoWithOffset(value, 'Z')
 }
 
 function parseReportDate(value: unknown) {
@@ -107,10 +151,10 @@ function mapFaceRow(row: Row) {
     supervisor_name: normalizeText(row[7]),
     profession: normalizeText(row[8]),
     schedule_name: normalizeText(row[9]),
-    planned_start_at: parseDateValue(row[10]),
-    planned_end_at: parseDateValue(row[11]),
-    watch_received_at: parseDateValue(row[12]),
-    watch_returned_at: parseDateValue(row[13]),
+    planned_start_at: parseMskDateValue(row[10]),
+    planned_end_at: parseMskDateValue(row[11]),
+    watch_received_at: parseMskDateValue(row[12]),
+    watch_returned_at: parseMskDateValue(row[13]),
     on_watch_duration_text: normalizeText(row[14]),
     on_watch_duration_seconds: normalizeInteger(row[15]),
     shift_over_18_hours: normalizeBoolean(row[16]),
@@ -143,7 +187,7 @@ function mapBleRow(row: Row) {
     work_code: normalizeText(row[17]),
     sleep: normalizeInteger(row[18]),
     wear: normalizeInteger(row[19]),
-    event_at: parseDateValue(row[20]),
+    event_at: parseUtcDateValue(row[20]),
   }
 }
 
@@ -154,8 +198,8 @@ function mapIdleEpisodeRow(row: Row) {
     report_date: parseReportDate(row[2]) ?? parseReportDate(row[5]),
     employee_number: normalizeText(row[3]),
     full_name: normalizeText(row[4]),
-    dt_start: parseDateValue(row[5]),
-    dt_end: parseDateValue(row[6]),
+    dt_start: parseMskDateValue(row[5]),
+    dt_end: parseMskDateValue(row[6]),
     duration_min: normalizeInteger(row[7]),
     work_type: normalizeInteger(row[8]),
     work_code: normalizeInteger(row[9]),
@@ -175,8 +219,8 @@ function mapLongIdleRow(row: Row) {
     profession: normalizeText(row[5]),
     object_name: normalizeText(row[6]),
     report_date: parseReportDate(row[7]),
-    shift_begin_at: parseDateValue(row[8]),
-    shift_end_at: parseDateValue(row[9]),
+    shift_begin_at: parseMskDateValue(row[8]),
+    shift_end_at: parseMskDateValue(row[9]),
     on_watch_duration_text: normalizeText(row[10]),
     schedule_name: normalizeText(row[11]),
     ww_shift_id: Number(row[12]),

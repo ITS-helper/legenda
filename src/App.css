@@ -3769,6 +3769,15 @@
   border-radius: 4px;
 }
 
+/* У краёв оси подпись прижимаем внутрь, чтобы не обрезалась контейнером. */
+.shift-timeline-marker-label-edge-end {
+  transform: translate(-100%, -100%);
+}
+
+.shift-timeline-marker-label-edge-start {
+  transform: translate(0, -100%);
+}
+
 .shift-timeline-marker-start {
   --marker-color: #2f8f5b;
 }
@@ -3809,6 +3818,48 @@
 .shift-timeline-window {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* Лента хронологии: минуты стыкуются вплотную, скругление только у контейнера. */
+.shift-timeline-strip-track {
+  height: 22px;
+  border-radius: 6px;
+}
+
+.shift-timeline-strip-track .shift-timeline-segment {
+  border-radius: 0;
+  min-width: 1px;
+}
+
+/* Ходьба: зелёный, чтобы не сливалась с синей активностью на одной ленте. */
+.shift-timeline-strip-go {
+  background: #16a34a;
+}
+
+.shift-timeline-none {
+  background: color-mix(in srgb, var(--text-muted) 24%, transparent);
+}
+
+.shift-timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+
+.shift-timeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.shift-timeline-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .shift-timeline-long-idle {
