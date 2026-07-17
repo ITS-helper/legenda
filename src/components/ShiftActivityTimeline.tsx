@@ -25,6 +25,7 @@ const LEGEND_ITEMS = [
   { label: 'Ходьба между зонами', colorClass: 'shift-timeline-strip-go' },
   { label: 'Слабая активность', colorClass: 'shift-timeline-weak' },
   { label: 'Длительный простой', colorClass: 'shift-timeline-long-idle' },
+  { label: 'Обед', colorClass: 'shift-timeline-lunch' },
   { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
   { label: 'Бездействие в зоне', colorClass: 'shift-timeline-not-worn' },
 ]

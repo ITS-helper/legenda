@@ -1,3 +1,4 @@
+import { getMetricSettings } from './metricSettings'
 import { MSK_TIME_ZONE, formatMskTimeFromMinutes } from './mskTime'
 import { supabase } from './supabase'
 import { zoneName } from './zones'
@@ -131,6 +132,36 @@ function episodeToSegments(
 // Порог «доминирующего» состояния минуты (секунд на минуту).
 const ACTIVE_WORK_SEC = 20
 
+/** Обед (МСК, минуты от полуночи) — из настроек метрик; сейчас 13:00–14:00. */
+function lunchRange() {
+  const { kppLunchStartMin, kppLunchEndMin } = getMetricSettings()
+  return { lunchStartMin: kppLunchStartMin, lunchEndMin: kppLunchEndMin }
+}
+
+/** Вырезает обед из сегментов: полосы в это время рисуются с разрывом. */
+function cutLunchFromSegments(
+  segments: TimelineSegment[],
+  lunchStartMin: number,
+  lunchEndMin: number,
+): TimelineSegment[] {
+  if (lunchEndMin <= lunchStartMin) return segments
+
+  const out: TimelineSegment[] = []
+  for (const segment of segments) {
+    if (segment.endMin <= lunchStartMin || segment.startMin >= lunchEndMin) {
+      out.push(segment)
+      continue
+    }
+    if (segment.startMin < lunchStartMin) {
+      out.push({ ...segment, endMin: lunchStartMin, label: segmentLabel(segment.startMin, lunchStartMin) })
+    }
+    if (segment.endMin > lunchEndMin) {
+      out.push({ ...segment, startMin: lunchEndMin, label: segmentLabel(lunchEndMin, segment.endMin) })
+    }
+  }
+  return out
+}
+
 type StripKind = 'work' | 'go' | 'weak' | 'long_idle' | 'none'
 
 const STRIP_KIND_META: Record<StripKind, { label: string; colorClass: string }> = {
@@ -175,9 +206,18 @@ export function buildShiftStrip(
   idleSegments: TimelineSegment[],
   coverStartMin: number | null,
   coverEndMin: number | null,
+  lunchStartMin = -1,
+  lunchEndMin = -1,
+  notWornSegments: TimelineSegment[] = [],
 ): TimelineSegment[] {
   const inIdle = (startMin: number) =>
     idleSegments.some((segment) => startMin >= segment.startMin && startMin < segment.endMin)
+  // Обед на ленте не рисуем совсем — разрыв; у него своя строка «Обед».
+  const inLunch = (startMin: number) => startMin >= lunchStartMin && startMin < lunchEndMin
+  // Эпизоды бездействия — тоже разрыв: их показывает своя строка «Бездействие в зоне».
+  const inNotWorn = (startMin: number) =>
+    notWornSegments.some((segment) => startMin >= segment.startMin && startMin < segment.endMin)
+  const skipMinute = (startMin: number) => inLunch(startMin) || inNotWorn(startMin)
 
   const perMinute = minutes
     .map((minute) => {
@@ -186,6 +226,7 @@ export function buildShiftStrip(
       if (kind === 'weak' && inIdle(startMin)) kind = 'long_idle'
       return { startMin, kind }
     })
+    .filter((item) => !skipMinute(item.startMin))
     .sort((left, right) => left.startMin - right.startMin)
 
   const segments: TimelineSegment[] = []
@@ -206,6 +247,7 @@ export function buildShiftStrip(
   const pushGapUntil = (min: number) => {
     if (cursor == null || min <= cursor) return
     for (let at = cursor; at < min; at += 1) {
+      if (skipMinute(at)) continue
       pushKind(at, at + 1, inIdle(at) ? 'long_idle' : 'none')
     }
   }
@@ -310,8 +352,40 @@ export async function loadShiftInactivityDetail(
     })),
   )
 
-  const stripSegments = buildShiftStrip(minutes, idleSegments, shiftStartMin, shiftEndMin)
-  const timelineRows = buildEpisodeRows({ notWornEpisodes })
+  const { lunchStartMin, lunchEndMin } = lunchRange()
+
+  // Строки эпизодов (обед вырезан заранее) — их же сегменты рвут ленту хронологии.
+  const episodeRows = buildEpisodeRows({ notWornEpisodes }).map((row) => ({
+    ...row,
+    segments: cutLunchFromSegments(row.segments, lunchStartMin, lunchEndMin),
+  }))
+  const notWornSegments = episodeRows.find((row) => row.id === 'not_worn')?.segments ?? []
+
+  const stripSegments = buildShiftStrip(
+    minutes,
+    idleSegments,
+    shiftStartMin,
+    shiftEndMin,
+    lunchStartMin,
+    lunchEndMin,
+    notWornSegments,
+  )
+
+  // Обед — отдельная всегда закрашенная строка; в остальных строках в это время разрыв.
+  const lunchRow: ShiftTimelineRow = {
+    id: 'lunch',
+    label: 'Обед',
+    colorClass: 'shift-timeline-lunch',
+    segments: [
+      {
+        startMin: lunchStartMin,
+        endMin: lunchEndMin,
+        label: segmentLabel(lunchStartMin, lunchEndMin, 'Обед'),
+      },
+    ],
+  }
+
+  const timelineRows = [lunchRow, ...episodeRows]
 
   // Ось — по границам смены с запасом до целого часа; без данных — окно 06:00–24:00.
   const axisStartMin =

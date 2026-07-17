@@ -3870,6 +3870,44 @@
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/* График недельной выработки на человека (блок «Объёмы»). */
+.weekly-output-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.weekly-output-baseline {
+  stroke: color-mix(in srgb, var(--border) 85%, transparent);
+  stroke-width: 1;
+}
+
+.weekly-output-bar {
+  fill: #2563eb;
+}
+
+.weekly-output-bar-empty {
+  fill: color-mix(in srgb, var(--text-muted) 30%, transparent);
+}
+
+.weekly-output-trend {
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  fill: none;
+}
+
+.weekly-output-value {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.weekly-output-week {
+  fill: var(--text-muted);
+  font-size: 9px;
+}
+
 /* Лента хронологии: минуты стыкуются вплотную, скругление только у контейнера. */
 .shift-timeline-strip-track {
   height: 22px;
@@ -3881,9 +3919,14 @@
   min-width: 1px;
 }
 
-/* Ходьба: зелёный, чтобы не сливалась с синей активностью на одной ленте. */
+/* Ходьба: бирюзовый — отличим и от синей активности, и от ярко-зелёного обеда. */
 .shift-timeline-strip-go {
-  background: #16a34a;
+  background: #0d9488;
+}
+
+/* Обед: отдельная строка, всегда закрашена. */
+.shift-timeline-lunch {
+  background: #22c55e;
 }
 
 .shift-timeline-none {
@@ -3920,8 +3963,9 @@
   background: color-mix(in srgb, var(--alert) 55%, var(--idle));
 }
 
+/* Бездействие в зоне: ядовито-красный, ярче приглушённого красного простоя. */
 .shift-timeline-not-worn {
-  background: color-mix(in srgb, var(--alert) 72%, #7a1f44);
+  background: #ff1744;
 }
 
 .shift-timeline-work {
