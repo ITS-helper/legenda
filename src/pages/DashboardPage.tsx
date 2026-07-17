@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { UiText } from '../content/uiText'
 import { CollapsibleBlock } from '../components/CollapsibleBlock'
 import { ActivityDynamicsPanel } from '../components/ActivityDynamicsPanel'
@@ -27,6 +27,7 @@ import {
   formatShiftHeadcount,
   formatBrigadeShiftHeadcount,
   formatWeekRange,
+  getShiftActivityPercents,
   loadAvailableDates,
   buildAvailableWeeksFromDates,
   loadBrigadeActivityDynamics,
@@ -52,9 +53,11 @@ import {
   type BrigadeDynamicsCard,
   type BrigadeVolumeDynamicsCard,
   type BrigadeWeeklyRow,
+  type AttentionEmployee,
   type IdleEpisode,
   type NotWornEmployee,
   type NoTelemetryEmployee,
+  type ShiftDetailEmployee,
   type ShiftMetricRow,
   type ZoneDailyRow,
 } from '../lib/reports'
@@ -236,7 +239,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortKey, setSortKey] = useState<SortKey>('productivity')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [notWornOpen, setNotWornOpen] = useState(false)
-  const [selectedNotWornEmployee, setSelectedNotWornEmployee] = useState<NotWornEmployee | null>(null)
+  const [selectedDetailEmployee, setSelectedDetailEmployee] = useState<ShiftDetailEmployee | null>(null)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [noTelemetryOpen, setNoTelemetryOpen] = useState(false)
@@ -567,6 +570,26 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     [lowActivityDaily, comparisonBrigades],
   )
 
+  const openLowActivityDetail = useCallback(
+    (employee: AttentionEmployee) => {
+      if (employee.ww_shift_id == null) return
+      const shiftId = Number(employee.ww_shift_id)
+      const row = allShiftRows.find((shift) => Number(shift.ww_shift_id) === shiftId)
+      if (!row) return
+
+      setSelectedDetailEmployee({
+        ww_shift_id: shiftId,
+        employee_number: String(employee.employee_number),
+        full_name: employee.full_name,
+        profession: employee.profession,
+        supervisor_name: employee.supervisor_name,
+        on_watch_duration_seconds: row.on_watch_duration_seconds ?? null,
+        ...getShiftActivityPercents(row),
+      })
+    },
+    [allShiftRows],
+  )
+
   const dailyTotals = useMemo(() => sumDaily(visibleDailyRows), [visibleDailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
@@ -885,6 +908,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               emptyMessage={`Нет сотрудников с активностью ниже ${settings.lowActivityPct}% за этот день.`}
               periodLabel="за день"
               lowActivityPct={settings.lowActivityPct}
+              onSelect={openLowActivityDetail}
             />
             ) : null}
 
@@ -953,7 +977,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                                       type="button"
                                       className="kpp-row kpp-row-button"
                                       key={employee.ww_shift_id}
-                                      onClick={() => setSelectedNotWornEmployee(employee)}
+                                      onClick={() => setSelectedDetailEmployee(employee)}
                                     >
                                       <div className="kpp-main">
                                         <strong>{employee.full_name}</strong>
@@ -1411,10 +1435,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       ) : null}
 
       <NotWornEmployeeDetailDialog
-        employee={selectedNotWornEmployee}
+        employee={selectedDetailEmployee}
         reportDate={selectedDate}
-        open={selectedNotWornEmployee !== null}
-        onClose={() => setSelectedNotWornEmployee(null)}
+        open={selectedDetailEmployee !== null}
+        onClose={() => setSelectedDetailEmployee(null)}
       />
     </>
   )

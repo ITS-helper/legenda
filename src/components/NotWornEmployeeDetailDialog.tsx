@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { formatPercent, formatSeconds, type NotWornEmployee } from '../lib/reports'
+import {
+  buildNotWornEpisodeTimeLabel,
+  formatPercent,
+  formatSeconds,
+  type ShiftDetailEmployee,
+} from '../lib/reports'
 import {
   loadShiftInactivityDetail,
   type ShiftInactivityDetail,
@@ -7,7 +12,7 @@ import {
 import { ShiftActivityTimeline } from './ShiftActivityTimeline'
 
 type Props = {
-  employee: NotWornEmployee | null
+  employee: ShiftDetailEmployee | null
   reportDate: string
   open: boolean
   onClose: () => void
@@ -81,7 +86,7 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, open, onClos
       >
         <header className="detail-dialog-head">
           <div>
-            <p className="detail-dialog-kicker">Детализация бездействия</p>
+            <p className="detail-dialog-kicker">Детализация смены</p>
             <h2 id="not-worn-detail-title">{employee.full_name}</h2>
             <p className="detail-dialog-subtitle">
               {employee.profession?.trim() || '—'} · #{employee.employee_number} · {employee.supervisor_name}
@@ -103,6 +108,14 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, open, onClos
                 <span className="detail-dialog-metric-label">Ходьба между зонами</span>
                 <span className="detail-dialog-metric-value">{formatPercent(employee.go_pct)}</span>
               </div>
+              <div className="detail-dialog-metric">
+                <span className="detail-dialog-metric-label">Длительность смены</span>
+                <span className="detail-dialog-metric-value">
+                  {employee.on_watch_duration_seconds && employee.on_watch_duration_seconds > 0
+                    ? formatSeconds(employee.on_watch_duration_seconds)
+                    : '—'}
+                </span>
+              </div>
             </div>
           </div>
           <button type="button" className="detail-dialog-close" onClick={onClose} aria-label="Закрыть">
@@ -121,20 +134,31 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, open, onClos
                 rows={detail.timelineRows}
                 axisStartMin={detail.axisStartMin}
                 axisEndMin={detail.axisEndMin}
+                shiftStartMin={detail.shiftStartMin}
+                shiftEndMin={detail.shiftEndMin}
                 title={`Анализ активности по часам смены ${formatReportDateLabel(reportDate)}`}
               />
             </section>
 
-            <section className="detail-dialog-section">
-              <h3>Бездействие в зоне</h3>
-              <p className="detail-dialog-note">
-                Поминутный отбор: почти нулевая активность в учитываемых зонах, эпизоды от 30 мин.
-              </p>
-              <div className="detail-dialog-highlight">
-                <strong>{employee.not_worn_time}</strong>
-                <span>{formatSeconds(employee.not_worn_sec)}</span>
-              </div>
-            </section>
+            {detail.notWornEpisodes.length > 0 ? (
+              <section className="detail-dialog-section">
+                <h3>Бездействие в зоне</h3>
+                <p className="detail-dialog-note">
+                  Поминутный отбор: почти нулевая активность в учитываемых зонах, эпизоды от 30 мин.
+                </p>
+                <div className="detail-dialog-highlight">
+                  <strong>{buildNotWornEpisodeTimeLabel(detail.notWornEpisodes)}</strong>
+                  <span>
+                    {formatSeconds(
+                      detail.notWornEpisodes.reduce(
+                        (sum, episode) => sum + Number(episode.episode_sec ?? 0),
+                        0,
+                      ),
+                    )}
+                  </span>
+                </div>
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>

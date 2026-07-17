@@ -3687,8 +3687,6 @@
 }
 
 .shift-timeline-chart {
-  display: grid;
-  gap: 10px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -3696,12 +3694,22 @@
   overflow-x: auto;
 }
 
+.shift-timeline-inner {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-width: 640px;
+  /* Место сверху под подписи меток «начало/конец смены» (над таймингами оси). */
+  padding-top: 16px;
+  /* Смещение начала дорожек = ширина колонки подписей (168px) + отступ грида (10px). */
+  --timeline-track-offset: 178px;
+}
+
 .shift-timeline-axis-row {
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr);
   gap: 10px;
   align-items: end;
-  min-width: 640px;
 }
 
 .shift-timeline-axis {
@@ -3721,7 +3729,52 @@
 .shift-timeline-rows {
   display: grid;
   gap: 8px;
-  min-width: 640px;
+}
+
+/* Вертикальная метка границы смены: подпись над таймингами, линия только по дорожкам. */
+.shift-timeline-marker {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  width: 0;
+  left: calc(
+    var(--timeline-track-offset) +
+      (100% - var(--timeline-track-offset)) * var(--marker-frac)
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+.shift-timeline-marker-line {
+  position: absolute;
+  /* Пропускаем ось с таймингами (высота оси 18px + отступ грида 10px). */
+  top: 28px;
+  bottom: 0;
+  left: 0;
+  border-left: 2px dashed var(--marker-color, var(--text-muted));
+}
+
+.shift-timeline-marker-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--marker-color, var(--text-muted));
+  background: var(--surface-2);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.shift-timeline-marker-start {
+  --marker-color: #2f8f5b;
+}
+
+.shift-timeline-marker-end {
+  --marker-color: #b0344d;
 }
 
 .shift-timeline-row {
@@ -3795,6 +3848,10 @@
 
   .shift-timeline-axis-spacer {
     display: none;
+  }
+
+  .shift-timeline-inner {
+    --timeline-track-offset: 0px;
   }
 }
 

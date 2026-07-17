@@ -116,19 +116,27 @@ export type KppEmployee = {
   kpp_time: string
 }
 
-export type NotWornEmployee = {
+export type ShiftActivityPercents = {
+  activity_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
+  go_pct: number
+}
+
+/** Сотрудник, для которого можно открыть детализацию смены (диалог грузит остальное по ww_shift_id). */
+export type ShiftDetailEmployee = ShiftActivityPercents & {
   ww_shift_id: number
   employee_number: string
   full_name: string
   profession: string | null
   supervisor_name: string
+  on_watch_duration_seconds: number | null
+}
+
+export type NotWornEmployee = ShiftDetailEmployee & {
   not_worn_sec: number
   not_worn_pct: number
   not_worn_time: string
-  activity_pct: number
-  weak_activity_pct: number
-  long_idle_pct: number
-  go_pct: number
 }
 
 import { MSK_TIME_ZONE } from './mskTime'
@@ -761,6 +769,31 @@ export function isAnalyticsEligibleShift(row: Pick<ShiftMetricRow, 'work_sec_tot
   return getShiftProductivity(row) >= getMetricSettings().analyticsMinActivityPct
 }
 
+/** Четыре метрики смены как на карточке бригады: активность / слабая / длительный простой / ходьба. */
+export function getShiftActivityPercents(
+  row: Pick<
+    ShiftMetricRow,
+    | 'work_sec_total'
+    | 'weak_activity_sec_total'
+    | 'long_idle_sec_total'
+    | 'go_sec_total'
+    | 'idle_sec_total'
+    | 'total_sec_total'
+  >,
+): ShiftActivityPercents {
+  return {
+    activity_pct: ratio(row.work_sec_total, row.total_sec_total),
+    weak_activity_pct: ratio(row.weak_activity_sec_total, row.total_sec_total),
+    // Длительный простой (отчёт 10) может превышать общий простой телеметрии, если эпизоды
+    // тянутся после обрыва телеметрии — ограничиваем idle_sec_total, чтобы доля была ≤100%.
+    long_idle_pct: ratio(
+      Math.min(row.long_idle_sec_total, row.idle_sec_total),
+      row.total_sec_total,
+    ),
+    go_pct: ratio(row.go_sec_total, row.total_sec_total),
+  }
+}
+
 /** @deprecated use getMetricSettings().lowActivityPct */
 export const LOW_ACTIVITY_THRESHOLD = DEFAULT_METRIC_SETTINGS.lowActivityPct
 
@@ -1015,15 +1048,8 @@ export async function loadNotWornEmployees(reportDate: string, cachedShifts?: Sh
             not_worn_eligible_sec_total: Number(row.not_worn_eligible_sec_total ?? 0),
           }),
           not_worn_time: episodeLabel !== '—' ? episodeLabel : '—',
-          activity_pct: ratio(row.work_sec_total, row.total_sec_total),
-          weak_activity_pct: ratio(row.weak_activity_sec_total, row.total_sec_total),
-          // Длительный простой (отчёт 10) может превышать общий простой телеметрии, если эпизоды
-          // тянутся после обрыва телеметрии — ограничиваем idle_sec_total, чтобы доля была ≤100%.
-          long_idle_pct: ratio(
-            Math.min(row.long_idle_sec_total, row.idle_sec_total),
-            row.total_sec_total,
-          ),
-          go_pct: ratio(row.go_sec_total, row.total_sec_total),
+          on_watch_duration_seconds: row.on_watch_duration_seconds ?? null,
+          ...getShiftActivityPercents(row),
         } satisfies NotWornCandidate,
       ]
     })

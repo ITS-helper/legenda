@@ -27,6 +27,11 @@ export type SendReportResult = {
   previewHtml?: string
   pdfAttached?: boolean
   pdfError?: string | null
+  /** Отправка отменена: этот же отчёт ушёл несколько минут назад (снимается флагом force). */
+  skipped?: boolean
+  reason?: 'recently_sent'
+  skippedRecipients?: string[]
+  dedupWindowMin?: number
 }
 
 export type ReportSchedule = {
@@ -55,6 +60,10 @@ type SendResponse = {
   previewHtml?: string
   pdfAttached?: boolean
   pdfError?: string | null
+  skipped?: boolean
+  reason?: 'recently_sent'
+  skippedRecipients?: string[]
+  dedupWindowMin?: number
 }
 
 function withResource(url: string, resource: string, params?: Record<string, string | undefined>) {
@@ -145,6 +154,8 @@ type SendReportOptions = {
   preview?: boolean
   audience?: ReportAudience
   brigadeName?: string
+  /** Отправить, даже если такой же отчёт уже уходил пару минут назад. */
+  force?: boolean
 }
 
 export async function sendReport(options: SendReportOptions) {
@@ -160,6 +171,7 @@ export async function sendReport(options: SendReportOptions) {
         preview: options.preview ?? false,
         audience: options.audience,
         brigadeName: options.brigadeName,
+        force: options.force ?? false,
       }),
     })
   } catch {

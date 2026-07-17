@@ -32,6 +32,12 @@ export type ShiftInactivityDetail = {
   timelineRows: ShiftTimelineRow[]
   axisStartMin: number
   axisEndMin: number
+  /**
+   * Факт получения и сдачи часов (отчёт 6) в минутах МСК от начала суток.
+   * null — факта нет, метку не рисуем (подстановки по плану/телеметрии не делаем).
+   */
+  shiftStartMin: number | null
+  shiftEndMin: number | null
 }
 
 type RawMinute = {
@@ -203,6 +209,8 @@ export async function loadShiftInactivityDetail(
     minutes: RawMinute[]
     idle_episodes: RawIdleEpisode[]
     not_worn_episodes: RawNotWornEpisode[]
+    shift_start?: string | null
+    shift_end?: string | null
   }
 
   const idleEpisodes = (payload.idle_episodes ?? []).map((episode) => ({
@@ -215,11 +223,17 @@ export async function loadShiftInactivityDetail(
   }))
 
   const notWornEpisodes = payload.not_worn_episodes ?? []
+  const minutes = payload.minutes ?? []
   const timelineRows = buildShiftActivityTimeline({
-    minutes: payload.minutes ?? [],
+    minutes,
     idleEpisodes: payload.idle_episodes ?? [],
     notWornEpisodes,
   })
+
+  // Границы смены — только факт: когда получил и когда сдал часы (отчёт 6).
+  // Никаких подстановок по плану или краям телеметрии: нет факта — нет метки.
+  const shiftStartMin = payload.shift_start ? isoToMskMinutes(payload.shift_start) : null
+  const shiftEndMin = payload.shift_end ? isoToMskMinutes(payload.shift_end) : null
 
   return {
     idleEpisodes,
@@ -227,6 +241,8 @@ export async function loadShiftInactivityDetail(
     timelineRows,
     axisStartMin: AXIS_START_MIN,
     axisEndMin: AXIS_END_MIN,
+    shiftStartMin,
+    shiftEndMin,
   }
 }
 

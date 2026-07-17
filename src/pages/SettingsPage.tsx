@@ -76,6 +76,8 @@ export function SettingsPage() {
   const [sendStatus, setSendStatus] = useState<string | null>(null)
   const [sendError, setSendError] = useState(false)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  // Тип отчёта, чью отправку отсекли как дубль — для кнопки «Отправить всё равно».
+  const [resendType, setResendType] = useState<'daily' | 'weekly' | null>(null)
 
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [availableWeeks, setAvailableWeeks] = useState<{ week_start: string; week_end: string }[]>([])
@@ -235,7 +237,7 @@ export function SettingsPage() {
     }
   }
 
-  async function handleSend(type: 'daily' | 'weekly', preview: boolean) {
+  async function handleSend(type: 'daily' | 'weekly', preview: boolean, force = false) {
     const busyKey = preview
       ? type === 'daily'
         ? 'preview-daily'
@@ -258,12 +260,22 @@ export function SettingsPage() {
         preview,
         audience: previewAudience,
         brigadeName: previewAudience === 'foremen' ? previewBrigade : undefined,
+        force,
       })
 
       if (preview && result.previewHtml) {
         setPreviewHtml(result.previewHtml)
         setSendStatus('Предпросмотр отображён ниже')
+      } else if (result.skipped && result.reason === 'recently_sent') {
+        // Дубль отсечён: этот же отчёт уже ушёл пару минут назад.
+        setResendType(type)
+        setSendStatus(
+          `Этот отчёт уже отправлен менее ${result.dedupWindowMin ?? 2} мин назад` +
+            `${result.skippedRecipients?.length ? ` (${result.skippedRecipients.join(', ')})` : ''}` +
+            '. Письмо не продублировано.',
+        )
       } else {
+        setResendType(null)
         const recipientText =
           result.recipients.length > 0
             ? `Отправлено (${result.recipients.length}): ${result.recipients.join(', ')}`
@@ -618,6 +630,19 @@ export function SettingsPage() {
           <p className={`editor-saved${sendError ? ' settings-status-error' : ''}`}>
             {sendStatus ?? 'Автоматическая рассылка по расписанию работает через Supabase pg_cron.'}
           </p>
+
+          {resendType ? (
+            <div className="settings-inline-actions">
+              <button
+                type="button"
+                className="editor-action"
+                onClick={() => handleSend(resendType, false, true)}
+                disabled={busyAction !== null}
+              >
+                Отправить всё равно
+              </button>
+            </div>
+          ) : null}
 
           {previewHtml ? (
             <section className="settings-preview-card">

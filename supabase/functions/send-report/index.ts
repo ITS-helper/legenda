@@ -354,6 +354,9 @@ const SCHEDULE_WINDOW_BEFORE_MIN = 15
 const SCHEDULE_WINDOW_AFTER_MIN = 240
 // post-import: крайний срок отправки после успешного импорта (МСК, минуты от полуночи).
 const POST_IMPORT_DEADLINE_MIN = 14 * 60
+// Ручная отправка: не повторять тот же отчёт за тот же период, если он ушёл только что.
+// Снимается флагом `force` в теле запроса.
+const MANUAL_DEDUP_WINDOW_MIN = 2
 
 type ReportScheduleRow = {
   daily_enabled: boolean
@@ -2586,6 +2589,37 @@ async function wasReportAlreadySent(
   return Boolean(data)
 }
 
+/**
+ * Защита ручной отправки от дублей: тот же отчёт за тот же период уже ушёл только что.
+ * У ручной отправки нет проверки `wasReportAlreadySent` (чтобы можно было переслать письмо),
+ * поэтому два обращения подряд давали два одинаковых письма. Окно короткое — осознанный
+ * повтор через пару минут по-прежнему возможен, а флаг `force` снимает проверку сразу.
+ */
+async function wasReportSentRecently(
+  supabase: ReturnType<typeof getAdminClient>,
+  type: ReportType,
+  periodKey: string,
+  audience: ReportAudience,
+  brigadeName: string | null,
+  withinMinutes: number,
+) {
+  const since = new Date(Date.now() - withinMinutes * 60_000).toISOString()
+
+  let query = supabase!
+    .from('email_log')
+    .select('id')
+    .eq('report_type', type)
+    .eq('period_key', periodKey)
+    .eq('status', 'sent')
+    .eq('audience', audience)
+    .gte('created_at', since)
+
+  query = brigadeName ? query.eq('brigade_name', brigadeName) : query.is('brigade_name', null)
+
+  const { data } = await query.limit(1).maybeSingle()
+  return Boolean(data)
+}
+
 async function sendReportBatch(
   supabase: ReturnType<typeof getAdminClient>,
   type: ReportType,
@@ -2779,6 +2813,7 @@ Deno.serve(async (request) => {
       preview?: boolean
       audience?: ReportAudience
       brigadeName?: string
+      force?: boolean
     } | null
 
     const type = payload?.type
@@ -2869,14 +2904,30 @@ Deno.serve(async (request) => {
     }
 
     const sentRecipients: string[] = []
+    const skippedRecently: string[] = []
     let pdfAttached: boolean | undefined
     let pdfError: string | null | undefined
     let periodKey = type === 'daily' ? date : weekStart
+    const isScheduled = triggeredBy === 'schedule' || triggeredBy === 'post-import'
 
     for (const batch of batches) {
-      if (triggeredBy === 'schedule' || triggeredBy === 'post-import') {
+      if (isScheduled) {
         const alreadySent = await wasReportAlreadySent(supabase, type, periodKey, batch.audience, batch.brigadeName)
         if (alreadySent) continue
+      } else if (!payload?.force) {
+        // Ручная отправка: отсекаем дубль, если этот же отчёт ушёл минуту-две назад.
+        const justSent = await wasReportSentRecently(
+          supabase,
+          type,
+          periodKey,
+          batch.audience,
+          batch.brigadeName,
+          MANUAL_DEDUP_WINDOW_MIN,
+        )
+        if (justSent) {
+          skippedRecently.push(...batch.recipients)
+          continue
+        }
       }
 
       try {
@@ -2916,6 +2967,16 @@ Deno.serve(async (request) => {
       recipients: sentRecipients,
       pdfAttached,
       pdfError,
+      // Ничего не ушло только потому, что этот отчёт отправлен пару минут назад —
+      // фронт по этому признаку предлагает отправить повторно принудительно.
+      ...(sentRecipients.length === 0 && skippedRecently.length > 0
+        ? {
+            skipped: true,
+            reason: 'recently_sent',
+            skippedRecipients: skippedRecently,
+            dedupWindowMin: MANUAL_DEDUP_WINDOW_MIN,
+          }
+        : {}),
     })
   } catch (error) {
     return jsonResponse({ error: getErrorMessage(error) }, 500)

@@ -9,6 +9,8 @@ type AttentionPanelProps = {
   emptyMessage: string
   periodLabel: string
   lowActivityPct: number
+  /** Если передан — строки кликабельны и открывают детализацию смены (только для дневного списка). */
+  onSelect?: (employee: AttentionEmployee) => void
 }
 
 export function AttentionPanel({
@@ -19,6 +21,7 @@ export function AttentionPanel({
   emptyMessage,
   periodLabel,
   lowActivityPct,
+  onSelect,
 }: AttentionPanelProps) {
   return (
     <div className={`kpp-panel${open ? ' kpp-panel-open' : ' kpp-panel-closed'}`}>
@@ -55,15 +58,33 @@ export function AttentionPanel({
                   <div className="zone-panel zone-panel--idle">
                     {brigadeEmployees.length > 0 ? (
                       <div className="kpp-list">
-                        {brigadeEmployees.map((employee) => (
-                          <div className="kpp-row" key={`${employee.employee_number}-${employee.full_name}`}>
-                            <div className="kpp-main">
-                              <strong>{employee.full_name}</strong>
-                              <span>{employee.profession?.trim() || '—'} · #{employee.employee_number}</span>
+                        {brigadeEmployees.map((employee) => {
+                          const key = `${employee.employee_number}-${employee.full_name}`
+                          const content = (
+                            <>
+                              <div className="kpp-main">
+                                <strong>{employee.full_name}</strong>
+                                <span>{employee.profession?.trim() || '—'} · #{employee.employee_number}</span>
+                              </div>
+                              <div className="kpp-time">{formatPercent(employee.activity_pct)}</div>
+                            </>
+                          )
+
+                          return onSelect && employee.ww_shift_id != null ? (
+                            <button
+                              type="button"
+                              className="kpp-row kpp-row-button"
+                              key={key}
+                              onClick={() => onSelect(employee)}
+                            >
+                              {content}
+                            </button>
+                          ) : (
+                            <div className="kpp-row" key={key}>
+                              {content}
                             </div>
-                            <div className="kpp-time">{formatPercent(employee.activity_pct)}</div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     ) : (
                       <p className="kpp-empty">Низкой активности нет.</p>
