@@ -131,12 +131,13 @@ function episodeToSegments(
 // Порог «доминирующего» состояния минуты (секунд на минуту).
 const ACTIVE_WORK_SEC = 20
 
-type StripKind = 'work' | 'go' | 'weak' | 'none'
+type StripKind = 'work' | 'go' | 'weak' | 'long_idle' | 'none'
 
 const STRIP_KIND_META: Record<StripKind, { label: string; colorClass: string }> = {
   work: { label: 'Активность', colorClass: 'shift-timeline-work' },
   go: { label: 'Ходьба между зонами', colorClass: 'shift-timeline-strip-go' },
   weak: { label: 'Слабая активность', colorClass: 'shift-timeline-weak' },
+  long_idle: { label: 'Длительный простой', colorClass: 'shift-timeline-long-idle' },
   none: { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
 }
 
@@ -162,40 +163,57 @@ function makeStripSegment(startMin: number, endMin: number, kind: StripKind): Ti
 
 /**
  * Сплошная лента хронологии: каждая минута между началом и концом смены получает
- * категорию (активность / ходьба / слабая), разрывы телеметрии закрашиваются
- * «Нет телеметрии» — пустых мест на ленте не остаётся.
+ * категорию (активность / ходьба / слабая / длительный простой), разрывы
+ * телеметрии закрашиваются «Нет телеметрии» — пустых мест на ленте не остаётся.
+ *
+ * Длительный простой (эпизоды отчёта 10) живёт на этой же ленте: слабые минуты
+ * внутри эпизода «перерастают» в красный, а редкие рабочие минуты внутри эпизода
+ * остаются синими (микродвижения — датчик, телефон).
  */
 export function buildShiftStrip(
   minutes: RawMinute[],
+  idleSegments: TimelineSegment[],
   coverStartMin: number | null,
   coverEndMin: number | null,
 ): TimelineSegment[] {
+  const inIdle = (startMin: number) =>
+    idleSegments.some((segment) => startMin >= segment.startMin && startMin < segment.endMin)
+
   const perMinute = minutes
-    .map((minute) => ({ startMin: isoToMskMinutes(minute.event_at), kind: minuteStripKind(minute) }))
+    .map((minute) => {
+      const startMin = isoToMskMinutes(minute.event_at)
+      let kind: StripKind = minuteStripKind(minute)
+      if (kind === 'weak' && inIdle(startMin)) kind = 'long_idle'
+      return { startMin, kind }
+    })
     .sort((left, right) => left.startMin - right.startMin)
 
   const segments: TimelineSegment[] = []
   let cursor = coverStartMin
 
+  const pushKind = (startMin: number, endMin: number, kind: StripKind) => {
+    if (endMin <= startMin) return
+    const last = segments[segments.length - 1]
+    if (last && last.colorClass === STRIP_KIND_META[kind].colorClass && startMin <= last.endMin) {
+      last.endMin = Math.max(last.endMin, endMin)
+      last.label = segmentLabel(last.startMin, last.endMin, STRIP_KIND_META[kind].label)
+    } else {
+      segments.push(makeStripSegment(startMin, endMin, kind))
+    }
+  }
+
+  // Разрыв телеметрии внутри эпизода простоя — тоже простой (эпизод — факт отчёта 10).
   const pushGapUntil = (min: number) => {
-    if (cursor != null && min > cursor) segments.push(makeStripSegment(cursor, min, 'none'))
+    if (cursor == null || min <= cursor) return
+    for (let at = cursor; at < min; at += 1) {
+      pushKind(at, at + 1, inIdle(at) ? 'long_idle' : 'none')
+    }
   }
 
   for (const item of perMinute) {
     if (cursor != null && item.startMin < cursor) continue
     pushGapUntil(item.startMin)
-
-    const last = segments[segments.length - 1]
-    if (
-      last &&
-      last.colorClass === STRIP_KIND_META[item.kind].colorClass &&
-      item.startMin <= last.endMin
-    ) {
-      last.endMin = item.startMin + 1
-      last.label = segmentLabel(last.startMin, last.endMin, STRIP_KIND_META[item.kind].label)
-    } else {
-      segments.push(makeStripSegment(item.startMin, item.startMin + 1, item.kind))
-    }
+    pushKind(item.startMin, item.startMin + 1, item.kind)
     cursor = item.startMin + 1
   }
 
@@ -205,16 +223,8 @@ export function buildShiftStrip(
 }
 
 export function buildEpisodeRows(payload: {
-  idleEpisodes: RawIdleEpisode[]
   notWornEpisodes: RawNotWornEpisode[]
 }): ShiftTimelineRow[] {
-  // Длительный простой (отчёт 10) — эпизоды как есть, без изъятий по активности:
-  // порог idle >90% относится к эпизоду целиком, поэтому отдельные рабочие
-  // минуты внутри полосы — норма (микродвижения).
-  const longIdleSegments = episodeToSegments(
-    payload.idleEpisodes.map((episode) => ({ start: episode.dt_start, end: episode.dt_end })),
-  )
-
   // episode_end — фактическая метка конца эпизода; длительность (episode_sec) НЕ добавляем к концу.
   const notWornSegments = episodeToSegments(
     payload.notWornEpisodes.map((episode) => ({
@@ -224,12 +234,6 @@ export function buildEpisodeRows(payload: {
   )
 
   const rows: ShiftTimelineRow[] = [
-    {
-      id: 'long_idle',
-      label: 'Длительный простой',
-      colorClass: 'shift-timeline-long-idle',
-      segments: longIdleSegments,
-    },
     {
       id: 'not_worn',
       label: 'Бездействие в зоне',
@@ -297,11 +301,17 @@ export async function loadShiftInactivityDetail(
   const shiftStartMin = minDefined([watchStartMin, telemetryStartMin])
   const shiftEndMin = maxDefined([watchEndMin, telemetryEndMin])
 
-  const stripSegments = buildShiftStrip(minutes, shiftStartMin, shiftEndMin)
-  const timelineRows = buildEpisodeRows({
-    idleEpisodes: payload.idle_episodes ?? [],
-    notWornEpisodes,
-  })
+  // Длительный простой (отчёт 10) — эпизоды как есть, без изъятий по активности:
+  // порог idle >90% относится к эпизоду целиком.
+  const idleSegments = episodeToSegments(
+    (payload.idle_episodes ?? []).map((episode) => ({
+      start: episode.dt_start,
+      end: episode.dt_end,
+    })),
+  )
+
+  const stripSegments = buildShiftStrip(minutes, idleSegments, shiftStartMin, shiftEndMin)
+  const timelineRows = buildEpisodeRows({ notWornEpisodes })
 
   // Ось — по границам смены с запасом до целого часа; без данных — окно 06:00–24:00.
   const axisStartMin =

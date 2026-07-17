@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { formatMskTimeFromMinutes } from '../lib/mskTime'
 import {
   segmentLeftPct,
@@ -24,8 +24,8 @@ const LEGEND_ITEMS = [
   { label: 'Активность', colorClass: 'shift-timeline-work' },
   { label: 'Ходьба между зонами', colorClass: 'shift-timeline-strip-go' },
   { label: 'Слабая активность', colorClass: 'shift-timeline-weak' },
-  { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
   { label: 'Длительный простой', colorClass: 'shift-timeline-long-idle' },
+  { label: 'Нет телеметрии', colorClass: 'shift-timeline-none' },
   { label: 'Бездействие в зоне', colorClass: 'shift-timeline-not-worn' },
 ]
 
@@ -68,6 +68,8 @@ function renderSegments(
   ))
 }
 
+const ZOOM_LEVELS = [1, 2, 4, 8]
+
 export function ShiftActivityTimeline({
   stripSegments,
   rows,
@@ -80,12 +82,56 @@ export function ShiftActivityTimeline({
   const ticks = timelineAxisTicks(axisStartMin, axisEndMin, 60)
   const markers = buildShiftMarkers(axisStartMin, axisEndMin, shiftStartMin, shiftEndMin)
 
+  const [zoom, setZoom] = useState(1)
+  const chartRef = useRef<HTMLDivElement>(null)
+  const pendingCenterRatio = useRef<number | null>(null)
+
+  const changeZoom = (next: number) => {
+    const el = chartRef.current
+    if (el && el.scrollWidth > 0) {
+      pendingCenterRatio.current = (el.scrollLeft + el.clientWidth / 2) / el.scrollWidth
+    }
+    setZoom(next)
+  }
+
+  useLayoutEffect(() => {
+    const el = chartRef.current
+    const ratio = pendingCenterRatio.current
+    if (el && ratio != null) {
+      el.scrollLeft = ratio * el.scrollWidth - el.clientWidth / 2
+      pendingCenterRatio.current = null
+    }
+  }, [zoom])
+
+  const zoomIndex = ZOOM_LEVELS.indexOf(zoom)
+
   return (
     <div className="shift-timeline" aria-label={title ?? 'Анализ активности по часам смены'}>
-      {title ? <h4 className="shift-timeline-title">{title}</h4> : null}
+      <div className="shift-timeline-head">
+        {title ? <h4 className="shift-timeline-title">{title}</h4> : <span />}
+        <div className="shift-timeline-zoom">
+          <button
+            type="button"
+            onClick={() => changeZoom(ZOOM_LEVELS[zoomIndex - 1])}
+            disabled={zoomIndex <= 0}
+            aria-label="Отдалить"
+          >
+            −
+          </button>
+          <span className="shift-timeline-zoom-value">{zoom}×</span>
+          <button
+            type="button"
+            onClick={() => changeZoom(ZOOM_LEVELS[zoomIndex + 1])}
+            disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
+            aria-label="Приблизить"
+          >
+            +
+          </button>
+        </div>
+      </div>
 
-      <div className="shift-timeline-chart">
-        <div className="shift-timeline-inner">
+      <div className="shift-timeline-chart" ref={chartRef}>
+        <div className="shift-timeline-inner" style={{ width: `${zoom * 100}%` }}>
           {markers.map((marker) => (
             <div
               key={marker.id}

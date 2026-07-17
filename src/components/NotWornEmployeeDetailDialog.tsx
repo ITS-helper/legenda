@@ -139,13 +139,6 @@ export function NotWornEmployeeDetailDialog({ employee, reportDate, open, onClos
                 shiftEndMin={detail.shiftEndMin}
                 title={`Анализ активности по часам смены ${formatReportDateLabel(reportDate)}`}
               />
-              <p className="detail-dialog-note">
-                Лента хронологии закрашивает каждую минуту смены: активность, ходьба, слабая
-                активность или «нет телеметрии» (серый — часы не передавали данные).
-                «Длительный простой» — эпизоды отчёта 10 целиком (неподвижность более 90%
-                эпизода), поэтому внутри полосы возможны рабочие минуты — микродвижения.
-                Проценты в карточках считаются в окне 07:00–23:00 МСК.
-              </p>
             </section>
 
             {detail.notWornEpisodes.length > 0 ? (
