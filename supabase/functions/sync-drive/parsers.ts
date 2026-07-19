@@ -1,5 +1,3 @@
-import xlsx from 'npm:xlsx@0.18.5'
-
 export const REPORT_FILE_PATTERNS = {
   faceid: /6_report_6_faceID.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
   aa_ble: /11_отчет по [AА]{2}_BLE.*LEGENDA.*!NEW!.*(\d{4}-\d{2}-\d{2})/i,
@@ -41,20 +39,27 @@ function normalizeBoolean(value: unknown) {
   return null
 }
 
+/** Excel-серийная дата (UNFORMATTED_VALUE из Sheets) → «настенные» цифры без пояса. */
+function excelSerialWallClock(serial: number) {
+  const ms = Math.round((serial - 25569) * 86400000)
+  const date = new Date(ms)
+  return {
+    y: date.getUTCFullYear(),
+    mo: date.getUTCMonth() + 1,
+    d: date.getUTCDate(),
+    h: date.getUTCHours(),
+    mi: date.getUTCMinutes(),
+    s: date.getUTCSeconds(),
+  }
+}
+
 /**
- * «Настенные» цифры даты-времени из ячейки XLS, без интерпретации пояса.
- * Date из cellDates:true собран так, что локальные компоненты равны цифрам файла.
+ * «Настенные» цифры даты-времени из ячейки, без интерпретации пояса.
+ * Строка — парсим по цифрам; число — Excel-серийная дата из Sheets API.
  */
 function wallClockParts(value: unknown) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return {
-      y: value.getFullYear(),
-      mo: value.getMonth() + 1,
-      d: value.getDate(),
-      h: value.getHours(),
-      mi: value.getMinutes(),
-      s: value.getSeconds(),
-    }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return excelSerialWallClock(value)
   }
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(
     String(value).trim(),
@@ -71,7 +76,7 @@ function wallClockParts(value: unknown) {
 }
 
 function toIsoWithOffset(value: unknown, offset: string) {
-  if (!value) return null
+  if (value === undefined || value === null || value === '') return null
   const parts = wallClockParts(value)
   if (!parts) return null
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -93,8 +98,12 @@ function parseUtcDateValue(value: unknown) {
 }
 
 function parseReportDate(value: unknown) {
-  if (!value) return null
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10)
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const parts = excelSerialWallClock(value)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${parts.y}-${pad(parts.mo)}-${pad(parts.d)}`
+  }
   const text = String(value).slice(0, 10)
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
 }
@@ -119,27 +128,15 @@ function parseBleTags(value: unknown) {
   }
 }
 
-function pickSheet(workbook: xlsx.WorkBook) {
-  if (workbook.Sheets.Sheet2) return workbook.Sheets.Sheet2
-  const firstSheetName = workbook.SheetNames[0]
-  return firstSheetName ? workbook.Sheets[firstSheetName] : null
-}
-
-function sheetToRowsFromBuffer(bytes: Uint8Array, sheetName = 'Sheet2') {
-  const workbook = xlsx.read(bytes, { type: 'array', cellDates: true })
-  const sheet = sheetName ? workbook.Sheets[sheetName] : pickSheet(workbook)
-  if (!sheet) throw new Error(`Sheet "${sheetName ?? 'Sheet2'}" not found`)
-  return xlsx.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: true })
-}
-
-function filterDataRows(rows: unknown[][]) {
-  return rows.slice(1).filter((row) => row.some((value) => value !== null && value !== ''))
+/** Строки значений из Sheets (без заголовка): выкидываем полностью пустые. */
+export function filterDataRows(rows: unknown[][]) {
+  return rows.filter((row) => row.some((value) => value !== null && value !== '' && value !== undefined))
 }
 
 // deno-lint-ignore no-explicit-any
 type Row = any[]
 
-function mapFaceRow(row: Row) {
+export function mapFaceRow(row: Row) {
   return {
     report_date: parseReportDate(row[0]),
     ww_shift_id: Number(row[1]),
@@ -165,7 +162,7 @@ function mapFaceRow(row: Row) {
   }
 }
 
-function mapBleRow(row: Row) {
+export function mapBleRow(row: Row) {
   return {
     employee_number: normalizeText(row[0]),
     user_id: normalizeText(row[1]),
@@ -191,7 +188,7 @@ function mapBleRow(row: Row) {
   }
 }
 
-function mapIdleEpisodeRow(row: Row) {
+export function mapIdleEpisodeRow(row: Row) {
   return {
     ww_shift_id: Number(row[0]),
     session_id: Number(row[1]),
@@ -209,7 +206,7 @@ function mapIdleEpisodeRow(row: Row) {
   }
 }
 
-function mapLongIdleRow(row: Row) {
+export function mapLongIdleRow(row: Row) {
   return {
     employee_number: normalizeText(row[0]),
     customer_tab_number: normalizeText(row[1]),
@@ -247,22 +244,6 @@ function mapLongIdleRow(row: Row) {
     real_common_idle: normalizeNumeric(row[33]),
     real_long_idle: normalizeNumeric(row[34]),
   }
-}
-
-export function parseFaceRowsFromBuffer(bytes: Uint8Array) {
-  return filterDataRows(sheetToRowsFromBuffer(bytes, 'Sheet2')).map(mapFaceRow)
-}
-
-export function parseBleRowsFromBuffer(bytes: Uint8Array) {
-  return filterDataRows(sheetToRowsFromBuffer(bytes, 'Sheet2')).map(mapBleRow)
-}
-
-export function parseLongIdleRowsFromBuffer(bytes: Uint8Array) {
-  return filterDataRows(sheetToRowsFromBuffer(bytes, 'Sheet2')).map(mapLongIdleRow)
-}
-
-export function parseIdleEpisodeRowsFromBuffer(bytes: Uint8Array) {
-  return filterDataRows(sheetToRowsFromBuffer(bytes, 'Sheet2')).map(mapIdleEpisodeRow)
 }
 
 export function normalizeReportDateInput(value: string | null | undefined) {

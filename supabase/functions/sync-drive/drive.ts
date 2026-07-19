@@ -5,6 +5,16 @@ const REQUIRED_SOURCES: SourceType[] = ['aa_ble', 'long_idle']
 const OPTIONAL_SOURCES: SourceType[] = ['faceid', 'idle_episode']
 const ALL_SOURCES: SourceType[] = [...REQUIRED_SOURCES, ...OPTIONAL_SOURCES]
 
+/**
+ * Постоянная буферная Google-таблица в корне LEGENDA: files.update заливает в неё
+ * очередной XLSX (Drive конвертирует на месте), Sheets API отдаёт значения
+ * постранично. Так edge-функция не разбирает XLSX сама (это упиралось в
+ * WORKER_RESOURCE_LIMIT) и не плодит копий (удалять их у сервисного аккаунта прав нет).
+ */
+const SYNC_BUFFER_NAME = 'zz-tech-sync-buffer (не удалять)'
+const DATA_SHEET = 'Sheet2'
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 export type DriveFile = {
   id: string
   name: string
@@ -46,14 +56,24 @@ function getServiceAccountCredentials() {
   return { email, privateKey }
 }
 
-function getDriveClient() {
+function getGoogleAuth() {
   const { email, privateKey } = getServiceAccountCredentials()
-  const auth = new google.auth.JWT({
+  return new google.auth.JWT({
     email,
     key: privateKey,
-    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    scopes: [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/spreadsheets.readonly',
+    ],
   })
-  return google.drive({ version: 'v3', auth })
+}
+
+function getDriveClient() {
+  return google.drive({ version: 'v3', auth: getGoogleAuth() })
+}
+
+function getSheetsClient() {
+  return google.sheets({ version: 'v4', auth: getGoogleAuth() })
 }
 
 async function listDriveChildren(drive: ReturnType<typeof getDriveClient>, parentFolderId: string) {
@@ -157,17 +177,90 @@ export async function findReportFilesForDate(rootFolderId: string, reportDate: s
   }
 }
 
-export async function downloadDriveFile(fileId: string) {
-  const drive = getDriveClient()
-  const response = await drive.files.get(
-    { fileId, alt: 'media', supportsAllDrives: true },
-    { responseType: 'arraybuffer' },
-  )
-  return new Uint8Array(response.data as ArrayBuffer)
-}
-
 export function getRequiredMissingSources(
   reportFiles: Awaited<ReturnType<typeof findReportFilesForDate>>,
 ) {
   return REQUIRED_SOURCES.filter((sourceType) => !reportFiles[sourceType])
+}
+
+/** Найти буферную таблицу в корне LEGENDA; создать, если её ещё нет. */
+export async function ensureSyncBuffer(rootFolderId: string) {
+  const drive = getDriveClient()
+  const children = await listDriveChildren(drive, rootFolderId)
+  const existing = children.find((item) => item.name === SYNC_BUFFER_NAME)
+  if (existing) return existing.id
+
+  const created = await drive.files.create({
+    supportsAllDrives: true,
+    requestBody: {
+      name: SYNC_BUFFER_NAME,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: [rootFolderId],
+    },
+    fields: 'id',
+  })
+  if (!created.data.id) throw new Error('Не удалось создать буферную таблицу')
+  return created.data.id
+}
+
+async function getAccessToken() {
+  const auth = getGoogleAuth()
+  const { token } = await auth.getAccessToken()
+  if (!token) throw new Error('Не удалось получить Google access token')
+  return token
+}
+
+/**
+ * Залить XLSX из Drive в буфер: скачиваем байты и заменяем содержимое (конверсия
+ * на месте). Нарочно чистый fetch — media-upload через googleapis использует
+ * node-стримы и роняет воркер edge-рантайма.
+ */
+export async function loadFileIntoBuffer(bufferId: string, sourceFileId: string) {
+  const token = await getAccessToken()
+
+  const download = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${sourceFileId}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!download.ok) {
+    throw new Error(`Drive download ${download.status}: ${(await download.text()).slice(0, 200)}`)
+  }
+  const bytes = new Uint8Array(await download.arrayBuffer())
+
+  const upload = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${bufferId}?uploadType=media&supportsAllDrives=true`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': XLSX_MIME },
+      body: bytes,
+    },
+  )
+  if (!upload.ok) {
+    throw new Error(`Drive upload ${upload.status}: ${(await upload.text()).slice(0, 200)}`)
+  }
+}
+
+/** Число строк в листе данных буфера (включая заголовок). */
+export async function getBufferDataRowCount(bufferId: string) {
+  const sheets = getSheetsClient()
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: bufferId,
+    fields: 'sheets(properties(title,gridProperties(rowCount)))',
+  })
+  const tab = (meta.data.sheets ?? []).find((sheet) => sheet.properties?.title === DATA_SHEET)
+  if (!tab) throw new Error(`В буфере нет листа ${DATA_SHEET}`)
+  return tab.properties?.gridProperties?.rowCount ?? 0
+}
+
+/** Значения строк данных буфера: строки с fromRow по toRow включительно (1-based). */
+export async function readBufferRows(bufferId: string, fromRow: number, toRow: number) {
+  const sheets = getSheetsClient()
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: bufferId,
+    range: `'${DATA_SHEET}'!A${fromRow}:AZ${toRow}`,
+    valueRenderOption: 'UNFORMATTED_VALUE',
+    dateTimeRenderOption: 'SERIAL_NUMBER',
+  })
+  // deno-lint-ignore no-explicit-any
+  return (response.data.values ?? []) as any[][]
 }

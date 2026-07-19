@@ -1,8 +1,9 @@
 name: Sync Drive Reports
 
 on:
-  schedule:
-    - cron: '50 4 * * *'  # 07:50 МСК — импорт в БД (отчёты в Drive не позднее 08:00)
+  # Автоматика импорта живёт целиком в Supabase (pg_cron → edge sync-drive,
+  # цепочка звеньев в лимитах рантайма). GitHub Actions оставлен только как
+  # ручной аварийный запуск — расписаний здесь быть не должно.
   workflow_dispatch:
     inputs:
       report_date:

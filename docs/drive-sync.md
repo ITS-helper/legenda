@@ -37,14 +37,37 @@
 
 Ожидается, что файлы за вчера появляются в Google Drive **не позднее 08:00 МСК**.
 
-**Основной планировщик (рекомендуется):** Supabase `pg_cron` → edge function `sync-drive` (независимо от GitHub Actions):
+**Единственный планировщик — Supabase `pg_cron` → edge function `sync-drive`**
+(`07:50`, `07:55` МСК, watchdog каждые 5 мин `08:00`–`09:55`, финальный `10:00`;
+настройка `npm run setup:report-cron`). GitHub Actions из контура автоматики убран:
+workflow [`sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) —
+только ручной `workflow_dispatch` на аварийный случай.
 
-- `07:50`, `07:55`, `08:00`, `08:05` МСК — импорт вчерашнего дня
-- Настройка: `npm run setup:report-cron` (применяет миграции, Vault, деплоит `sync-drive`)
+**Как edge-функция укладывается в лимиты рантайма** (раньше падала с
+`WORKER_RESOURCE_LIMIT` — SheetJS не вытягивал разбор ~35 тыс. строк AA/BLE):
 
-**Резерв:** GitHub Actions [`.github/workflows/sync-drive-reports.yml`](../.github/workflows/sync-drive-reports.yml) — `04:50 UTC` (07:50 МСК).
+1. XLSX не разбирается в функции вообще. В корне LEGENDA живёт постоянная буферная
+   Google-таблица `zz-tech-sync-buffer (не удалять)`: файл заливается в неё через
+   `files.update` (Drive конвертирует на месте), значения читаются Sheets API.
+2. Мелкие отчёты (6, 8, 10) импортируются в стартовой фазе; AA_BLE — цепочкой
+   звеньев по 6000 строк: каждое звено вставляет порцию и ставит следующее через
+   `analytics.invoke_sync_drive_payload` (pg_net, секреты из Vault). Каждое звено —
+   отдельный вызов функции со своими лимитами.
+3. Пока цепочка жива, батч висит в `importing` со свежим `updated_at` — повторный
+   старт (watchdog) видит heartbeat и не запускает параллельный импорт.
+4. Требуется включённый **Google Sheets API** в проекте сервисного аккаунта
+   (включён 2026-07-19) и право записи в шаред-драйв (есть).
+5. Рассылка после импорта по умолчанию НЕ отправляется — включается только
+   секретом `SEND_AFTER_IMPORT=true` (сейчас письма шлют вручную из админки).
 
-Рассылка — `pg_cron` + [send-reports.yml](../.github/workflows/send-reports.yml): после импорта (`post-import`), дедлайн **12:00 МСК** (schedule) / **14:00** (post-import).
+Диагностика: `net._http_response` (ответы звеньев, хранится несколько часов);
+поэтапный прогон — POST на функцию с `{"debug": 1..6, "date": "YYYY-MM-DD"}`.
+
+Рассылка: workflow [send-reports.yml](../.github/workflows/send-reports.yml) **отключён вручную**
+(состояние `disabled_manually` в GitHub Actions, задач рассылки в `pg_cron` нет) — письма
+отправляются вручную из админки дашборда. Не включать автозапуск и не дёргать
+`send-report` без явной команды пользователя; при включении помнить: каждый успешный
+прогон Sync Drive Reports триггерит рассылку через `workflow_run`.
 
 По умолчанию импортируется **вчерашний день по Europe/Moscow**.
 

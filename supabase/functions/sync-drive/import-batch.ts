@@ -181,14 +181,18 @@ function resolveFaceRows(faceRows: any[], longIdleRows: any[]) {
   return buildFaceRowsFromLongIdle(longIdleRows)
 }
 
-export async function importDailyBatch(
+/**
+ * Подготовка дневного батча: всё, кроме минутной телеметрии AA_BLE — она заливается
+ * порциями отдельными вызовами (insertBleRowsChunk), затем finalizeDailyBatch.
+ * Батч остаётся в статусе 'importing' до финализации.
+ */
+export async function prepareDailyBatch(
   supabase: SupabaseClient,
   options: {
     reportDate: string
     sourceDayKey: string
     notes?: string
     faceRows?: any[]
-    bleRows?: any[]
     longIdleRows?: any[]
     idleEpisodeRows?: any[]
     files: ImportFileMeta[]
@@ -199,7 +203,6 @@ export async function importDailyBatch(
     sourceDayKey,
     notes,
     faceRows = [],
-    bleRows = [],
     longIdleRows = [],
     idleEpisodeRows = [],
     files,
@@ -208,10 +211,8 @@ export async function importDailyBatch(
   if (!reportDate || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
     throw new Error('Нужна дата отчета в формате YYYY-MM-DD')
   }
-  if (bleRows.length === 0) throw new Error('AA_BLE не содержит строк для импорта')
   if (longIdleRows.length === 0) throw new Error('LongIDLE не содержит строк для импорта')
 
-  validateBleRows(bleRows)
   validateLongIdleRows(longIdleRows)
 
   const resolvedFaceRows = resolveFaceRows(faceRows, longIdleRows)
@@ -355,35 +356,6 @@ export async function importDailyBatch(
     await chunkedUpsert(supabase, 'sessions', sessionRows, 'tech_session_id')
   }
 
-  await chunkedInsert(
-    supabase,
-    'ble_minute_facts',
-    bleRows.map((row) => ({
-      batch_id: batchId,
-      report_date: row.report_date,
-      ww_shift_id: row.ww_shift_id,
-      tech_session_id: row.tech_session_id,
-      employee_number: row.employee_number,
-      user_id: row.user_id,
-      event_at: row.event_at,
-      object_date: row.object_date,
-      object_time: row.object_time,
-      idle_sec: row.idle_sec,
-      go_sec: row.go_sec,
-      work_sec: row.work_sec,
-      total_sec: row.total_sec,
-      ble_tags: row.ble_tags,
-      metka: row.metka,
-      zona: row.zona,
-      chosen_metka: row.chosen_metka,
-      chosen_mapped_metka: row.chosen_mapped_metka,
-      working_hours: row.working_hours,
-      work_code: row.work_code,
-      sleep: row.sleep,
-      wear: row.wear,
-    })),
-  )
-
   await chunkedInsert(supabase, 'long_idle_facts', mapLongIdleFactRows(batchId, longIdleRows))
 
   if (idleEpisodeRows.length > 0) {
@@ -411,25 +383,88 @@ export async function importDailyBatch(
     )
   }
 
-  const { error: readyError } = await supabase
-    .from('import_batches')
-    .update({ status: 'ready', updated_at: new Date().toISOString() })
-    .eq('id', batchId)
-  if (readyError) throw readyError
-
   return {
     batchId,
     reportDate,
     faceidPending,
     importedFaceRows: faceRows.length,
     importedShiftRows: resolvedFaceRows.length,
-    importedBleRows: bleRows.length,
     importedLongIdleRows: longIdleRows.length,
     importedIdleEpisodes: idleEpisodeRows.length,
-    importedRows: bleRows.length,
     shifts: shiftRows.length,
     sessions: sessionRows.length,
   }
+}
+
+/** Вставка очередной порции минутной телеметрии AA_BLE (строки уже прошли mapBleRow). */
+export async function insertBleRowsChunk(supabase: SupabaseClient, batchId: number, bleRows: any[]) {
+  if (bleRows.length === 0) return
+  validateBleRows(bleRows)
+  await chunkedInsert(
+    supabase,
+    'ble_minute_facts',
+    bleRows.map((row) => ({
+      batch_id: batchId,
+      report_date: row.report_date,
+      ww_shift_id: row.ww_shift_id,
+      tech_session_id: row.tech_session_id,
+      employee_number: row.employee_number,
+      user_id: row.user_id,
+      event_at: row.event_at,
+      object_date: row.object_date,
+      object_time: row.object_time,
+      idle_sec: row.idle_sec,
+      go_sec: row.go_sec,
+      work_sec: row.work_sec,
+      total_sec: row.total_sec,
+      ble_tags: row.ble_tags,
+      metka: row.metka,
+      zona: row.zona,
+      chosen_metka: row.chosen_metka,
+      chosen_mapped_metka: row.chosen_mapped_metka,
+      working_hours: row.working_hours,
+      work_code: row.work_code,
+      sleep: row.sleep,
+      wear: row.wear,
+    })),
+    1000,
+  )
+}
+
+/** Финализация: телеметрия загружена полностью, батч готов. */
+export async function finalizeDailyBatch(supabase: SupabaseClient, batchId: number) {
+  const { error } = await supabase
+    .from('import_batches')
+    .update({ status: 'ready', updated_at: new Date().toISOString() })
+    .eq('id', batchId)
+  if (error) throw error
+}
+
+/** Обновить updated_at батча — heartbeat для защиты от параллельного запуска цепочки. */
+export async function touchImportBatch(supabase: SupabaseClient, batchId: number) {
+  await supabase
+    .from('import_batches')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', batchId)
+}
+
+/** Батч в процессе импорта со свежим heartbeat — цепочка ещё жива. */
+export async function getActiveImportingBatch(
+  supabase: SupabaseClient,
+  reportDate: string,
+  sourceDayKey: string,
+  freshMinutes = 8,
+) {
+  const { data, error } = await supabase
+    .from('import_batches')
+    .select('id, status, updated_at')
+    .eq('report_date', reportDate)
+    .eq('source_day_key', sourceDayKey)
+    .maybeSingle()
+  if (error) throw error
+  if (!data || data.status !== 'importing' || !data.updated_at) return null
+  const ageMs = Date.now() - new Date(data.updated_at as string).getTime()
+  return ageMs < freshMinutes * 60 * 1000 ? data : null
 }
 
 export async function markImportBatchFailed(
