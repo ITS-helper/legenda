@@ -699,6 +699,143 @@ export async function loadBrigadeVolumeDynamics(referenceDate: string) {
   })
 }
 
+/** Недель в графике выработки на человека (блок «Объёмы»). */
+export const WEEKLY_OUTPUT_WEEKS = 8
+
+export type BrigadeWeeklyOutputPoint = {
+  week_start: string
+  week_end: string
+  /** Объём бригады за неделю, м³ (сумма ручных вводов). */
+  volume_m3: number | null
+  /** Среднее рабочих в день за неделю (по дням с данными). */
+  avg_workers: number | null
+  /** Выработка: м³ на человека за неделю. */
+  per_worker_m3: number | null
+}
+
+export type BrigadeWeeklyOutputCard = {
+  supervisor_name: string
+  points: BrigadeWeeklyOutputPoint[]
+  /** Линейный тренд per_worker_m3 по индексу недели; null, если данных < 2 недель. */
+  trend: { slope: number; intercept: number } | null
+  last_per_worker_m3: number | null
+}
+
+/**
+ * Еженедельная выработка на человека по бригадам: объём из volume_entries,
+ * численность — из дневных метрик бригад (среднее рабочих в день за неделю).
+ */
+export async function loadBrigadeWeeklyOutput(
+  referenceDate: string,
+  weeksCount = WEEKLY_OUTPUT_WEEKS,
+): Promise<BrigadeWeeklyOutputCard[]> {
+  // Только завершённые недели: неполная текущая занижает выработку и ломает тренд.
+  let lastWeekStart = getWeekStart(referenceDate)
+  if (addDaysIso(lastWeekStart, 6) > referenceDate) {
+    lastWeekStart = addDaysIso(lastWeekStart, -7)
+  }
+  const weeks = Array.from({ length: weeksCount }, (_, index) => {
+    const week_start = addDaysIso(lastWeekStart, -7 * (weeksCount - 1 - index))
+    return { week_start, week_end: addDaysIso(week_start, 6) }
+  })
+  const rangeFrom = weeks[0].week_start
+  const rangeTo = weeks[weeks.length - 1].week_end
+
+  // Численность — лёгкий RPC по shifts: тяжёлый brigade_daily_metrics_for_dates
+  // на диапазоне 8 недель не отвечает за разумное время.
+  const [volumeResult, headcountResult] = await Promise.all([
+    supabase
+      .schema('analytics')
+      .from('volume_entries')
+      .select('report_date, label, value_text')
+      .gte('report_date', rangeFrom)
+      .lte('report_date', rangeTo),
+    supabase
+      .schema('analytics')
+      .rpc('brigade_daily_headcount', { p_date_from: rangeFrom, p_date_to: rangeTo }),
+  ])
+  if (volumeResult.error) throw volumeResult.error
+  if (headcountResult.error) throw headcountResult.error
+
+  const volumeRows = (volumeResult.data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+
+  const dailyRows = ((headcountResult.data ?? []) as Array<{
+    report_date: string
+    supervisor_name: string
+    workers: number
+  }>).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    supervisor_name: row.supervisor_name,
+    workers: Number(row.workers) || 0,
+  }))
+
+  return getComparisonBrigades().map((brigadeName) => {
+    const points = weeks.map(({ week_start, week_end }) => {
+      const volume = sumBrigadeVolumeForDates(
+        volumeRows,
+        brigadeName,
+        listDatesInclusive(week_start, week_end),
+      )
+
+      const brigadeDaily = dailyRows.filter(
+        (row) =>
+          row.report_date >= week_start &&
+          row.report_date <= week_end &&
+          row.workers > 0 &&
+          brigadeNamesMatch(row.supervisor_name, brigadeName),
+      )
+      const days = new Set(brigadeDaily.map((row) => row.report_date)).size
+      const workersSum = brigadeDaily.reduce((sum, row) => sum + row.workers, 0)
+      const avgWorkers = days > 0 ? workersSum / days : null
+
+      const perWorker =
+        volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+
+      return {
+        week_start,
+        week_end,
+        volume_m3: volume,
+        avg_workers: avgWorkers != null ? Math.round(avgWorkers * 10) / 10 : null,
+        per_worker_m3: perWorker != null ? Math.round(perWorker * 10) / 10 : null,
+      } satisfies BrigadeWeeklyOutputPoint
+    })
+
+    // Линейная регрессия по неделям с данными (x — индекс недели).
+    const xs: number[] = []
+    const ys: number[] = []
+    points.forEach((point, index) => {
+      if (point.per_worker_m3 != null) {
+        xs.push(index)
+        ys.push(point.per_worker_m3)
+      }
+    })
+    let trend: BrigadeWeeklyOutputCard['trend'] = null
+    if (xs.length >= 2) {
+      const count = xs.length
+      const meanX = xs.reduce((sum, x) => sum + x, 0) / count
+      const meanY = ys.reduce((sum, y) => sum + y, 0) / count
+      const denominator = xs.reduce((sum, x) => sum + (x - meanX) ** 2, 0)
+      if (denominator > 0) {
+        const slope = xs.reduce((sum, x, i) => sum + (x - meanX) * (ys[i] - meanY), 0) / denominator
+        trend = { slope, intercept: meanY - slope * meanX }
+      }
+    }
+
+    const lastPoint = [...points].reverse().find((point) => point.per_worker_m3 != null)
+
+    return {
+      supervisor_name: brigadeName,
+      points,
+      trend,
+      last_per_worker_m3: lastPoint?.per_worker_m3 ?? null,
+    } satisfies BrigadeWeeklyOutputCard
+  })
+}
+
 export type AttentionEmployee = {
   ww_shift_id?: number
   employee_number: string

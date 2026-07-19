@@ -8,6 +8,7 @@ import { NoTelemetryPanel } from '../components/NoTelemetryPanel'
 import { NotWornEmployeeDetailDialog } from '../components/NotWornEmployeeDetailDialog'
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
+import { WeeklyOutputPanel } from '../components/WeeklyOutputPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
@@ -32,6 +33,7 @@ import {
   buildAvailableWeeksFromDates,
   loadBrigadeActivityDynamics,
   loadBrigadeVolumeDynamics,
+  loadBrigadeWeeklyOutput,
   loadBrigadeDaily,
   enrichBrigadeWeeklyWithShiftStats,
   loadBrigadeWeekly,
@@ -52,6 +54,7 @@ import {
   type BrigadeDailyRow,
   type BrigadeDynamicsCard,
   type BrigadeVolumeDynamicsCard,
+  type BrigadeWeeklyOutputCard,
   type BrigadeWeeklyRow,
   type AttentionEmployee,
   type IdleEpisode,
@@ -215,6 +218,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [weeklyVolumeTotals, setWeeklyVolumeTotals] = useState<Array<{ supervisor_name: string; week_m3: number | null }>>([])
   const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
   const [volumeDynamicsCards, setVolumeDynamicsCards] = useState<BrigadeVolumeDynamicsCard[]>([])
+  const [weeklyOutputCards, setWeeklyOutputCards] = useState<BrigadeWeeklyOutputCard[]>([])
   const [volumeEntries, setVolumeEntries] = useState<VolumeEntry[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
@@ -226,6 +230,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dynamicsError, setDynamicsError] = useState<string | null>(null)
   const [volumeDynamicsLoading, setVolumeDynamicsLoading] = useState(false)
   const [volumeDynamicsError, setVolumeDynamicsError] = useState<string | null>(null)
+  const [weeklyOutputLoading, setWeeklyOutputLoading] = useState(false)
+  const [weeklyOutputError, setWeeklyOutputError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
   const [notWornLoading, setNotWornLoading] = useState(false)
@@ -500,6 +506,30 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     }
 
     void loadVolumeDynamics()
+    return () => {
+      cancelled = true
+    }
+  }, [dynamicsDate, comparisonBrigades, metricSettingsLoaded])
+
+  useEffect(() => {
+    if (!dynamicsDate || !metricSettingsLoaded) return
+    let cancelled = false
+
+    async function loadWeeklyOutput() {
+      setWeeklyOutputLoading(true)
+      setWeeklyOutputError(null)
+      try {
+        const cards = await loadBrigadeWeeklyOutput(dynamicsDate)
+        if (cancelled) return
+        setWeeklyOutputCards(cards)
+      } catch (error) {
+        if (!cancelled) setWeeklyOutputError(getErrorMessage(error))
+      } finally {
+        if (!cancelled) setWeeklyOutputLoading(false)
+      }
+    }
+
+    void loadWeeklyOutput()
     return () => {
       cancelled = true
     }
@@ -1319,6 +1349,16 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
+
+        <h3 className="volumes-dynamics-title">Выработка на человека по неделям</h3>
+        {weeklyOutputLoading ? <div className="empty-state">Загружаем выработку по неделям...</div> : null}
+        {weeklyOutputError ? <div className="empty-state error-state">Ошибка: {weeklyOutputError}</div> : null}
+        {!weeklyOutputLoading && !weeklyOutputError && weeklyOutputCards.length > 0 ? (
+          <WeeklyOutputPanel
+            cards={weeklyOutputCards}
+            brigadeLayoutCount={comparisonBrigades.filter((name) => name.trim()).length}
+          />
+        ) : null}
       </CollapsibleBlock>
       ) : null}
 
