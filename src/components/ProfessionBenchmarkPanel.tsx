@@ -74,26 +74,24 @@ export function ProfessionBenchmarkPanel({ rows }: ProfessionBenchmarkPanelProps
 
   return (
     <div className="profession-benchmark">
-      <div className="filter-row">
-        <label className="filter-field">
-          <span>Профессия</span>
-          <select value={selectedProfession} onChange={(event) => setSelectedProfession(event.target.value)}>
-            <option value="">Выберите профессию</option>
-            {rows.map((row) => (
-              <option key={row.profession} value={row.profession}>
-                {row.profession}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <label className="profession-benchmark-select">
+        <span>Профессия</span>
+        <select value={selectedProfession} onChange={(event) => setSelectedProfession(event.target.value)}>
+          <option value="">Выберите профессию</option>
+          {rows.map((row) => (
+            <option key={row.profession} value={row.profession}>
+              {row.profession}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {selectedProfession && !found ? (
-        <div className="empty-state">Нет данных по профессии «{selectedProfession}».</div>
+        <div className="empty-state profession-benchmark-result">Нет данных по профессии «{selectedProfession}».</div>
       ) : null}
 
       {found ? (
-        <div className={brigadeLayoutClass('brigade-grid', 1)}>
+        <div className={`profession-benchmark-result ${brigadeLayoutClass('brigade-grid', 1)}`}>
           <BenchmarkCard row={found} />
         </div>
       ) : null}
