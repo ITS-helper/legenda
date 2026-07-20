@@ -3890,13 +3890,6 @@
   fill: color-mix(in srgb, var(--text-muted) 30%, transparent);
 }
 
-.weekly-output-trend {
-  stroke: var(--text-muted);
-  stroke-width: 2;
-  stroke-dasharray: 6 4;
-  fill: none;
-}
-
 .weekly-output-value {
   fill: var(--text-h);
   font-size: 11px;

@@ -293,6 +293,9 @@ function aggregateBrigadeDailyToWeekly(
         week_end: weekEnd,
         supervisor_name,
         days,
+        // brigade_daily_metrics_for_dates группирует по (день, бригада) и не хранит
+        // employee_number — уникальных подставляет enrichWeeklyUniqueEmployees ниже
+        // из посменных строк, которые для недельного письма и так загружаются.
         unique_employees: 0,
         avg_workers: days > 0 ? Math.round((workers / days) * 10) / 10 : 0,
         work_sec,
@@ -310,6 +313,24 @@ function aggregateBrigadeDailyToWeekly(
       } satisfies BrigadeWeeklyRow
     })
     .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
+}
+
+/** Считает unique_employees по посменным строкам недели (зеркалит фронтовый enrichBrigadeWeeklyWithShiftStats). */
+function enrichWeeklyUniqueEmployees(
+  weeklyRows: BrigadeWeeklyRow[],
+  shifts: Array<Pick<ShiftMetricRow, 'employee_number' | 'supervisor_name'>>,
+): BrigadeWeeklyRow[] {
+  const employeesByBrigade = new Map<string, Set<string>>()
+  for (const row of shifts) {
+    const supervisorName = row.supervisor_name ?? NO_SUPERVISOR
+    const employees = employeesByBrigade.get(supervisorName) ?? new Set<string>()
+    employees.add(row.employee_number)
+    employeesByBrigade.set(supervisorName, employees)
+  }
+  return weeklyRows.map((row) => ({
+    ...row,
+    unique_employees: employeesByBrigade.get(row.supervisor_name)?.size ?? row.unique_employees,
+  }))
 }
 
 function weeklyActivityPctFromDaily(
@@ -2239,8 +2260,14 @@ async function buildWeeklyHtml(
   const { data: dailyData, error } = await supabase!
     .rpc('brigade_daily_metrics_for_dates', { p_date_from: weekStart, p_date_to: weekEnd })
   if (error) throw error
+  const minActivityPct = await loadAnalyticsMinActivityPct(supabase)
+  const lowActivityPct = await loadLowActivityPct(supabase)
+  const weeklyShiftRows = await loadShiftRowsForRange(supabase, weekStart, weekEnd, minActivityPct)
   let brigades = filterRowsByBrigade(
-    aggregateBrigadeDailyToWeekly(weekStart, weekEnd, (dailyData ?? []) as BrigadeDailyRow[]),
+    enrichWeeklyUniqueEmployees(
+      aggregateBrigadeDailyToWeekly(weekStart, weekEnd, (dailyData ?? []) as BrigadeDailyRow[]),
+      weeklyShiftRows,
+    ),
     brigadeFilter,
   )
   if (!brigadeFilter) {
@@ -2302,9 +2329,6 @@ async function buildWeeklyHtml(
   const brigadeLabel = brigadeReportLabel(brigadeFilter)
   const brigadeSectionTitle = brigadeFilter ? `Бригада ${brigadeFilter}` : 'По бригадам за неделю'
 
-  const minActivityPct = await loadAnalyticsMinActivityPct(supabase)
-  const lowActivityPct = await loadLowActivityPct(supabase)
-  const weeklyShiftRows = await loadShiftRowsForRange(supabase, weekStart, weekEnd, minActivityPct)
   const lowActivityRows = filterLowActivityForReport(
     aggregateLowActivityWeekly(weeklyShiftRows, lowActivityPct),
     brigadeFilter,

@@ -9,7 +9,8 @@ type WeeklyOutputPanelProps = {
 const CHART_WIDTH = 320
 const CHART_HEIGHT = 132
 const PLOT_TOP = 18
-const PLOT_BOTTOM = CHART_HEIGHT - 22
+// Снизу — две строки подписи периода (начало и конец недели), поэтому запас больше.
+const PLOT_BOTTOM = CHART_HEIGHT - 30
 const PLOT_LEFT = 8
 const PLOT_RIGHT = CHART_WIDTH - 8
 
@@ -25,6 +26,10 @@ function formatWeekLabel(weekStart: string) {
   return `${day}.${month}`
 }
 
+function formatWeekRangeLabel(weekStart: string, weekEnd: string) {
+  return `${formatWeekLabel(weekStart)}–${formatWeekLabel(weekEnd)}`
+}
+
 function formatTrendBadge(trend: BrigadeWeeklyOutputCard['trend']) {
   if (!trend) return null
   const perWeek = Math.round(trend.slope * 10) / 10
@@ -38,7 +43,7 @@ function formatTrendBadge(trend: BrigadeWeeklyOutputCard['trend']) {
 }
 
 function pointTitle(point: BrigadeWeeklyOutputPoint) {
-  const week = `${formatWeekLabel(point.week_start)}–${formatWeekLabel(point.week_end)}`
+  const week = formatWeekRangeLabel(point.week_start, point.week_end)
   if (point.per_worker_m3 == null) {
     if (point.volume_m3 != null) return `Неделя ${week}: объём ${point.volume_m3} м³, нет данных о численности`
     return `Неделя ${week}: нет данных`
@@ -59,26 +64,6 @@ function OutputChart({ card }: { card: BrigadeWeeklyOutputCard }) {
 
   const xCenter = (index: number) => PLOT_LEFT + step * index + step / 2
   const yFor = (value: number) => PLOT_BOTTOM - (Math.max(0, value) / maxValue) * plotHeight
-
-  const lastDataIndex = points.reduce(
-    (acc, point, index) => (point.per_worker_m3 != null ? index : acc),
-    -1,
-  )
-
-  // Тренд рисуем от первой до последней недели с данными, обрезая по низу графика.
-  let trendLine: { x1: number; y1: number; x2: number; y2: number } | null = null
-  if (card.trend) {
-    const firstDataIndex = points.findIndex((point) => point.per_worker_m3 != null)
-    if (firstDataIndex >= 0 && lastDataIndex > firstDataIndex) {
-      const valueAt = (index: number) => card.trend!.intercept + card.trend!.slope * index
-      trendLine = {
-        x1: xCenter(firstDataIndex),
-        y1: Math.min(yFor(valueAt(firstDataIndex)), PLOT_BOTTOM),
-        x2: xCenter(lastDataIndex),
-        y2: Math.min(yFor(valueAt(lastDataIndex)), PLOT_BOTTOM),
-      }
-    }
-  }
 
   return (
     <svg
@@ -122,27 +107,20 @@ function OutputChart({ card }: { card: BrigadeWeeklyOutputCard }) {
                 <title>{pointTitle(point)}</title>
               </rect>
             )}
-            {index === lastDataIndex && value != null ? (
+            {value != null ? (
               <text x={xCenter(index)} y={yFor(value) - 5} className="weekly-output-value" textAnchor="middle">
                 {String(value).replace('.', ',')}
               </text>
             ) : null}
-            <text x={xCenter(index)} y={CHART_HEIGHT - 8} className="weekly-output-week" textAnchor="middle">
+            <text x={xCenter(index)} y={CHART_HEIGHT - 20} className="weekly-output-week" textAnchor="middle">
               {formatWeekLabel(point.week_start)}
+            </text>
+            <text x={xCenter(index)} y={CHART_HEIGHT - 9} className="weekly-output-week" textAnchor="middle">
+              {formatWeekLabel(point.week_end)}
             </text>
           </g>
         )
       })}
-
-      {trendLine ? (
-        <line
-          x1={trendLine.x1}
-          y1={trendLine.y1}
-          x2={trendLine.x2}
-          y2={trendLine.y2}
-          className="weekly-output-trend"
-        />
-      ) : null}
     </svg>
   )
 }

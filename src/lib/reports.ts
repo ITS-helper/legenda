@@ -492,17 +492,25 @@ export function enrichBrigadeWeeklyWithShiftStats(
   shifts: ShiftMetricRow[],
 ): BrigadeWeeklyRow[] {
   const kppByBrigade = new Map<string, number>()
+  // brigade_daily_metrics_for_dates группирует по (день, бригада) и не хранит
+  // employee_number, поэтому unique_employees посчитать оттуда нельзя — берём
+  // из уже загруженных посменных строк (тот же shifts, что и для kpp выше).
+  const employeesByBrigade = new Map<string, Set<string>>()
 
   for (const row of shifts) {
     const supervisorName = row.supervisor_name ?? NO_SUPERVISOR
     if (row.kpp_sec_total > 0) {
       kppByBrigade.set(supervisorName, (kppByBrigade.get(supervisorName) ?? 0) + 1)
     }
+    const employees = employeesByBrigade.get(supervisorName) ?? new Set<string>()
+    employees.add(row.employee_number)
+    employeesByBrigade.set(supervisorName, employees)
   }
 
   return weeklyRows.map((row) => ({
     ...row,
     kpp_shifts: kppByBrigade.get(row.supervisor_name) ?? row.kpp_shifts,
+    unique_employees: employeesByBrigade.get(row.supervisor_name)?.size ?? row.unique_employees,
   }))
 }
 
