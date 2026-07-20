@@ -9,6 +9,7 @@ import { NotWornEmployeeDetailDialog } from '../components/NotWornEmployeeDetail
 import { TopActivityPanel } from '../components/TopActivityPanel'
 import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { WeeklyOutputPanel } from '../components/WeeklyOutputPanel'
+import { ProfessionBenchmarkPanel } from '../components/ProfessionBenchmarkPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
@@ -41,6 +42,7 @@ import {
   loadIdleEpisodes,
   loadAllShiftRowsForDate,
   loadNotWornEmployees,
+  loadProfessionBenchmark as loadProfessionBenchmarkData,
   loadShiftRows,
   loadShiftRowsForRange,
   loadZoneDailyBundle,
@@ -55,6 +57,7 @@ import {
   type BrigadeDynamicsCard,
   type BrigadeVolumeDynamicsCard,
   type BrigadeWeeklyOutputCard,
+  type ProfessionBenchmarkRow,
   type BrigadeWeeklyRow,
   type AttentionEmployee,
   type IdleEpisode,
@@ -219,6 +222,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [dynamicsCards, setDynamicsCards] = useState<BrigadeDynamicsCard[]>([])
   const [volumeDynamicsCards, setVolumeDynamicsCards] = useState<BrigadeVolumeDynamicsCard[]>([])
   const [weeklyOutputCards, setWeeklyOutputCards] = useState<BrigadeWeeklyOutputCard[]>([])
+  const [professionBenchmarkRows, setProfessionBenchmarkRows] = useState<ProfessionBenchmarkRow[]>([])
   const [volumeEntries, setVolumeEntries] = useState<VolumeEntry[]>([])
 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
@@ -232,6 +236,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [volumeDynamicsError, setVolumeDynamicsError] = useState<string | null>(null)
   const [weeklyOutputLoading, setWeeklyOutputLoading] = useState(false)
   const [weeklyOutputError, setWeeklyOutputError] = useState<string | null>(null)
+  const [professionBenchmarkLoading, setProfessionBenchmarkLoading] = useState(false)
+  const [professionBenchmarkError, setProfessionBenchmarkError] = useState<string | null>(null)
   const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
   const [notWornLoading, setNotWornLoading] = useState(false)
@@ -318,6 +324,29 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       cancelled = true
     }
   }, [selectedDate, password])
+
+  useEffect(() => {
+    if (!selectedDate) return
+    let cancelled = false
+
+    async function loadProfessionBenchmark() {
+      setProfessionBenchmarkLoading(true)
+      setProfessionBenchmarkError(null)
+      try {
+        const rows = await loadProfessionBenchmarkData(selectedDate)
+        if (!cancelled) setProfessionBenchmarkRows(rows)
+      } catch (error) {
+        if (!cancelled) setProfessionBenchmarkError(getErrorMessage(error))
+      } finally {
+        if (!cancelled) setProfessionBenchmarkLoading(false)
+      }
+    }
+
+    void loadProfessionBenchmark()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate])
 
   useEffect(() => {
     if (!selectedDate || !showBlock1 || !showBlock1NotWorn || allShiftRows.length === 0) {
@@ -1473,6 +1502,22 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : null}
       </CollapsibleBlock>
       ) : null}
+
+      {/* ЭТАЛОННЫЕ ЗНАЧЕНИЯ ПО ПРОФЕССИЯМ */}
+      <CollapsibleBlock
+        id="dashboard-block-profession-benchmark"
+        title="Эталонные значения по профессиям"
+        description="Топ-3 сотрудника по активности в выбранной профессии за весь период, усреднённые по метрикам. Если сотрудников в профессии меньше трёх, берутся все, что есть."
+        defaultOpen={false}
+      >
+        {professionBenchmarkLoading ? <div className="empty-state">Загружаем эталоны по профессиям...</div> : null}
+        {professionBenchmarkError ? (
+          <div className="empty-state error-state">Ошибка: {professionBenchmarkError}</div>
+        ) : null}
+        {!professionBenchmarkLoading && !professionBenchmarkError ? (
+          <ProfessionBenchmarkPanel rows={professionBenchmarkRows} />
+        ) : null}
+      </CollapsibleBlock>
 
       <NotWornEmployeeDetailDialog
         employee={selectedDetailEmployee}

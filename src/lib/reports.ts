@@ -1409,3 +1409,46 @@ export async function loadIdleEpisodes(reportDate: string) {
     .sort((left, right) => right.duration_min - left.duration_min)
     .filter((row) => isAnalyticsSupervisor(row.supervisor_name)) satisfies IdleEpisode[]
 }
+
+export type ProfessionBenchmarkRow = {
+  profession: string
+  employeesUsed: number
+  activityPct: number
+  weakActivityPct: number
+  longIdlePct: number
+  goPct: number
+}
+
+type ProfessionBenchmarkRpcRow = {
+  profession: string
+  employees_used: number
+  activity_pct: number
+  weak_activity_pct: number
+  long_idle_pct: number
+  go_pct: number
+}
+
+/**
+ * Эталон по профессии: топ-3 сотрудника по активности за весь период (от начала
+ * данных по reportDate включительно), усреднённые по метрикам. Если сотрудников
+ * в профессии меньше трёх — берутся все, что есть (employeesUsed отражает сколько).
+ */
+export async function loadProfessionBenchmark(reportDate: string) {
+  const { data, error } = await supabase
+    .schema('analytics')
+    .rpc('profession_benchmark_for_date', { p_report_date: reportDate })
+
+  if (error) throw error
+
+  return ((data ?? []) as ProfessionBenchmarkRpcRow[]).map(
+    (row) =>
+      ({
+        profession: row.profession,
+        employeesUsed: Number(row.employees_used),
+        activityPct: Number(row.activity_pct),
+        weakActivityPct: Number(row.weak_activity_pct),
+        longIdlePct: Number(row.long_idle_pct),
+        goPct: Number(row.go_pct),
+      }) satisfies ProfessionBenchmarkRow,
+  )
+}
