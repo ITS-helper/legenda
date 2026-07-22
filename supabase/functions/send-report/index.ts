@@ -1967,6 +1967,185 @@ async function loadBrigadeWeeklyVolumeDynamics(
   })
 }
 
+// ── Выработка на человека по неделям ──────────────────────────────────────────
+const WEEKLY_OUTPUT_WEEKS = 8
+
+type BrigadeWeeklyOutputPoint = {
+  week_start: string
+  week_end: string
+  volume_m3: number | null
+  avg_workers: number | null
+  per_worker_m3: number | null
+}
+
+type BrigadeWeeklyOutputCard = {
+  supervisor_name: string
+  points: BrigadeWeeklyOutputPoint[]
+  trend: { slope: number } | null
+  last_per_worker_m3: number | null
+}
+
+/** 8 недель по weekStart включительно (weekStart — уже завершённая неделя отчёта). */
+async function loadBrigadeWeeklyOutput(
+  supabase: ReturnType<typeof getAdminClient>,
+  weekStart: string,
+  comparisonBrigades: string[],
+): Promise<BrigadeWeeklyOutputCard[]> {
+  const weeks = Array.from({ length: WEEKLY_OUTPUT_WEEKS }, (_, index) => {
+    const week_start = addDaysIso(weekStart, -7 * (WEEKLY_OUTPUT_WEEKS - 1 - index))
+    return { week_start, week_end: addDaysIso(week_start, 6) }
+  })
+  const rangeFrom = weeks[0].week_start
+  const rangeTo = weeks[weeks.length - 1].week_end
+
+  const [volumeResult, headcountResult] = await Promise.all([
+    supabase!
+      .from('volume_entries')
+      .select('report_date, label, value_text')
+      .gte('report_date', rangeFrom)
+      .lte('report_date', rangeTo),
+    supabase!.rpc('brigade_daily_headcount', { p_date_from: rangeFrom, p_date_to: rangeTo }),
+  ])
+  if (volumeResult.error) throw volumeResult.error
+  if (headcountResult.error) throw headcountResult.error
+
+  const volumeRows = (volumeResult.data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+  const dailyRows = ((headcountResult.data ?? []) as Array<{
+    report_date: string
+    supervisor_name: string
+    workers: number
+  }>).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    supervisor_name: row.supervisor_name,
+    workers: Number(row.workers) || 0,
+  }))
+
+  return comparisonBrigades.map((brigadeName) => {
+    const points = weeks.map(({ week_start, week_end }) => {
+      const volume = sumBrigadeVolumeForDates(volumeRows, brigadeName, listDatesInclusive(week_start, week_end))
+      const brigadeDaily = dailyRows.filter(
+        (row) =>
+          row.report_date >= week_start &&
+          row.report_date <= week_end &&
+          row.workers > 0 &&
+          brigadeNamesMatch(row.supervisor_name, brigadeName),
+      )
+      const days = new Set(brigadeDaily.map((row) => row.report_date)).size
+      const workersSum = brigadeDaily.reduce((sum, row) => sum + row.workers, 0)
+      const avgWorkers = days > 0 ? workersSum / days : null
+      const perWorker = volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+      return {
+        week_start,
+        week_end,
+        volume_m3: volume,
+        avg_workers: avgWorkers != null ? Math.round(avgWorkers * 10) / 10 : null,
+        per_worker_m3: perWorker != null ? Math.round(perWorker * 10) / 10 : null,
+      } satisfies BrigadeWeeklyOutputPoint
+    })
+
+    const xs: number[] = []
+    const ys: number[] = []
+    points.forEach((point, index) => {
+      if (point.per_worker_m3 != null) {
+        xs.push(index)
+        ys.push(point.per_worker_m3)
+      }
+    })
+    let trend: BrigadeWeeklyOutputCard['trend'] = null
+    if (xs.length >= 2) {
+      const count = xs.length
+      const meanX = xs.reduce((sum, x) => sum + x, 0) / count
+      const meanY = ys.reduce((sum, y) => sum + y, 0) / count
+      const denominator = xs.reduce((sum, x) => sum + (x - meanX) ** 2, 0)
+      if (denominator > 0) {
+        trend = { slope: xs.reduce((sum, x, i) => sum + (x - meanX) * (ys[i] - meanY), 0) / denominator }
+      }
+    }
+
+    const lastPoint = [...points].reverse().find((point) => point.per_worker_m3 != null)
+    return {
+      supervisor_name: brigadeName,
+      points,
+      trend,
+      last_per_worker_m3: lastPoint?.per_worker_m3 ?? null,
+    } satisfies BrigadeWeeklyOutputCard
+  })
+}
+
+function formatPerWorkerM3(value: number | null) {
+  if (value == null) return '—'
+  const rounded = Math.round(value * 10) / 10
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace('.', ',')
+  return `${text} м³/чел`
+}
+
+function weeklyOutputTrendText(trend: BrigadeWeeklyOutputCard['trend']) {
+  if (!trend) return null
+  const perWeek = Math.round(trend.slope * 10) / 10
+  if (perWeek === 0) return { text: 'тренд: без изменений', color: COLORS.textMuted }
+  const sign = perWeek > 0 ? '+' : ''
+  const text = Number.isInteger(perWeek) ? String(perWeek) : perWeek.toFixed(1).replace('.', ',')
+  return {
+    text: `тренд: ${sign}${text} м³/чел в неделю`,
+    color: perWeek > 0 ? COLORS.brand : COLORS.alert,
+  }
+}
+
+function weeklyOutputCardHtml(card: BrigadeWeeklyOutputCard) {
+  const trend = weeklyOutputTrendText(card.trend)
+  const sparkline = buildDynamicsSparklineEmail(
+    card.points.map((point) => ({ report_date: point.week_start, value: point.per_worker_m3 })),
+    {
+      maxValue: Number.MAX_SAFE_INTEGER,
+      formatAxisValue: (value) => formatPerWorkerM3(value),
+      fewDataLabel: 'Мало данных за 8 недель',
+    },
+  )
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border:1px solid ${COLORS.border};border-radius:20px;background:${COLORS.surface};border-collapse:separate;">
+    <tr><td style="padding:20px;">
+      <div style="font-size:18px;font-weight:700;color:${COLORS.textH};margin-bottom:4px;">${escapeHtml(card.supervisor_name)}</div>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;color:${COLORS.textMuted};margin-bottom:16px;">Выработка на человека</div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-radius:16px;background:${COLORS.surface2};margin-bottom:16px;">
+        <tr>
+          <td valign="top" style="padding:16px 12px 16px 16px;">
+            <div style="color:${COLORS.textMuted};font-size:12px;letter-spacing:0.06em;margin-bottom:6px;text-transform:uppercase;">Последняя неделя</div>
+            <div style="font-size:32px;line-height:1;font-weight:700;color:${COLORS.textH};">${formatPerWorkerM3(card.last_per_worker_m3)}</div>
+          </td>
+          ${
+            trend
+              ? `<td align="right" valign="top" style="padding:16px 16px 16px 12px;">
+            <div style="font-weight:700;font-size:14px;color:${trend.color};">${escapeHtml(trend.text)}</div>
+          </td>`
+              : ''
+          }
+        </tr>
+      </table>
+      ${sparkline}
+    </td></tr>
+  </table>`
+}
+
+function weeklyOutputBlock(cards: BrigadeWeeklyOutputCard[]) {
+  const withData = cards.filter((card) => card.points.some((point) => point.per_worker_m3 != null))
+  if (withData.length === 0) return ''
+
+  const rows = isHorizontalBrigadeLayout(withData.length)
+    ? withData.map((card) => `<tr><td style="padding:0 0 12px;">${weeklyOutputCardHtml(card)}</td></tr>`).join('')
+    : pairedCardsEmailRows(withData.map((card) => weeklyOutputCardHtml(card)))
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin-top:20px;">
+    <tr><td>
+      <h3 style="margin:0 0 12px;color:${COLORS.textH};font-size:16px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">Выработка на человека по неделям</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">${rows}</table>
+    </td></tr>
+  </table>`
+}
+
 function dynamicsPdfCards(
   cards: BrigadeDynamicsCard[],
   options: { comparePrefix: string; emptyCompare: string },
@@ -2009,6 +2188,26 @@ function volumeDynamicsPdfCards(
     })),
     sparklineTitle,
   }))
+}
+
+function weeklyOutputPdfCards(cards: BrigadeWeeklyOutputCard[]) {
+  return cards
+    .filter((card) => card.points.some((point) => point.per_worker_m3 != null))
+    .map((card) => {
+      const trend = weeklyOutputTrendText(card.trend)
+      return {
+        name: card.supervisor_name,
+        value: formatPerWorkerM3(card.last_per_worker_m3),
+        delta: '',
+        compare: trend ? capitalizeCompareLabel(trend.text) : 'Последняя неделя',
+        sparkline: card.points.map((point) => ({
+          label: ruShort(point.week_start),
+          value: point.per_worker_m3 ?? 0,
+          empty: point.per_worker_m3 == null,
+        })),
+        sparklineTitle: '8 недель',
+      }
+    })
 }
 
 function personPdfRows(rows: Array<{ full_name: string; employee_number?: string; supervisor_name?: string | null; activity_pct?: number; kpp_time?: string }>, mode: 'activity' | 'kpp') {
@@ -2289,6 +2488,11 @@ async function buildWeeklyHtml(
         brigadeFilter,
       )
     : []
+  const weeklyOutput = blocks.block5
+    ? (await loadBrigadeWeeklyOutput(supabase, weekStart, comparisonBrigades)).filter((card) =>
+        brigadeFilter ? brigadeNamesMatch(card.supervisor_name, brigadeFilter) : true,
+      )
+    : []
   const zoneRowsByBrigade = blocks.block4
     ? await loadZoneRowsByBrigade(supabase, weekStart, weekEndResolved, zoneVisibility)
     : new Map<string, ZoneRow[]>()
@@ -2335,6 +2539,9 @@ async function buildWeeklyHtml(
     comparisonBrigades,
   )
 
+  // Порядок блоков недельного письма:
+  // 1 По бригадам · 2 Динамика активности · 3 Динамика объёмов ·
+  // 4 Выработка на человека · 5 Требуют внимания · 6 Местоположение и простои.
   const htmlParts: string[] = []
   if (blocks.block2) {
     const metricCells = [
@@ -2357,7 +2564,6 @@ async function buildWeeklyHtml(
       metricsGrid([metricCells]),
       `<h3 style="margin:28px 0 14px;color:${COLORS.textH};font-size:16px;">${brigadeSectionTitle}</h3>`,
       brigadeCardsEmailWeekly(brigades, blocks.block5 ? volumeDynamics : []),
-      attentionBlock(lowActivityRows, 'за неделю', lowActivityPct),
     )
   }
   if (blocks.block3) {
@@ -2378,7 +2584,11 @@ async function buildWeeklyHtml(
         emptyCompare: 'нет данных за прошлую неделю',
         sparklineTitle: `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
       }),
+      weeklyOutputBlock(weeklyOutput),
     )
+  }
+  if (blocks.block2) {
+    htmlParts.push(attentionBlock(lowActivityRows, 'за неделю', lowActivityPct))
   }
   if (blocks.block4) {
     htmlParts.push(
@@ -2404,6 +2614,7 @@ async function buildWeeklyHtml(
     reportEssence: REPORT_ESSENCE_WEEKLY,
     reportObjectName: REPORT_OBJECT_NAME,
     subtitle: `Неделя ${ruShort(weekStart)} — ${ruShort(weekEnd)}${brigadeLabel}`,
+    weeklyLayout: true,
     singlePage: true,
   }
 
@@ -2454,6 +2665,9 @@ async function buildWeeklyHtml(
       },
       `Дни недели ${ruShort(weekStart)} — ${ruShort(weekEnd)}`,
     )
+    pdfPayload.weeklyOutputTitle = 'Выработка на человека по неделям'
+    pdfPayload.weeklyOutputPeriodLabel = 'По неделям'
+    pdfPayload.weeklyOutputCards = weeklyOutputPdfCards(weeklyOutput)
   }
   if (blocks.block4) {
     Object.assign(

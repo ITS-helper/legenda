@@ -68,6 +68,16 @@ export type ReportPdfPayload = {
     sparkline: Array<{ label: string; value: number; empty?: boolean }>
     sparklineTitle?: string
   }>
+  weeklyOutputTitle?: string
+  weeklyOutputPeriodLabel?: string
+  weeklyOutputCards?: Array<{
+    name: string
+    value: string
+    delta: string
+    compare: string
+    sparkline: Array<{ label: string; value: number; empty?: boolean }>
+    sparklineTitle?: string
+  }>
   zonesTitle: string
   zonesBrigadeSections: BrigadeZonesPdfSection[]
   attentionSection?: {
@@ -77,6 +87,8 @@ export type ReportPdfPayload = {
     emptyText: string
   }
   dynamicsBeforeBrigades?: boolean
+  /** Недельный порядок: бригады → активность → объёмы → выработка → внимание → зоны. */
+  weeklyLayout?: boolean
   singlePage?: boolean
 }
 
@@ -1205,6 +1217,20 @@ function attentionSectionHeight(section?: ReportPdfPayload['attentionSection']) 
 function estimateReportPdfHeight(payload: ReportPdfPayload) {
   let height = MARGIN + 85 + 24 + metricGridHeight(payload.metrics, payload.metricsColumns ?? 3)
 
+  if (payload.weeklyLayout) {
+    height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
+    height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
+    if (payload.volumeDynamicsCards?.length) {
+      height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.volumeDynamicsCards.length)
+    }
+    if (payload.weeklyOutputCards?.length) {
+      height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.weeklyOutputCards.length)
+    }
+    height += attentionSectionHeight(payload.attentionSection)
+    height += sectionTitleHeight(18) + zonesBrigadeMatrixHeight(payload.zonesBrigadeSections)
+    return Math.max(PAGE_HEIGHT, Math.ceil(height))
+  }
+
   if (payload.dynamicsBeforeBrigades) {
     height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.dynamicsCards.length)
     height += sectionTitleHeight(14) + brigadeBlockHeight(payload.brigadeCards.length)
@@ -1235,6 +1261,39 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
 
   writer.brandedHeader(payload.reportEssence, payload.reportObjectName, payload.subtitle)
   writer.metricGrid(payload.metrics, payload.metricsColumns ?? 3)
+
+  if (payload.weeklyLayout) {
+    // Бригады → Динамика активности → Динамика объёмов → Выработка → Внимание → Зоны.
+    writer.sectionTitle(payload.brigadeSectionTitle, 14, brigadeBlockHeight(payload.brigadeCards.length))
+    writer.brigadeDashboardCards(payload.brigadeCards)
+    writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))
+    writer.dynamicsCards(payload.dynamicsCards, payload.dynamicsPeriodLabel)
+    if (payload.volumeDynamicsCards?.length) {
+      writer.sectionTitle(
+        payload.volumeDynamicsTitle ?? 'Динамика выполненных объёмов',
+        16,
+        dynamicsBlockHeight(payload.volumeDynamicsCards.length),
+      )
+      writer.dynamicsCards(payload.volumeDynamicsCards, payload.volumeDynamicsPeriodLabel ?? 'За неделю')
+    }
+    if (payload.weeklyOutputCards?.length) {
+      writer.sectionTitle(
+        payload.weeklyOutputTitle ?? 'Выработка на человека по неделям',
+        16,
+        dynamicsBlockHeight(payload.weeklyOutputCards.length),
+      )
+      writer.dynamicsCards(payload.weeklyOutputCards, payload.weeklyOutputPeriodLabel ?? 'По неделям')
+    }
+    if (payload.attentionSection) {
+      writer.attentionSection(payload.attentionSection)
+    }
+    if (!singlePage) {
+      writer.newPage()
+    }
+    writer.sectionTitle(payload.zonesTitle, 14)
+    writer.zonesBrigadeMatrix(payload.zonesBrigadeSections)
+    return new Uint8Array(await doc.save())
+  }
 
   if (payload.dynamicsBeforeBrigades) {
     writer.sectionTitle(payload.dynamicsTitle, 16, dynamicsBlockHeight(payload.dynamicsCards.length))

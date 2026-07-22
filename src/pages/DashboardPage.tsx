@@ -31,6 +31,7 @@ import {
   formatWeekRange,
   getShiftActivityPercents,
   loadAvailableDates,
+  addDaysIso,
   buildAvailableWeeksFromDates,
   loadBrigadeActivityDynamics,
   loadBrigadeVolumeDynamics,
@@ -541,14 +542,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   }, [dynamicsDate, comparisonBrigades, metricSettingsLoaded])
 
   useEffect(() => {
-    if (!dynamicsDate || !metricSettingsLoaded) return
+    if (!selectedWeek || !metricSettingsLoaded) return
     let cancelled = false
 
     async function loadWeeklyOutput() {
       setWeeklyOutputLoading(true)
       setWeeklyOutputError(null)
       try {
-        const cards = await loadBrigadeWeeklyOutput(dynamicsDate)
+        // Референс — конец выбранной недели: 8 недель по неё включительно.
+        const cards = await loadBrigadeWeeklyOutput(addDaysIso(selectedWeek, 6))
         if (cancelled) return
         setWeeklyOutputCards(cards)
       } catch (error) {
@@ -562,7 +564,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     return () => {
       cancelled = true
     }
-  }, [dynamicsDate, comparisonBrigades, metricSettingsLoaded])
+  }, [selectedWeek, comparisonBrigades, metricSettingsLoaded])
 
   const visibleDailyRows = useMemo(
     () => filterComparisonBrigades(dailyRows, comparisonBrigades),
@@ -1183,6 +1185,20 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             benchmarkByProfession={benchmarkByProfession}
           />
         ) : null}
+
+        {selectedWeek && !weeklyLoading && !weeklyError && visibleWeeklyRows.length > 0 ? (
+          <>
+            <h3 className="volumes-dynamics-title">Выработка на человека по неделям</h3>
+            {weeklyOutputLoading ? <div className="empty-state">Загружаем выработку по неделям...</div> : null}
+            {weeklyOutputError ? <div className="empty-state error-state">Ошибка: {weeklyOutputError}</div> : null}
+            {!weeklyOutputLoading && !weeklyOutputError && weeklyOutputCards.length > 0 ? (
+              <WeeklyOutputPanel
+                cards={weeklyOutputCards}
+                brigadeLayoutCount={comparisonBrigades.filter((name) => name.trim()).length}
+              />
+            ) : null}
+          </>
+        ) : null}
       </CollapsibleBlock>
       ) : null}
 
@@ -1384,16 +1400,6 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ) : (
           <div className="empty-state">Выберите дату.</div>
         )}
-
-        <h3 className="volumes-dynamics-title">Выработка на человека по неделям</h3>
-        {weeklyOutputLoading ? <div className="empty-state">Загружаем выработку по неделям...</div> : null}
-        {weeklyOutputError ? <div className="empty-state error-state">Ошибка: {weeklyOutputError}</div> : null}
-        {!weeklyOutputLoading && !weeklyOutputError && weeklyOutputCards.length > 0 ? (
-          <WeeklyOutputPanel
-            cards={weeklyOutputCards}
-            brigadeLayoutCount={comparisonBrigades.filter((name) => name.trim()).length}
-          />
-        ) : null}
       </CollapsibleBlock>
       ) : null}
 
