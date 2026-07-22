@@ -610,6 +610,10 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
   const lowActivityDaily = useMemo(() => filterLowActivityDaily(shiftRows), [shiftRows])
   const lowActivityWeekly = useMemo(() => aggregateLowActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
+  const benchmarkByProfession = useMemo(
+    () => new Map(professionBenchmarkRows.map((row) => [row.profession, row.activityPct])),
+    [professionBenchmarkRows],
+  )
   const topDaily = useMemo(() => topActivityDaily(shiftRows), [shiftRows])
   const topWeekly = useMemo(() => topActivityWeekly(weeklyShiftRows), [weeklyShiftRows])
 
@@ -967,6 +971,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               emptyMessage={`Нет сотрудников с активностью ниже ${settings.lowActivityPct}% за этот день.`}
               periodLabel="за день"
               lowActivityPct={settings.lowActivityPct}
+              benchmarkByProfession={benchmarkByProfession}
               onSelect={openLowActivityDetail}
             />
             ) : null}
@@ -1175,6 +1180,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             emptyMessage={`Нет сотрудников со средней активностью ниже ${settings.lowActivityPct}% за неделю.`}
             periodLabel="за неделю"
             lowActivityPct={settings.lowActivityPct}
+            benchmarkByProfession={benchmarkByProfession}
           />
         ) : null}
       </CollapsibleBlock>

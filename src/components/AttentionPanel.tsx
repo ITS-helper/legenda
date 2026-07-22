@@ -9,6 +9,8 @@ type AttentionPanelProps = {
   emptyMessage: string
   periodLabel: string
   lowActivityPct: number
+  /** Эталонная активность по профессии (топ-3 за период) — для подписи «эталон: X%». */
+  benchmarkByProfession?: Map<string, number>
   /** Если передан — строки кликабельны и открывают детализацию смены (только для дневного списка). */
   onSelect?: (employee: AttentionEmployee) => void
 }
@@ -21,6 +23,7 @@ export function AttentionPanel({
   emptyMessage,
   periodLabel,
   lowActivityPct,
+  benchmarkByProfession,
   onSelect,
 }: AttentionPanelProps) {
   return (
@@ -60,13 +63,20 @@ export function AttentionPanel({
                       <div className="kpp-list">
                         {brigadeEmployees.map((employee) => {
                           const key = `${employee.employee_number}-${employee.full_name}`
+                          const profession = employee.profession?.trim()
+                          const benchmark = profession ? benchmarkByProfession?.get(profession) : undefined
                           const content = (
                             <>
                               <div className="kpp-main">
                                 <strong>{employee.full_name}</strong>
-                                <span>{employee.profession?.trim() || '—'} · #{employee.employee_number}</span>
+                                <span>{profession || '—'} · #{employee.employee_number}</span>
                               </div>
-                              <div className="kpp-time">{formatPercent(employee.activity_pct)}</div>
+                              <div className="kpp-time">
+                                {formatPercent(employee.activity_pct)}
+                                {benchmark != null ? (
+                                  <span className="kpp-time-secondary">эталон: {formatPercent(benchmark)}</span>
+                                ) : null}
+                              </div>
                             </>
                           )
 
