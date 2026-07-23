@@ -1572,6 +1572,8 @@ function sparklineBarHeightPx(
 type DynamicsSparklineEmailPoint = {
   report_date: string
   value: number | null
+  /** Своя подпись под столбцом (может содержать <br>); по умолчанию — ruShort(report_date). */
+  label?: string
 }
 
 function buildDynamicsSparklineEmail(
@@ -1612,7 +1614,7 @@ function buildDynamicsSparklineEmail(
           <tr><td height="${spacerHeight}" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
           <tr><td height="${barHeight}" style="height:${barHeight}px;background-color:${barColor};border-radius:4px 4px 0 0;font-size:0;line-height:0;mso-line-height-rule:exactly;overflow:hidden;">&nbsp;</td></tr>
         </table>
-        <div style="font-size:9px;line-height:1.2;color:${isReference ? COLORS.brand : COLORS.textMuted};${isReference ? 'font-weight:700;' : ''}margin-top:5px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${ruShort(point.report_date)}</div>
+        <div style="font-size:9px;line-height:1.2;color:${isReference ? COLORS.brand : COLORS.textMuted};${isReference ? 'font-weight:700;' : ''}margin-top:5px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${point.label ?? ruShort(point.report_date)}</div>
       </td>`
     })
     .join('')
@@ -2098,7 +2100,12 @@ function weeklyOutputTrendText(trend: BrigadeWeeklyOutputCard['trend']) {
 function weeklyOutputCardHtml(card: BrigadeWeeklyOutputCard) {
   const trend = weeklyOutputTrendText(card.trend)
   const sparkline = buildDynamicsSparklineEmail(
-    card.points.map((point) => ({ report_date: point.week_start, value: point.per_worker_m3 })),
+    card.points.map((point) => ({
+      report_date: point.week_start,
+      value: point.per_worker_m3,
+      // Период недели в две строки (начало / конец), а не одна дата.
+      label: `${ruShort(point.week_start)}<br>${ruShort(point.week_end)}`,
+    })),
     {
       maxValue: Number.MAX_SAFE_INTEGER,
       formatAxisValue: (value) => formatPerWorkerM3(value),
@@ -2201,7 +2208,7 @@ function weeklyOutputPdfCards(cards: BrigadeWeeklyOutputCard[]) {
         delta: '',
         compare: trend ? capitalizeCompareLabel(trend.text) : 'Последняя неделя',
         sparkline: card.points.map((point) => ({
-          label: ruShort(point.week_start),
+          label: `${ruShort(point.week_start)}\n${ruShort(point.week_end)}`,
           value: point.per_worker_m3 ?? 0,
           empty: point.per_worker_m3 == null,
         })),

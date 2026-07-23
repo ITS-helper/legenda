@@ -712,11 +712,15 @@ class PdfWriter {
         borderWidth: 0,
       })
 
-      const label = pdfText(point.label)
       const labelSize = 5
-      const labelWidth = this.font.widthOfTextAtSize(label, labelSize)
-      const labelLeft = barLeft + Math.max(0, (barWidth - labelWidth) / 2)
-      this.text(label, labelLeft, top + chartHeight + 4, labelSize, isLast ? C.brand : C.textMuted)
+      const labelColor = isLast ? C.brand : C.textMuted
+      // Подпись может быть в две строки (период недели): «13.07\n19.07».
+      point.label.split('\n').forEach((line, lineIndex) => {
+        const text = pdfText(line)
+        const lineWidth = this.font.widthOfTextAtSize(text, labelSize)
+        const lineLeft = barLeft + Math.max(0, (barWidth - lineWidth) / 2)
+        this.text(text, lineLeft, top + chartHeight + 4 + lineIndex * 6, labelSize, labelColor)
+      })
       offset += barWidth + gap
     }
 
