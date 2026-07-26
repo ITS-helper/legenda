@@ -12,6 +12,8 @@
     "sync:drive": "node scripts/sync-drive-reports.mjs",
     "backfill:drive": "node scripts/backfill-drive-reports.mjs",
     "inspect:report": "node scripts/inspect-report-headers.mjs",
+    "preview:report-chart": "node --experimental-transform-types --import ./scripts/lib/register-deno-npm.mjs scripts/preview-output-activity.mjs",
+    "preview:weekly": "node --experimental-transform-types --import ./scripts/lib/register-deno-npm.mjs scripts/preview-weekly-report.mjs",
     "db:migrate": "node scripts/apply-migration.mjs",
     "setup:report-cron": "node scripts/setup-report-cron.mjs"
   },
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -33,6 +36,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.22.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"

@@ -22,6 +22,12 @@ import {
   type ZoneRow,
 } from './zones.ts'
 import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
+import {
+  hasOutputActivityChart,
+  trimEmptyOutputActivityWeeks,
+  type OutputActivityCard,
+  type OutputActivityPoint,
+} from './outputActivityChart.ts'
 
 type ReportType = 'daily' | 'weekly'
 type ReportAudience = 'managers' | 'foremen'
@@ -891,7 +897,8 @@ function escapeHtml(value: string) {
 
 const EMAIL_LAYOUT_WIDTH = 720
 
-function wrapEmailHtml(innerHtml: string) {
+// export — чтобы локальный предпросмотр (scripts/preview-weekly-report.mjs) собирал письмо целиком.
+export function wrapEmailHtml(innerHtml: string) {
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -2153,6 +2160,109 @@ function weeklyOutputBlock(cards: BrigadeWeeklyOutputCard[]) {
   </table>`
 }
 
+// ── Активность и выработка по неделям с начала проекта ────────────────────────
+/** Сколько недель максимум показываем в графике, чтобы письмо не разрасталось. */
+const OUTPUT_ACTIVITY_MAX_WEEKS = 26
+
+/**
+ * Недели со старта проекта (первый день с данными) по weekStart включительно:
+ * активность из лёгкого RPC brigade_weekly_activity и выработка на человека.
+ */
+async function loadBrigadeOutputActivity(
+  supabase: ReturnType<typeof getAdminClient>,
+  weekStart: string,
+  comparisonBrigades: string[],
+): Promise<OutputActivityCard[]> {
+  const searchFrom = addDaysIso(weekStart, -7 * (OUTPUT_ACTIVITY_MAX_WEEKS - 1))
+  const weekEnd = addDaysIso(weekStart, 6)
+
+  const [activityResult, volumeResult, headcountResult] = await Promise.all([
+    supabase!.rpc('brigade_weekly_activity', { p_date_from: searchFrom, p_date_to: weekEnd }),
+    supabase!
+      .from('volume_entries')
+      .select('report_date, label, value_text')
+      .gte('report_date', searchFrom)
+      .lte('report_date', weekEnd),
+    supabase!.rpc('brigade_daily_headcount', { p_date_from: searchFrom, p_date_to: weekEnd }),
+  ])
+  if (activityResult.error) throw activityResult.error
+  if (volumeResult.error) throw volumeResult.error
+  if (headcountResult.error) throw headcountResult.error
+
+  const activityRows = ((activityResult.data ?? []) as Array<{
+    week_start: string
+    supervisor_name: string
+    activity_pct: number | string | null
+    total_sec: number | string | null
+  }>).map((row) => ({
+    week_start: String(row.week_start).slice(0, 10),
+    supervisor_name: row.supervisor_name,
+    activity_pct: row.activity_pct != null ? Number(row.activity_pct) : null,
+    total_sec: Number(row.total_sec) || 0,
+  }))
+  const volumeRows = (volumeResult.data ?? []).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    label: row.label,
+    value_text: row.value_text,
+  }))
+  const headcountRows = ((headcountResult.data ?? []) as Array<{
+    report_date: string
+    supervisor_name: string
+    workers: number
+  }>).map((row) => ({
+    report_date: String(row.report_date).slice(0, 10),
+    supervisor_name: row.supervisor_name,
+    workers: Number(row.workers) || 0,
+  }))
+
+  const firstDataDate = headcountRows
+    .map((row) => row.report_date)
+    .concat(volumeRows.map((row) => row.report_date))
+    .sort()[0]
+  if (!firstDataDate) return []
+
+  const startWeek = weekStartIso(firstDataDate)
+  const weeks: Array<{ week_start: string; week_end: string }> = []
+  for (let week = startWeek; week <= weekStart; week = addDaysIso(week, 7)) {
+    weeks.push({ week_start: week, week_end: addDaysIso(week, 6) })
+  }
+  const trimmedWeeks = weeks.slice(-OUTPUT_ACTIVITY_MAX_WEEKS)
+  if (trimmedWeeks.length === 0) return []
+
+  const cards = comparisonBrigades.map((brigadeName) => ({
+    supervisor_name: brigadeName,
+    points: trimmedWeeks.map(({ week_start, week_end }) => {
+      const activityRow = activityRows.find(
+        (row) => row.week_start === week_start && brigadeNamesMatch(row.supervisor_name, brigadeName),
+      )
+      const weekDates = listDatesInclusive(week_start, week_end)
+      const volume = sumBrigadeVolumeForDates(volumeRows, brigadeName, weekDates)
+      const brigadeDaily = headcountRows.filter(
+        (row) =>
+          row.report_date >= week_start &&
+          row.report_date <= week_end &&
+          row.workers > 0 &&
+          brigadeNamesMatch(row.supervisor_name, brigadeName),
+      )
+      const days = new Set(brigadeDaily.map((row) => row.report_date)).size
+      const avgWorkers = days > 0 ? brigadeDaily.reduce((sum, row) => sum + row.workers, 0) / days : null
+      const perWorker = volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+
+      return {
+        week_start,
+        week_end,
+        activity_pct:
+          activityRow && activityRow.total_sec > 0 && activityRow.activity_pct != null
+            ? activityRow.activity_pct
+            : null,
+        per_worker_m3: perWorker != null ? Math.round(perWorker * 10) / 10 : null,
+      } satisfies OutputActivityPoint
+    }),
+  }))
+
+  return trimEmptyOutputActivityWeeks(cards)
+}
+
 function dynamicsPdfCards(
   cards: BrigadeDynamicsCard[],
   options: { comparePrefix: string; emptyCompare: string },
@@ -2272,7 +2382,7 @@ function brigadeReportLabel(brigadeFilter?: string) {
   return ` — бригада ${brigadeFilter}`
 }
 
-async function buildDailyHtml(
+export async function buildDailyHtml(
   supabase: ReturnType<typeof getAdminClient>,
   date: string,
   options: ReportBuildOptions = {},
@@ -2453,7 +2563,7 @@ async function buildDailyHtml(
   }
 }
 
-async function buildWeeklyHtml(
+export async function buildWeeklyHtml(
   supabase: ReturnType<typeof getAdminClient>,
   weekStart: string,
   options: ReportBuildOptions = {},
@@ -2497,6 +2607,11 @@ async function buildWeeklyHtml(
     : []
   const weeklyOutput = blocks.block5
     ? (await loadBrigadeWeeklyOutput(supabase, weekStart, comparisonBrigades)).filter((card) =>
+        brigadeFilter ? brigadeNamesMatch(card.supervisor_name, brigadeFilter) : true,
+      )
+    : []
+  const outputActivity = blocks.block5
+    ? (await loadBrigadeOutputActivity(supabase, weekStart, comparisonBrigades)).filter((card) =>
         brigadeFilter ? brigadeNamesMatch(card.supervisor_name, brigadeFilter) : true,
       )
     : []
@@ -2548,7 +2663,8 @@ async function buildWeeklyHtml(
 
   // Порядок блоков недельного письма:
   // 1 По бригадам · 2 Динамика активности · 3 Динамика объёмов ·
-  // 4 Выработка на человека · 5 Требуют внимания · 6 Местоположение и простои.
+  // 4 Выработка на человека · 5 Активность и выработка по неделям ·
+  // 6 Требуют внимания · 7 Местоположение и простои.
   const htmlParts: string[] = []
   if (blocks.block2) {
     const metricCells = [
@@ -2675,6 +2791,12 @@ async function buildWeeklyHtml(
     pdfPayload.weeklyOutputTitle = 'Выработка на человека по неделям'
     pdfPayload.weeklyOutputPeriodLabel = 'По неделям'
     pdfPayload.weeklyOutputCards = weeklyOutputPdfCards(weeklyOutput)
+    // График двумя кривыми есть только в PDF: в теле письма его не показываем.
+    pdfPayload.outputActivityTitle = 'Активность и выработка по неделям'
+    // Пока истории меньше двух недель, рисовать нечего — блок в PDF не появляется.
+    pdfPayload.outputActivityCards = outputActivity
+      .filter((card) => hasOutputActivityChart(card.points))
+      .map((card) => ({ name: card.supervisor_name, points: card.points }))
   }
   if (blocks.block4) {
     Object.assign(

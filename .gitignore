@@ -43,3 +43,6 @@ head-enlarged-*.png
 .beads-credential-key
 .beads/proxieddb/
 supabase/.temp/
+
+# Локальный предпросмотр блоков письма
+preview/

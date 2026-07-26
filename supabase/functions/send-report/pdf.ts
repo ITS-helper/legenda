@@ -4,6 +4,7 @@ import { getRobotoFontBytes } from './roboto-font.ts'
 import { REPORT_LOGO_TEXT } from './email-branding.ts'
 import { formatEpisodeCount } from './zones.ts'
 import { brigadeGridColumns, isCompactBrigadeCardLayout, isHorizontalBrigadeLayout } from './brigadeLayout.ts'
+import { buildOutputActivityGeometry, type OutputActivityPoint } from './outputActivityChart.ts'
 
 export type BrigadeCardPayload = {
   supervisor_name: string
@@ -68,6 +69,8 @@ export type ReportPdfPayload = {
     sparkline: Array<{ label: string; value: number; empty?: boolean }>
     sparklineTitle?: string
   }>
+  outputActivityTitle?: string
+  outputActivityCards?: Array<{ name: string; points: OutputActivityPoint[] }>
   weeklyOutputTitle?: string
   weeklyOutputPeriodLabel?: string
   weeklyOutputCards?: Array<{
@@ -96,6 +99,10 @@ const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const MARGIN = 40
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2
+
+const OUTPUT_ACTIVITY_CHART_HEIGHT = 190
+/** Заголовок карточки + график + нижний отступ. */
+const OUTPUT_ACTIVITY_CARD_HEIGHT = 46 + OUTPUT_ACTIVITY_CHART_HEIGHT + 12
 
 const RADIUS = {
   sm: 10,
@@ -807,6 +814,110 @@ class PdfWriter {
     this.y = blockTop + blockHeight + 20
   }
 
+  /** Две кривые (активность и выработка на человека) по неделям с начала проекта. */
+  outputActivityCards(cards: Array<{ name: string; points: OutputActivityPoint[] }>) {
+    const gap = 16
+    const innerPad = 16
+    const cardHeight = OUTPUT_ACTIVITY_CARD_HEIGHT
+    const blockHeight = cards.length * (cardHeight + gap)
+
+    this.ensureSpace(blockHeight + 8)
+    const blockTop = this.y
+
+    cards.forEach((card, index) => {
+      const top = blockTop + index * (cardHeight + gap)
+      const chartLeft = MARGIN + innerPad
+      const chartTop = top + 46
+      const geometry = buildOutputActivityGeometry(card.points, {
+        width: CONTENT_WIDTH - innerPad * 2,
+        height: OUTPUT_ACTIVITY_CHART_HEIGHT,
+      })
+
+      this.card(MARGIN, top, CONTENT_WIDTH, cardHeight, C.surface, C.border, RADIUS.xl)
+      this.text(card.name, chartLeft, top + innerPad, 12, C.textH, CONTENT_WIDTH - innerPad * 2)
+      this.text(
+        'Активность (левая шкала, %) и выработка на человека (правая шкала, м³/чел)',
+        chartLeft,
+        top + innerPad + 16,
+        6,
+        C.textMuted,
+      )
+
+      if (!geometry) {
+        this.text('Мало данных с начала проекта', chartLeft, chartTop, 8, C.textMuted)
+        return
+      }
+
+      for (const line of geometry.gridLines) {
+        const y = this.bottomY(chartTop + line.y, 0)
+        this.page.drawLine({
+          start: { x: chartLeft + geometry.plot.left, y },
+          end: { x: chartLeft + geometry.plot.left + geometry.plot.width, y },
+          thickness: 0.6,
+          color: C.border,
+          dashArray: line.solid ? undefined : [2, 3],
+        })
+        const activityWidth = this.font.widthOfTextAtSize(pdfText(line.activityLabel), 6)
+        this.text(
+          line.activityLabel,
+          chartLeft + geometry.plot.left - 6 - activityWidth,
+          chartTop + line.y - 3,
+          6,
+          C.brand,
+        )
+        this.text(
+          line.outputLabel,
+          chartLeft + geometry.plot.left + geometry.plot.width + 6,
+          chartTop + line.y - 3,
+          6,
+          C.work,
+        )
+      }
+
+      for (const label of geometry.xLabels) {
+        // Период недели двумя строками: начало над концом.
+        label.lines.forEach((line, lineIndex) => {
+          const lineWidth = this.font.widthOfTextAtSize(pdfText(line), 6)
+          this.text(
+            line,
+            chartLeft + label.x - lineWidth / 2,
+            chartTop + geometry.height - 22 + lineIndex * 8,
+            6,
+            C.textMuted,
+          )
+        })
+      }
+
+      for (const line of geometry.series) {
+        const color = line.key === 'activity' ? C.brand : C.work
+        if (line.path) {
+          this.page.drawSvgPath(line.path, {
+            x: chartLeft,
+            y: this.pageHeight - chartTop,
+            borderColor: color,
+            borderWidth: 1.6,
+            borderLineCap: 1,
+          })
+        }
+        for (const dot of line.dots) {
+          this.page.drawCircle({
+            x: chartLeft + dot.x,
+            y: this.bottomY(chartTop + dot.y, 0),
+            size: 1.8,
+            color,
+          })
+        }
+        if (line.end) {
+          this.text(line.label, chartLeft + line.end.x, chartTop + line.end.y - 8, 8, color)
+          this.text(line.end.valueText, chartLeft + line.end.x, chartTop + line.end.y + 3, 6, C.textMuted)
+        }
+      }
+
+    })
+
+    this.y = blockTop + blockHeight + 20
+  }
+
   private zoneBar(left: number, top: number, width: number, barPct: number, alert = false) {
     const height = 8
     this.roundedRect(left, top, width, height, S.track, undefined, height / 2)
@@ -1141,6 +1252,10 @@ function brigadeBlockHeight(cardCount: number) {
   return rows * cardHeight + Math.max(0, rows - 1) * gap + 8
 }
 
+function outputActivityBlockHeight(cardCount: number) {
+  return cardCount * (OUTPUT_ACTIVITY_CARD_HEIGHT + 16) + 20
+}
+
 function dynamicsBlockHeight(cardCount: number) {
   const gap = 16
   const cardHeight = 190
@@ -1230,6 +1345,9 @@ function estimateReportPdfHeight(payload: ReportPdfPayload) {
     if (payload.weeklyOutputCards?.length) {
       height += sectionTitleHeight(16) + dynamicsBlockHeight(payload.weeklyOutputCards.length)
     }
+    if (payload.outputActivityCards?.length) {
+      height += sectionTitleHeight(16) + outputActivityBlockHeight(payload.outputActivityCards.length)
+    }
     height += attentionSectionHeight(payload.attentionSection)
     height += sectionTitleHeight(18) + zonesBrigadeMatrixHeight(payload.zonesBrigadeSections)
     return Math.max(PAGE_HEIGHT, Math.ceil(height))
@@ -1287,6 +1405,14 @@ export async function renderReportPdf(payload: ReportPdfPayload): Promise<Uint8A
         dynamicsBlockHeight(payload.weeklyOutputCards.length),
       )
       writer.dynamicsCards(payload.weeklyOutputCards, payload.weeklyOutputPeriodLabel ?? 'По неделям')
+    }
+    if (payload.outputActivityCards?.length) {
+      writer.sectionTitle(
+        payload.outputActivityTitle ?? 'Активность и выработка по неделям',
+        16,
+        outputActivityBlockHeight(payload.outputActivityCards.length),
+      )
+      writer.outputActivityCards(payload.outputActivityCards)
     }
     if (payload.attentionSection) {
       writer.attentionSection(payload.attentionSection)
