@@ -48,7 +48,10 @@ function pointTitle(point: BrigadeWeeklyOutputPoint) {
     if (point.volume_m3 != null) return `Неделя ${week}: объём ${point.volume_m3} м³, нет данных о численности`
     return `Неделя ${week}: нет данных`
   }
-  return `Неделя ${week}: ${formatPerWorker(point.per_worker_m3)} (объём ${point.volume_m3} м³, в среднем ${point.avg_workers} чел/день)`
+  const headcount = point.headcount_fixed
+    ? `расчёт на ${point.avg_workers} чел.`
+    : `в среднем ${point.avg_workers} чел/день`
+  return `Неделя ${week}: ${formatPerWorker(point.per_worker_m3)} (объём ${point.volume_m3} м³, ${headcount})`
 }
 
 function OutputChart({ card }: { card: BrigadeWeeklyOutputCard }) {

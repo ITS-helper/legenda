@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { resolveOutputHeadcount } from './brigadeOutputHeadcount'
 import { parseVolumeM3 } from './volumes'
 import { zoneName } from './zones'
 import { filterDistributionZoneRows, isZoneVisibleInDistribution } from './zoneVisibility'
@@ -715,8 +716,10 @@ export type BrigadeWeeklyOutputPoint = {
   week_end: string
   /** Объём бригады за неделю, м³ (сумма ручных вводов). */
   volume_m3: number | null
-  /** Среднее рабочих в день за неделю (по дням с данными). */
+  /** Численность-знаменатель: среднее рабочих в день или фиксированная для бригады. */
   avg_workers: number | null
+  /** true — численность задана вручную (телеметрия покрывает не всю бригаду). */
+  headcount_fixed?: boolean
   /** Выработка: м³ на человека за неделю. */
   per_worker_m3: number | null
 }
@@ -731,7 +734,9 @@ export type BrigadeWeeklyOutputCard = {
 
 /**
  * Еженедельная выработка на человека по бригадам: объём из volume_entries,
- * численность — из дневных метрик бригад (среднее рабочих в день за неделю).
+ * численность — из дневных метрик бригад (среднее рабочих в день за неделю)
+ * либо фиксированная, если телеметрия покрывает не всю бригаду
+ * (см. brigadeOutputHeadcount).
  */
 export async function loadBrigadeWeeklyOutput(
   referenceDate: string,
@@ -799,15 +804,20 @@ export async function loadBrigadeWeeklyOutput(
       const days = new Set(brigadeDaily.map((row) => row.report_date)).size
       const workersSum = brigadeDaily.reduce((sum, row) => sum + row.workers, 0)
       const avgWorkers = days > 0 ? workersSum / days : null
+      // У части бригад устройства носит меньше людей, чем реально работает.
+      const headcount = resolveOutputHeadcount(brigadeName, avgWorkers)
 
       const perWorker =
-        volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+        volume != null && headcount.workers != null && headcount.workers > 0
+          ? volume / headcount.workers
+          : null
 
       return {
         week_start,
         week_end,
         volume_m3: volume,
-        avg_workers: avgWorkers != null ? Math.round(avgWorkers * 10) / 10 : null,
+        avg_workers: headcount.workers != null ? Math.round(headcount.workers * 10) / 10 : null,
+        headcount_fixed: headcount.fixed,
         per_worker_m3: perWorker != null ? Math.round(perWorker * 10) / 10 : null,
       } satisfies BrigadeWeeklyOutputPoint
     })

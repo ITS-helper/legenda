@@ -22,6 +22,7 @@ import {
   type ZoneRow,
 } from './zones.ts'
 import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
+import { resolveOutputHeadcount } from './brigadeOutputHeadcount.ts'
 import {
   hasOutputActivityChart,
   trimEmptyOutputActivityWeeks,
@@ -2046,12 +2047,17 @@ async function loadBrigadeWeeklyOutput(
       const days = new Set(brigadeDaily.map((row) => row.report_date)).size
       const workersSum = brigadeDaily.reduce((sum, row) => sum + row.workers, 0)
       const avgWorkers = days > 0 ? workersSum / days : null
-      const perWorker = volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+      // У части бригад устройства носит меньше людей, чем реально работает.
+      const headcount = resolveOutputHeadcount(brigadeName, avgWorkers)
+      const perWorker =
+        volume != null && headcount.workers != null && headcount.workers > 0
+          ? volume / headcount.workers
+          : null
       return {
         week_start,
         week_end,
         volume_m3: volume,
-        avg_workers: avgWorkers != null ? Math.round(avgWorkers * 10) / 10 : null,
+        avg_workers: headcount.workers != null ? Math.round(headcount.workers * 10) / 10 : null,
         per_worker_m3: perWorker != null ? Math.round(perWorker * 10) / 10 : null,
       } satisfies BrigadeWeeklyOutputPoint
     })
@@ -2246,7 +2252,11 @@ async function loadBrigadeOutputActivity(
       )
       const days = new Set(brigadeDaily.map((row) => row.report_date)).size
       const avgWorkers = days > 0 ? brigadeDaily.reduce((sum, row) => sum + row.workers, 0) / days : null
-      const perWorker = volume != null && avgWorkers != null && avgWorkers > 0 ? volume / avgWorkers : null
+      const headcount = resolveOutputHeadcount(brigadeName, avgWorkers)
+      const perWorker =
+        volume != null && headcount.workers != null && headcount.workers > 0
+          ? volume / headcount.workers
+          : null
 
       return {
         week_start,
