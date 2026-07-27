@@ -385,6 +385,11 @@ const POST_IMPORT_DEADLINE_MIN = 14 * 60
 // Ручная отправка: не повторять тот же отчёт за тот же период, если он ушёл только что.
 // Снимается флагом `force` в теле запроса.
 const MANUAL_DEDUP_WINDOW_MIN = 2
+// Плановая отправка: считаем отчёт уже отправленным, только если письмо ушло в пределах
+// этого окна. Оно перекрывает все cron-слоты одного утра (08:00–10:00 МСК), retry недельной
+// рассылки и post-import (до 14:00 МСК), но не тянется на прошлые дни — иначе ручная отправка
+// за текущий период, сделанная днями раньше, отменяет плановое письмо.
+const SCHEDULE_DEDUP_WINDOW_MIN = 12 * 60
 
 type ReportScheduleRow = {
   daily_enabled: boolean
@@ -2945,32 +2950,16 @@ function buildSendBatches(recipients: Recipient[], type: ReportType): SendBatch[
   return batches
 }
 
-async function wasReportAlreadySent(
-  supabase: ReturnType<typeof getAdminClient>,
-  type: ReportType,
-  periodKey: string,
-  audience: ReportAudience,
-  brigadeName: string | null,
-) {
-  let query = supabase!
-    .from('email_log')
-    .select('id')
-    .eq('report_type', type)
-    .eq('period_key', periodKey)
-    .eq('status', 'sent')
-    .eq('audience', audience)
-
-  query = brigadeName ? query.eq('brigade_name', brigadeName) : query.is('brigade_name', null)
-
-  const { data } = await query.limit(1).maybeSingle()
-  return Boolean(data)
-}
-
 /**
- * Защита ручной отправки от дублей: тот же отчёт за тот же период уже ушёл только что.
- * У ручной отправки нет проверки `wasReportAlreadySent` (чтобы можно было переслать письмо),
- * поэтому два обращения подряд давали два одинаковых письма. Окно короткое — осознанный
- * повтор через пару минут по-прежнему возможен, а флаг `force` снимает проверку сразу.
+ * Тот же отчёт за тот же период уже ушёл этой аудитории за последние `withinMinutes` минут.
+ *
+ * Окно обязательно: у плановой рассылки period_key недели не меняется всю неделю, поэтому
+ * проверка «за всё время» ловила ручную отправку за текущую неделю, сделанную несколькими
+ * днями раньше, и молча гасила плановое письмо в понедельник (общий отчёт не уходил,
+ * а письма бригадирам, которых вручную не отправляли, уходили).
+ *
+ * Для ручной отправки окно короткое: осознанный повтор через пару минут по-прежнему
+ * возможен, а флаг `force` снимает проверку сразу.
  */
 async function wasReportSentRecently(
   supabase: ReturnType<typeof getAdminClient>,
@@ -3289,7 +3278,14 @@ Deno.serve(async (request) => {
 
     for (const batch of batches) {
       if (isScheduled) {
-        const alreadySent = await wasReportAlreadySent(supabase, type, periodKey, batch.audience, batch.brigadeName)
+        const alreadySent = await wasReportSentRecently(
+          supabase,
+          type,
+          periodKey,
+          batch.audience,
+          batch.brigadeName,
+          SCHEDULE_DEDUP_WINDOW_MIN,
+        )
         if (alreadySent) continue
       } else if (!payload?.force) {
         // Ручная отправка: отсекаем дубль, если этот же отчёт ушёл минуту-две назад.
