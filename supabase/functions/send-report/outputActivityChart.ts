@@ -22,6 +22,12 @@ const MAX_X_LABELS = 10
 const AXIS_PADDING_RATIO = 0.15
 const ACTIVITY_AXIS_MIN_SPAN = 10
 const ACTIVITY_AXIS_PADDING_MIN = 3
+// Подпись на конце линии — два ряда текста (название 8pt над значением 6pt): блок занимает
+// ~8pt выше опорной точки и ~9pt ниже неё. Отсюда минимальный зазор между соседними
+// подписями и запас, на который блок не должен вылезать за границы графика.
+const END_LABEL_MIN_GAP = 20
+const END_LABEL_TOP_ROOM = 8
+const END_LABEL_BOTTOM_ROOM = 9
 
 function ruShort(dateIso: string) {
   const [, month, day] = dateIso.split('-')
@@ -91,6 +97,7 @@ export type OutputActivityGeometry = {
     /** SVG path с началом координат в левом верхнем углу графика. */
     path: string
     dots: Array<{ x: number; y: number }>
+    /** Подпись у конца линии; y — позиция самой подписи, она может быть сдвинута от точки. */
     end: { x: number; y: number; valueText: string } | null
   }>
 }
@@ -129,6 +136,32 @@ function smoothPath(points: Array<{ x: number; y: number } | null>) {
       return path
     })
     .join(' ')
+}
+
+/**
+ * Разводит подписи по вертикали, сохраняя порядок: если значения рядов близки (39% и 4,5 м³/чел
+ * на одной высоте), блоки текста наезжают друг на друга. Линии и точки остаются на месте.
+ */
+function spreadLabelPositions(values: number[], minGap: number, min: number, max: number) {
+  const ordered = values.map((y, index) => ({ y, index })).sort((left, right) => left.y - right.y)
+
+  for (let i = 1; i < ordered.length; i += 1) {
+    ordered[i].y = Math.max(ordered[i].y, ordered[i - 1].y + minGap)
+  }
+
+  // Уехали ниже графика — сдвигаем всю пачку вверх, зазоры между подписями уже выдержаны.
+  const overflowBottom = ordered[ordered.length - 1].y - max
+  if (overflowBottom > 0) {
+    for (const item of ordered) item.y -= overflowBottom
+  }
+  const overflowTop = min - ordered[0].y
+  if (overflowTop > 0) {
+    for (const item of ordered) item.y += overflowTop
+  }
+
+  const result = [...values]
+  for (const item of ordered) result[item.index] = item.y
+  return result
 }
 
 /** Есть ли что рисовать: нужны минимум две точки хотя бы по одному ряду. */
@@ -221,6 +254,20 @@ export function buildOutputActivityGeometry(
           : null,
     }
   })
+
+  // Концы рядов часто оказываются на одной высоте (шкалы разные) — разводим подписи.
+  const endLabels = series.flatMap((line, index) => (line.end ? [{ index, y: line.end.y }] : []))
+  if (endLabels.length > 0) {
+    const spread = spreadLabelPositions(
+      endLabels.map((item) => item.y),
+      END_LABEL_MIN_GAP,
+      plot.top + END_LABEL_TOP_ROOM,
+      plot.top + plot.height - END_LABEL_BOTTOM_ROOM,
+    )
+    endLabels.forEach((item, order) => {
+      series[item.index].end!.y = spread[order]
+    })
+  }
 
   return { width, height, plot, gridLines, xLabels, series }
 }
