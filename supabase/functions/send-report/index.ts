@@ -24,6 +24,7 @@ import {
 import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
 import { resolveOutputHeadcount } from './brigadeOutputHeadcount.ts'
 import type { ShiftReportPayload } from './shiftReportPdf.ts'
+import { getSettingsAuthRole } from '../_shared/settingsAuth.ts'
 import {
   hasOutputActivityChart,
   trimEmptyOutputActivityWeeks,
@@ -3108,14 +3109,17 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  const auth = isAuthorized(request)
+  const url = new URL(request.url)
+  const resource = url.searchParams.get('resource')
+
+  // Отчёт по смене только рисует PDF по данным, которые пользователь и так видит на
+  // дашборде, — пускаем и по паролю просмотра. Рассылка и настройки остаются админскими.
+  const auth =
+    resource === 'shift-report' && getSettingsAuthRole(request) ? { ok: true as const } : isAuthorized(request)
   if (!auth.ok) return auth.response
 
   const supabase = getAdminClient()
   if (!supabase) return jsonResponse({ error: 'Supabase service credentials are missing' }, 500)
-
-  const url = new URL(request.url)
-  const resource = url.searchParams.get('resource')
 
   try {
     // Отчёт по смене: раскладку минут собирает дашборд (там же, где диалог детализации),
