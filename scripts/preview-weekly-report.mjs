@@ -25,6 +25,7 @@ const report = await buildWeeklyHtml(supabase, weekStart)
 console.log(`отчёт собран за ${Math.round((Date.now() - started) / 1000)} с; данные есть: ${report.hasData}`)
 console.log(`тема письма: ${report.subject}`)
 
+writeFileSync('preview/last-pdf-payload.json', JSON.stringify(report.pdfPayload), 'utf8')
 const pdfBytes = await renderReportPdf(report.pdfPayload)
 
 mkdirSync('preview', { recursive: true })

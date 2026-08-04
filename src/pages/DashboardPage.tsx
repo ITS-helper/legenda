@@ -253,6 +253,8 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [notWornOpen, setNotWornOpen] = useState(false)
   const [selectedDetailEmployee, setSelectedDetailEmployee] = useState<ShiftDetailEmployee | null>(null)
+  // Дата смены в диалоге: блок «Расшифровка» живёт на своей дате, а не на дате блока 1.
+  const [selectedDetailDate, setSelectedDetailDate] = useState<string | null>(null)
   const [topDailyOpen, setTopDailyOpen] = useState(false)
   const [attentionOpen, setAttentionOpen] = useState(false)
   const [noTelemetryOpen, setNoTelemetryOpen] = useState(false)
@@ -642,6 +644,7 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       const row = allShiftRows.find((shift) => Number(shift.ww_shift_id) === shiftId)
       if (!row) return
 
+      setSelectedDetailDate(selectedDate)
       setSelectedDetailEmployee({
         ww_shift_id: shiftId,
         employee_number: String(employee.employee_number),
@@ -652,8 +655,30 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
         ...getShiftActivityPercents(row),
       })
     },
-    [allShiftRows],
+    [allShiftRows, selectedDate],
   )
+
+  /** Детализация смены из блока «Расшифровка по сотрудникам» — по любому сотруднику, не только с низкой активностью. */
+  const openShiftRowDetail = useCallback(
+    (row: ShiftMetricRow) => {
+      setSelectedDetailDate(detailDate)
+      setSelectedDetailEmployee({
+        ww_shift_id: Number(row.ww_shift_id),
+        employee_number: String(row.employee_number ?? ''),
+        full_name: row.full_name,
+        profession: row.profession ?? null,
+        supervisor_name: row.supervisor_name ?? NO_SUPERVISOR,
+        on_watch_duration_seconds: row.on_watch_duration_seconds ?? null,
+        ...getShiftActivityPercents(row),
+      })
+    },
+    [detailDate],
+  )
+
+  const closeShiftDetail = useCallback(() => {
+    setSelectedDetailEmployee(null)
+    setSelectedDetailDate(null)
+  }, [])
 
   const dailyTotals = useMemo(() => sumDaily(visibleDailyRows), [visibleDailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
@@ -1489,10 +1514,15 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                         {group.rows.map((row) => (
                           <tr key={row.ww_shift_id} className={isDetailShiftRowAlert(row) ? 'row-alert' : undefined}>
                             <td>
-                              <div className="employee-cell">
+                              <button
+                                type="button"
+                                className="employee-cell employee-cell-button"
+                                onClick={() => openShiftRowDetail(row)}
+                                title="Показать детализацию смены"
+                              >
                                 <strong>{row.full_name}</strong>
                                 <span>#{row.employee_number}</span>
-                              </div>
+                              </button>
                             </td>
                             <td>{row.profession?.trim() || '—'}</td>
                             <td>{formatSeconds(row.long_idle_sec_total)}</td>
@@ -1533,9 +1563,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
 
       <NotWornEmployeeDetailDialog
         employee={selectedDetailEmployee}
-        reportDate={selectedDate}
+        reportDate={selectedDetailDate ?? selectedDate}
         open={selectedDetailEmployee !== null}
-        onClose={() => setSelectedDetailEmployee(null)}
+        onClose={closeShiftDetail}
       />
     </>
   )
