@@ -5,7 +5,8 @@ export const MSK_TIME_ZONE = 'Europe/Moscow'
 
 /** Единое правило для всех метрик из AA_BLE (отчёт 11). */
 export const BLE_SHIFT_WINDOW_NOTE =
-  'Учитываются только минуты AA_BLE в окне рабочей смены 07:00–23:00 МСК (`analytics.is_ble_shift_window_minute`).'
+  'Учитываются только минуты AA_BLE в окне рабочей смены: с 04.08.2026 — 07:00–24:00 МСК, ' +
+  'до 03.08.2026 включительно — 07:00–23:00 (`analytics.is_ble_shift_window_minute`).'
 
 export type MetricConfigFieldKey = NumericMetricSettingKey
 

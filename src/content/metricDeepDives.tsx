@@ -581,8 +581,9 @@ export function NotWornMetricDeepDive() {
 
       <DeepDiveSection title="Окно рабочей смены">
         <DeepDiveText>
-          Учитываются только минуты с <strong>07:00 до 23:00 по Москве</strong>. Всё, что раньше 07:00 или с 23:00
-          и позже, в расчёт не попадает — до выдачи часов и после окончания смены телеметрия не влияет на метрику.
+          Учитываются только минуты с <strong>07:00 до 24:00 по Москве</strong>. Всё, что раньше 07:00, в расчёт
+          не попадает — до выдачи часов телеметрия не влияет на метрику. Смену продлили до 24:00 с 04.08.2026;
+          у смен до 03.08.2026 включительно окно заканчивалось в 23:00, и их цифры остались прежними.
         </DeepDiveText>
         <div className="metric-timeline" aria-label="Окно рабочей смены">
           <div className="metric-timeline-point metric-timeline-muted">
@@ -590,10 +591,10 @@ export function NotWornMetricDeepDive() {
             <span>не считаем</span>
           </div>
           <div className="metric-timeline-track">
-            <span>07:00 – 23:00 МСК</span>
+            <span>07:00 – 24:00 МСК</span>
           </div>
           <div className="metric-timeline-point metric-timeline-muted">
-            <strong>С 23:00</strong>
+            <strong>После 24:00</strong>
             <span>не считаем</span>
           </div>
         </div>

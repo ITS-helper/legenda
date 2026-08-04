@@ -23,6 +23,7 @@ import {
 } from './zones.ts'
 import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
 import { resolveOutputHeadcount } from './brigadeOutputHeadcount.ts'
+import type { ShiftReportPayload } from './shiftReportPdf.ts'
 import {
   hasOutputActivityChart,
   trimEmptyOutputActivityWeeks,
@@ -3117,6 +3118,29 @@ Deno.serve(async (request) => {
   const resource = url.searchParams.get('resource')
 
   try {
+    // Отчёт по смене: раскладку минут собирает дашборд (там же, где диалог детализации),
+    // сюда приходит готовый payload — рисуем PDF и отдаём файлом.
+    if (resource === 'shift-report') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Ожидается POST' }, 405)
+      }
+      const payload = (await request.json().catch(() => null)) as ShiftReportPayload | null
+      if (!payload || !Array.isArray(payload.brigades) || payload.brigades.length === 0) {
+        return jsonResponse({ error: 'Пустой отчёт: нет сотрудников' }, 400)
+      }
+
+      const { renderShiftReportPdf } = await import('./shiftReportPdf.ts')
+      const pdfBytes = await renderShiftReportPdf(payload)
+      return new Response(pdfBytes, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="legenda-shift-${payload.reportDate}.pdf"`,
+        },
+      })
+    }
+
     if (resource === 'recipients') {
       const audienceParam = url.searchParams.get('audience')
       const brigadeName = url.searchParams.get('brigade_name')

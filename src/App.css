@@ -136,6 +136,35 @@
   gap: 8px;
 }
 
+/* Кнопка-действие в строке фильтров (например, «Отчёт по смене»). */
+.filter-field-action {
+  min-width: 210px;
+  align-content: start;
+}
+
+.action-button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.action-button:hover:not([disabled]) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  color: var(--accent);
+}
+
+.action-button[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .filter-field span,
 .compare-head span,
 .metric-label,

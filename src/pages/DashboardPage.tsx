@@ -11,6 +11,7 @@ import { VolumeDynamicsPanel } from '../components/VolumeDynamicsPanel'
 import { WeeklyOutputPanel } from '../components/WeeklyOutputPanel'
 import { ProfessionBenchmarkPanel } from '../components/ProfessionBenchmarkPanel'
 import { VolumesPanel } from '../components/VolumesPanel'
+import { buildShiftReportPayload, downloadBlob, requestShiftReportPdf } from '../lib/shiftReport'
 import { useAuth } from '../context/AuthContext'
 import { useMetricSettings } from '../context/MetricSettingsContext'
 import { DASHBOARD_BLOCK_NAV, dashboardBlockDomId, type DashboardBlockId } from '../content/dashboardBlocks'
@@ -680,6 +681,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
     setSelectedDetailDate(null)
   }, [])
 
+  const [shiftReportState, setShiftReportState] = useState<{ busy: boolean; progress: string; error: string | null }>({
+    busy: false,
+    progress: '',
+    error: null,
+  })
+
   const dailyTotals = useMemo(() => sumDaily(visibleDailyRows), [visibleDailyRows])
   const dailyActivity = ratio(dailyTotals.work_sec, dailyTotals.total_sec)
   const dailyWeakActivity = ratio(dailyTotals.weak_activity_sec, dailyTotals.total_sec)
@@ -787,6 +794,26 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       .sort(([leftName], [rightName]) => leftName.localeCompare(rightName, 'ru'))
       .map(([supervisorName, rows]) => ({ supervisorName, rows }))
   }, [sortedShiftRows])
+
+  /** Отчёт по смене: детализация по каждому сотруднику из текущей выборки блока «Расшифровка». */
+  const handleShiftReport = useCallback(async () => {
+    if (sortedShiftRows.length === 0) return
+    setShiftReportState({ busy: true, progress: `0 / ${sortedShiftRows.length}`, error: null })
+    try {
+      const payload = await buildShiftReportPayload(detailDate, sortedShiftRows, (done, total) =>
+        setShiftReportState((current) => ({ ...current, progress: `${done} / ${total}` })),
+      )
+      const blob = await requestShiftReportPdf(payload, password)
+      downloadBlob(blob, `legenda-smena-${detailDate}.pdf`)
+      setShiftReportState({ busy: false, progress: '', error: null })
+    } catch (error) {
+      setShiftReportState({
+        busy: false,
+        progress: '',
+        error: error instanceof Error ? error.message : 'Не удалось собрать отчёт по смене',
+      })
+    }
+  }, [detailDate, password, sortedShiftRows])
 
   function toggleSort(key: SortKey, defaultDirection: SortDirection = 'desc') {
     if (sortKey === key) {
@@ -1457,7 +1484,23 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
               autoComplete="off"
             />
           </label>
+          <div className="filter-field filter-field-action">
+            <span>Отчёт</span>
+            <button
+              type="button"
+              className="action-button"
+              onClick={() => void handleShiftReport()}
+              disabled={shiftReportState.busy || sortedShiftRows.length === 0}
+              title="PDF: лента хронологии и комментарий по каждому сотруднику смены"
+            >
+              {shiftReportState.busy ? `Собираем... ${shiftReportState.progress}` : 'Отчёт по смене (PDF)'}
+            </button>
+          </div>
         </div>
+
+        {shiftReportState.error ? (
+          <div className="empty-state error-state">Ошибка отчёта: {shiftReportState.error}</div>
+        ) : null}
 
         {detailLoading ? <div className="empty-state">Загружаем детализацию...</div> : null}
         {detailError ? <div className="empty-state error-state">Ошибка: {detailError}</div> : null}
