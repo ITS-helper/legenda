@@ -2,7 +2,7 @@
 // ФИО, лента хронологии смены и комментарий с местом для рукописной заметки.
 // Рисуется по готовому payload'у: данные и раскраску минут собирает фронт
 // (там же, где живёт диалог детализации), сюда приходит уже разложенная геометрия.
-import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
+import { PDFDocument, rgb, type PDFFont, type PDFForm, type PDFPage, type RGB } from 'npm:pdf-lib@1.17.1'
 import fontkit from 'npm:@pdf-lib/fontkit@1.1.1'
 import { getRobotoFontBytes } from './roboto-font.ts'
 import { REPORT_LOGO_TEXT } from './email-branding.ts'
@@ -58,7 +58,7 @@ const MARGIN = 32
 
 const COL_NAME = 128
 const COL_COMMENT = 186
-const ROW_HEIGHT = 80
+const ROW_HEIGHT = 100
 const STRIP_HEIGHT = 26
 
 function hex(value: string): RGB {
@@ -108,10 +108,13 @@ function formatHourLabel(min: number) {
 class ShiftReportWriter {
   private page: PDFPage
   private y = MARGIN
+  /** Сквозной номер поля формы: имена в AcroForm должны быть уникальными. */
+  private noteIndex = 0
 
   constructor(
     private readonly doc: PDFDocument,
     private readonly font: PDFFont,
+    private readonly form: PDFForm,
     private readonly payload: ShiftReportPayload,
   ) {
     this.page = this.addPage()
@@ -328,6 +331,28 @@ class ShiftReportWriter {
       commentTop += this.textWrapped(line, commentLeft, commentTop, 7, COL_COMMENT, C.text) + 3
     }
 
+    // Редактируемое поле AcroForm: комментарий можно набрать прямо в PDF и сохранить.
+    const noteTop = Math.max(commentTop + 6, top + ROW_HEIGHT - 46)
+    const noteHeight = top + ROW_HEIGHT - 10 - noteTop
+    if (noteHeight >= 16) {
+      this.noteIndex += 1
+      const field = this.form.createTextField(`comment_${this.noteIndex}`)
+      field.enableMultiline()
+      field.setText('')
+      field.addToPage(this.page, {
+        x: commentLeft,
+        y: this.bottom(noteTop, noteHeight),
+        width: COL_COMMENT,
+        height: noteHeight,
+        borderWidth: 0.7,
+        borderColor: C.noteBorder,
+        backgroundColor: C.surface2,
+        font: this.font,
+      })
+      // Размер шрифта — только после addToPage: до этого у поля нет /DA.
+      field.setFontSize(7)
+    }
+
     this.y = top + ROW_HEIGHT + 8
   }
 
@@ -356,6 +381,9 @@ export async function renderShiftReportPdf(payload: ShiftReportPayload): Promise
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
   const font = await doc.embedFont(getRobotoFontBytes())
-  new ShiftReportWriter(doc, font, payload).render()
+  const form = doc.getForm()
+  new ShiftReportWriter(doc, font, form, payload).render()
+  // Кириллица в полях: внешний вид и шрифт по умолчанию берём из встроенного Roboto.
+  form.updateFieldAppearances(font)
   return new Uint8Array(await doc.save())
 }
