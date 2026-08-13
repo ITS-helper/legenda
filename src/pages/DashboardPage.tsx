@@ -82,6 +82,7 @@ import {
 import { isAlertZone } from '../lib/zones'
 import { filterDistributionZoneRows } from '../lib/zoneVisibility'
 import { brigadeLayoutClass } from '../lib/brigadeLayout'
+import { compareByUnitOrder, filterVolumeUnits, hasVolumeTracking } from '../lib/comparisonUnits'
 type SortKey = 'full_name' | 'profession' | 'long_idle_sec_total' | 'total_sec_total' | 'productivity'
 type SortDirection = 'asc' | 'desc'
 
@@ -790,10 +791,11 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
       grouped.set(supervisorName, rows)
     }
 
+    const byUnitOrder = compareByUnitOrder(comparisonBrigades)
     return [...grouped.entries()]
-      .sort(([leftName], [rightName]) => leftName.localeCompare(rightName, 'ru'))
+      .sort(([leftName], [rightName]) => byUnitOrder(leftName, rightName))
       .map(([supervisorName, rows]) => ({ supervisorName, rows }))
-  }, [sortedShiftRows])
+  }, [sortedShiftRows, comparisonBrigades])
 
   /** Отчёт по смене: детализация по каждому сотруднику из текущей выборки блока «Расшифровка». */
   const handleShiftReport = useCallback(async () => {
@@ -991,10 +993,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                     </div>
                   </div>
                   <div className="brigade-card-footer">
+                    {hasVolumeTracking(brigade.supervisor_name) ? (
                     <div className="brigade-stat brigade-stat-volume">
                       <span>Выполненный объём</span>
                       <strong>{formatDailyBrigadeVolume(brigade.supervisor_name)}</strong>
                     </div>
+                    ) : null}
                     <div className="brigade-stat">
                       <span>Длительность смены</span>
                       <strong>
@@ -1200,10 +1204,12 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
                   </div>
                 </div>
                 <div className="brigade-card-footer">
+                  {hasVolumeTracking(brigade.supervisor_name) ? (
                   <div className="brigade-stat brigade-stat-volume">
                     <span>Выполненный объём за неделю</span>
                     <strong>{formatWeeklyBrigadeVolume(brigade.supervisor_name)}</strong>
                   </div>
+                  ) : null}
                   <div className="brigade-stat">
                     <span>Длительность смены</span>
                     <strong>
@@ -1446,7 +1452,9 @@ export function DashboardPage({ uiText }: { uiText: UiText }) {
             password={password}
             reportDate={volumesDate}
             readOnly={!isAdmin}
-            brigadeLayoutCount={visibleVolumeEntries.length || comparisonBrigades.filter((name) => name.trim()).length}
+            brigadeLayoutCount={
+              visibleVolumeEntries.length || filterVolumeUnits(comparisonBrigades.filter((name) => name.trim())).length
+            }
             onSaved={() => void refreshVolumesForBlock(volumesDate)}
           />
         ) : (

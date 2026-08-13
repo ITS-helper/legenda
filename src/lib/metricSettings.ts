@@ -87,7 +87,7 @@ type MetricSettingsRow = {
   zone_visibility?: Record<string, boolean>
 }
 
-export const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК'] as const
+export const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК', 'ИТР'] as const
 
 export const DEFAULT_METRIC_SETTINGS: MetricSettings = {
   longIdleMin: 10,

@@ -1,5 +1,6 @@
 import { getEdgeFunctionHeaders, getEdgeFunctionUrl, readEdgeFunctionJson } from './edgeFunctions'
 import { brigadeNamesMatch, getComparisonBrigades } from './reports'
+import { filterVolumeUnits } from './comparisonUnits'
 
 export type VolumeEntry = {
   id: number
@@ -168,7 +169,8 @@ export async function saveVolumeEntriesForDays(
 }
 
 export function brigadeVolumeDraftsFromEntries(entries: VolumeEntry[]): VolumeEntryDraft[] {
-  return getComparisonBrigades().map((brigade) => {
+  // Поля ввода объёмов — только для тех, кто их ведёт.
+  return filterVolumeUnits(getComparisonBrigades()).map((brigade) => {
     const match = entries.find((entry) => brigadeNamesMatch(entry.label, brigade))
     return {
       id: match?.id,

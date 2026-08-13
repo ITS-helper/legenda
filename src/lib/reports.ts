@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { resolveOutputHeadcount } from './brigadeOutputHeadcount'
+import { compareByUnitOrder, filterAttentionRows, filterVolumeUnits } from './comparisonUnits'
 import { parseVolumeM3 } from './volumes'
 import { zoneName } from './zones'
 import { filterDistributionZoneRows, isZoneVisibleInDistribution } from './zoneVisibility'
@@ -408,8 +409,9 @@ export async function loadBrigadeDaily(reportDate: string) {
     .rpc('brigade_daily_metrics_for_date', { p_report_date: reportDate })
 
   if (error) throw error
+  const byUnitOrder = compareByUnitOrder(getComparisonBrigades())
   return filterAnalyticsSupervisors((data ?? []) as BrigadeDailyRow[]).sort((left, right) =>
-    left.supervisor_name.localeCompare(right.supervisor_name, 'ru'),
+    byUnitOrder(left.supervisor_name, right.supervisor_name),
   )
 }
 
@@ -485,8 +487,11 @@ export function aggregateBrigadeDailyToWeekly(
         avg_shift_duration_sec,
       } satisfies BrigadeWeeklyRow
     })
-    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
+    .sort(compareUnitRows)
 }
+
+const compareUnitRows = <T extends { supervisor_name: string }>(left: T, right: T) =>
+  compareByUnitOrder(getComparisonBrigades())(left.supervisor_name, right.supervisor_name)
 
 export function enrichBrigadeWeeklyWithShiftStats(
   weeklyRows: BrigadeWeeklyRow[],
@@ -655,7 +660,8 @@ export async function loadBrigadeWeeklyVolumeTotals(weekStart: string, weekEnd: 
   }))
   const weekDates = listDatesInclusive(weekStart, weekEnd)
 
-  return getComparisonBrigades().map((brigadeName) => ({
+  // ИТР и прочие подразделения без объёмов в этот блок не попадают.
+  return filterVolumeUnits(getComparisonBrigades()).map((brigadeName) => ({
     supervisor_name: brigadeName,
     week_m3: sumBrigadeVolumeForDates(rows, brigadeName, weekDates),
   }))
@@ -693,7 +699,7 @@ export async function loadBrigadeVolumeDynamics(referenceDate: string) {
     value_text: row.value_text,
   }))
 
-  return getComparisonBrigades().map((brigadeName) => {
+  return filterVolumeUnits(getComparisonBrigades()).map((brigadeName) => {
     const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
     const todayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, referenceDate)
     const yesterdayM3 = sumBrigadeVolumeM3(brigadeRows, brigadeName, yesterday)
@@ -786,7 +792,7 @@ export async function loadBrigadeWeeklyOutput(
     workers: Number(row.workers) || 0,
   }))
 
-  return getComparisonBrigades().map((brigadeName) => {
+  return filterVolumeUnits(getComparisonBrigades()).map((brigadeName) => {
     const points = weeks.map(({ week_start, week_end }) => {
       const volume = sumBrigadeVolumeForDates(
         volumeRows,
@@ -963,7 +969,7 @@ export const VOLUME_DYNAMICS_SPARKLINE_DAYS = DEFAULT_METRIC_SETTINGS.volumeSpar
 
 export function filterLowActivityDaily(rows: ShiftMetricRow[]) {
   const threshold = getMetricSettings().lowActivityPct
-  return rows
+  return filterAttentionRows(rows)
     .filter((row) => isLowActivityWithWatch(row, threshold))
     .map(
       (row) =>
@@ -1049,7 +1055,7 @@ export function topActivityWeekly(rows: ShiftMetricRow[], limit = 3) {
 
 export function aggregateLowActivityWeekly(rows: ShiftMetricRow[]) {
   const threshold = getMetricSettings().lowActivityPct
-  return aggregateShiftActivity(rows)
+  return aggregateShiftActivity(filterAttentionRows(rows))
     .filter((row) => row.total_sec > 0 && row.activity_pct < threshold)
     .map(({ total_sec: _total, ...row }) => row)
     .sort((left, right) => left.activity_pct - right.activity_pct)
@@ -1360,7 +1366,7 @@ function aggregateZoneDailyByBrigadeFromRows(rows: ZoneDailyMetricRow[]) {
         .map(([zona, value]) => ({ zona, zonaName: zoneName(zona), sec: value.sec, shifts: value.shifts }))
         .sort((left, right) => right.sec - left.sec),
     }))
-    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru')) satisfies BrigadeZoneDaily[]
+    .sort(compareUnitRows) satisfies BrigadeZoneDaily[]
 }
 
 export async function loadZoneDaily(reportDate: string, supervisor?: string) {

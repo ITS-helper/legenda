@@ -23,6 +23,12 @@ import {
 } from './zones.ts'
 import { isHorizontalBrigadeLayout } from './brigadeLayout.ts'
 import { resolveOutputHeadcount } from './brigadeOutputHeadcount.ts'
+import {
+  compareByUnitOrder,
+  filterAttentionRows,
+  filterVolumeUnits,
+  hasVolumeTracking,
+} from './comparisonUnits.ts'
 import type { ShiftReportPayload } from './shiftReportPdf.ts'
 import { getSettingsAuthRole } from '../_shared/settingsAuth.ts'
 import {
@@ -321,7 +327,6 @@ function aggregateBrigadeDailyToWeekly(
         avg_shift_duration_sec,
       } satisfies BrigadeWeeklyRow
     })
-    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
 }
 
 /** Считает unique_employees по посменным строкам недели (зеркалит фронтовый enrichBrigadeWeeklyWithShiftStats). */
@@ -973,7 +978,7 @@ const BRIGADE_SHIFT_TARGETS: Record<string, number> = {
   'ЛИ СОН ХАК': 23,
 }
 
-const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК']
+const DEFAULT_COMPARISON_BRIGADES = ['Джалол', 'ЛИ СОН ХАК', 'ИТР']
 
 async function loadComparisonBrigades(supabase: ReturnType<typeof getAdminClient>): Promise<string[]> {
   const { data, error } = await supabase!.rpc('get_metric_settings')
@@ -1273,7 +1278,12 @@ function brigadeCardPayloadWeekly(row: BrigadeWeeklyRow, weekVolumeM3: number | 
     long_idle_pct: row.long_idle_pct,
     go_pct: row.go_pct,
     shift_duration: row.avg_shift_duration_sec > 0 ? formatShiftDuration(row.avg_shift_duration_sec) : '—',
-    volume_total: weekVolumeM3 != null ? formatVolumeM3(weekVolumeM3) : '—',
+    // У подразделений без объёмов (ИТР) ячейку не показываем вовсе, а не рисуем «—».
+    volume_total: hasVolumeTracking(row.supervisor_name)
+      ? weekVolumeM3 != null
+        ? formatVolumeM3(weekVolumeM3)
+        : '—'
+      : undefined,
   }
 }
 
@@ -1350,10 +1360,12 @@ async function loadShiftRowsForRange(
 }
 
 function filterLowActivityForReport(
-  rows: AttentionRow[],
+  rowsWithAllUnits: AttentionRow[],
   brigadeFilter: string | undefined,
   comparisonBrigades: string[],
 ) {
+  // ИТР в «Требуют внимания» не показываем — см. comparisonUnits.
+  const rows = filterAttentionRows(rowsWithAllUnits)
   if (brigadeFilter) {
     return rows.filter((row) => brigadeNamesMatch(row.supervisor_name ?? NO_SUPERVISOR, brigadeFilter))
   }
@@ -1963,7 +1975,8 @@ async function loadBrigadeWeeklyVolumeDynamics(
     value_text: row.value_text,
   }))
 
-  return comparisonBrigades.map((brigadeName) => {
+  // ИТР и прочие подразделения без объёмов в блоки про кубы не попадают.
+  return filterVolumeUnits(comparisonBrigades).map((brigadeName) => {
     const brigadeRows = rows.filter((row) => brigadeNamesMatch(row.label, brigadeName))
     const weekM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, weekDates)
     const priorM3 = sumBrigadeVolumeForDates(brigadeRows, brigadeName, priorWeekDates)
@@ -2041,7 +2054,7 @@ async function loadBrigadeWeeklyOutput(
     workers: Number(row.workers) || 0,
   }))
 
-  return comparisonBrigades.map((brigadeName) => {
+  return filterVolumeUnits(comparisonBrigades).map((brigadeName) => {
     const points = weeks.map(({ week_start, week_end }) => {
       const volume = sumBrigadeVolumeForDates(volumeRows, brigadeName, listDatesInclusive(week_start, week_end))
       const brigadeDaily = dailyRows.filter(
@@ -2242,7 +2255,7 @@ async function loadBrigadeOutputActivity(
   const trimmedWeeks = weeks.slice(-OUTPUT_ACTIVITY_MAX_WEEKS)
   if (trimmedWeeks.length === 0) return []
 
-  const cards = comparisonBrigades.map((brigadeName) => ({
+  const cards = filterVolumeUnits(comparisonBrigades).map((brigadeName) => ({
     supervisor_name: brigadeName,
     points: trimmedWeeks.map(({ week_start, week_end }) => {
       const activityRow = activityRows.find(
@@ -2411,8 +2424,10 @@ export async function buildDailyHtml(
   const { data: brigadesData, error: brigadesError } = await supabase!
     .rpc('brigade_daily_metrics_for_date', { p_report_date: date })
   if (brigadesError) throw brigadesError
-  let brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter)
-    .sort((left, right) => left.supervisor_name.localeCompare(right.supervisor_name, 'ru'))
+  const byUnitOrder = compareByUnitOrder(comparisonBrigades)
+  let brigades = filterRowsByBrigade((brigadesData ?? []) as BrigadeDailyRow[], brigadeFilter).sort(
+    (left, right) => byUnitOrder(left.supervisor_name, right.supervisor_name),
+  )
   if (!brigadeFilter) {
     brigades = brigades.filter((row) =>
       comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
@@ -2608,6 +2623,9 @@ export async function buildWeeklyHtml(
       comparisonBrigades.some((name) => brigadeNamesMatch(row.supervisor_name, name)),
     )
   }
+  // Порядок карточек во всех блоках — как в списке сравнения (ИТР третий).
+  const byUnitOrder = compareByUnitOrder(comparisonBrigades)
+  brigades = brigades.sort((left, right) => byUnitOrder(left.supervisor_name, right.supervisor_name))
   const weekEndResolved = brigades[0]?.week_end ?? weekEnd
 
   const dynamics = blocks.block3
