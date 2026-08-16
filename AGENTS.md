@@ -53,6 +53,14 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Cursor Cloud specific instructions
+
+- **What this is:** a frontend-only Vite + React 19 + TypeScript SPA (`legenda`). There is no standalone backend server and no automated test suite. All data and the login gate go through a **hosted (remote) Supabase** project (Postgres + PostgREST + Deno edge functions). Architecture: `docs/project-architecture.md`.
+- **Commands** are in `package.json`: `npm run dev` (Vite dev server on `http://localhost:5173`), `npm run build` (`tsc -b && vite build`), `npm run lint` (eslint). No `test` script exists.
+- **Boot requirement (non-obvious):** the app throws at startup and renders a blank page unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are set (see `src/lib/supabase.ts`). Put them in `.env.local` (gitignored via `.env.*`). With placeholder values the login page renders, but login and dashboard data will not work.
+- **Full end-to-end (login + dashboard) needs real Supabase credentials.** Login calls the `site-settings` edge function (`?action=verify`) with the password from `SETTINGS_ADMIN_PASSWORD`; the dashboard reads `analytics` views directly. There is **no local Supabase stack** configured (only `send-report` is in `supabase/config.toml`), and `docker`/`supabase` CLI/`deno` are not preinstalled — to run fully offline you would have to install those and stand up a local stack yourself.
+- **Lint note:** `npm run lint` currently reports pre-existing errors (mostly `supabase/functions/send-report/*` and `src/pages/DashboardPage.tsx`). These are in committed code, not environment problems.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker
 
